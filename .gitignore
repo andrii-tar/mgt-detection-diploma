@@ -1,2 +1,4 @@
 data/
 opencode.json
+__pycache__/
+*.pyc
