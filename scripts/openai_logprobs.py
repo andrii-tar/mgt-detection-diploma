@@ -13,7 +13,11 @@ def _decode_token(tokenizer: Any, token_id: int) -> str:
     return tokenizer.decode([token_id], skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
 
-def _normalize_top_logprobs(tokenizer: Any, log_probs: torch.Tensor, top_n: int) -> list[dict[str, Any]]:
+def _normalize_top_logprobs(
+    tokenizer: Any,
+    log_probs: torch.Tensor,
+    top_n: int,
+) -> list[dict[str, Any]]:
     top_k = min(top_n, log_probs.shape[-1])
     top_values, top_indices = torch.topk(log_probs, k=top_k)
 
