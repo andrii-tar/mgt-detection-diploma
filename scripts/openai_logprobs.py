@@ -66,10 +66,13 @@ def process_text_batch(texts: list[str], model_id: str = DEFAULT_MODEL_ID, top_n
 
         token_records: list[dict[str, Any]] = []
         for position, token_id in enumerate(token_ids.tolist()):
+            token_logprob = log_probs[position, token_id].item()
+            rank = int((log_probs[position] > token_logprob).sum().item()) + 1
             token_records.append(
                 {
                     "token": _decode_token(tokenizer, token_id),
-                    "logprob": log_probs[position, token_id].item(),
+                    "logprob": token_logprob,
+                    "rank": rank,
                     "top_logprobs": _normalize_top_logprobs(tokenizer, log_probs[position], top_n),
                 }
             )
