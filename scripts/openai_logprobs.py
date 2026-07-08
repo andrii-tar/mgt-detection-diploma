@@ -22,12 +22,12 @@ def _normalize_top_logprobs(
     top_values, top_indices = torch.topk(log_probs, k=top_k)
 
     entries = [
-        {"token": _decode_token(tokenizer, idx), "logprob": float(value)}
+        {"token": _decode_token(tokenizer, idx), "token_id": int(idx), "logprob": float(value)}
         for value, idx in zip(top_values.tolist(), top_indices.tolist())
     ]
 
     if len(entries) < top_n:
-        entries.extend({"token": None, "logprob": None} for _ in range(top_n - len(entries)))
+        entries.extend({"token": None, "token_id": None, "logprob": None} for _ in range(top_n - len(entries)))
 
     return entries
 
@@ -71,6 +71,7 @@ def process_text_batch(texts: list[str], model_id: str = DEFAULT_MODEL_ID, top_n
             token_records.append(
                 {
                     "token": _decode_token(tokenizer, token_id),
+                    "token_id": token_id,
                     "logprob": token_logprob,
                     "rank": rank,
                     "top_logprobs": _normalize_top_logprobs(tokenizer, log_probs[position], top_n),
