@@ -15,6 +15,10 @@ DATA_ROOT = _data_root()
 
 
 MODEL_IDS = {
+    "gemma_2_2b_it": "google/gemma-2-2b-it",
+    "gemma_3_1b_it": "google/gemma-3-1b-it",
+    "gpt2": "openai-community/gpt2",
+    "opt_350m": "facebook/opt-350m",
     "smollm2_360m": "HuggingFaceTB/SmolLM2-360M-Instruct",
 }
 
