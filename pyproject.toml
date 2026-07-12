@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "accelerate>=1.14.0",
     "pandas>=3.0.3",
+    "pyarrow>=18.0.0",
     "torch>=2.6.0",
     "transformers>=5.13.1",
     "tqdm>=4.66.5",
