@@ -138,10 +138,11 @@ def _process_split(
         return
 
     texts = batch["text"].tolist()
-    scored = score_texts_with_model(texts, tokenizer, model, device, top_n=top_n)
+    scored = score_texts_with_model(texts, tokenizer, model, device, top_n=top_n, progress_desc=f"{split}: scoring")
 
     records: list[dict[str, Any]] = []
-    for row, scored_row in zip(batch.to_dict(orient="records"), scored):
+    rows = batch.to_dict(orient="records")
+    for row, scored_row in zip(rows, scored):
         records.append(
             {
                 "id": int(row["id"]),

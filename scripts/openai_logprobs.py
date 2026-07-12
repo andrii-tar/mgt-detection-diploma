@@ -4,6 +4,7 @@ from typing import Any
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from tqdm import tqdm
 
 
 DEFAULT_MODEL_ID = "HuggingFaceTB/SmolLM2-360M-Instruct"
@@ -48,6 +49,7 @@ def score_texts_with_model(
     model: Any,
     device: torch.device,
     top_n: int = 20,
+    progress_desc: str | None = None,
 ) -> list[dict[str, Any]]:
     start_token_id = tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id
     if start_token_id is None:
@@ -55,7 +57,7 @@ def score_texts_with_model(
 
     results: list[dict[str, Any]] = []
 
-    for text in texts:
+    for text in tqdm(texts, desc=progress_desc, unit="text", disable=progress_desc is None):
         encoded = tokenizer(text, return_tensors="pt", add_special_tokens=False)
         token_ids = encoded["input_ids"][0]
 
