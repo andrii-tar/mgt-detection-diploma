@@ -2,9 +2,52 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPTS_ROOT = REPO_ROOT / "scripts"
+if str(SCRIPTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_ROOT))
+
+from experiment_config import DATASETS
+
+
+def count_csv_rows(path: Path) -> int | None:
+    if not path.exists():
+        return None
+
+    with path.open("r", encoding="utf-8") as handle:
+        row_count = sum(1 for _ in handle)
+
+    return max(row_count - 1, 0)
+
+
+def dataset_sizes() -> dict[str, dict[str, int]]:
+    sizes: dict[str, dict[str, int]] = {}
+    for dataset, config in DATASETS.items():
+        splits = config.get("splits", {})
+        sizes[dataset] = {
+            split: size
+            for split, split_path in splits.items()
+            if (size := count_csv_rows(Path(split_path))) is not None
+        }
+    return sizes
+
+
+def enrich_state(state: dict[str, Any], sizes: dict[str, dict[str, int]]) -> dict[str, Any]:
+    dataset = state.get("dataset")
+    split = state.get("split")
+    dataset_size = sizes.get(dataset, {}).get(split)
+    if dataset_size is None:
+        return state
+
+    processed_count = int(state.get("processed_count", 0))
+    state["dataset_size"] = dataset_size
+    state["processed_percent"] = processed_count / dataset_size if dataset_size else 0
+    return state
 
 
 def collect_states(processed_root: Path) -> list[dict[str, Any]]:
@@ -12,9 +55,10 @@ def collect_states(processed_root: Path) -> list[dict[str, Any]]:
     if not processed_root.exists():
         return states
 
+    sizes = dataset_sizes()
     for state_path in sorted(processed_root.glob("**/state.json")):
         try:
-            states.append(json.loads(state_path.read_text(encoding="utf-8")))
+            states.append(enrich_state(json.loads(state_path.read_text(encoding="utf-8")), sizes))
         except json.JSONDecodeError as exc:
             print(f"Skipping invalid JSON state file {state_path}: {exc}")
 

@@ -36,7 +36,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Processed rows",
+            "axisLabel": "Processed texts",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "bars",
@@ -103,13 +103,18 @@
         {
           "columns": [
             {
-              "selector": "updated_at",
-              "text": "updated_at",
-              "type": "timestamp"
+              "selector": "dataset",
+              "text": "dataset",
+              "type": "string"
             },
             {
               "selector": "model",
               "text": "model",
+              "type": "string"
+            },
+            {
+              "selector": "split",
+              "text": "split",
               "type": "string"
             },
             {
@@ -133,12 +138,16 @@
           }
         }
       ],
-      "title": "Processing Progress by Model",
+      "title": "Processed MG/HG Texts by Dataset and Model",
       "transformations": [
         {
           "id": "groupBy",
           "options": {
             "fields": {
+              "dataset": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
               "model": {
                 "aggregations": [],
                 "operation": "groupby"
@@ -149,11 +158,9 @@
                 ],
                 "operation": "aggregate"
               },
-              "updated_at": {
-                "aggregations": [
-                  "lastNotNull"
-                ],
-                "operation": "aggregate"
+              "split": {
+                "aggregations": [],
+                "operation": "groupby"
               }
             }
           }
@@ -164,8 +171,7 @@
             "excludeByName": {},
             "indexByName": {},
             "renameByName": {
-              "processed_count (sum)": "processed rows",
-              "updated_at (lastNotNull)": "last update"
+              "processed_count (sum)": "processed texts"
             }
           }
         }
@@ -186,7 +192,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Processed rows",
+            "axisLabel": "Processed dataset share",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "bars",
@@ -224,7 +230,7 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "percent"
         },
         "overrides": []
       },
@@ -253,18 +259,23 @@
         {
           "columns": [
             {
-              "selector": "updated_at",
-              "text": "updated_at",
-              "type": "timestamp"
-            },
-            {
               "selector": "dataset",
               "text": "dataset",
               "type": "string"
             },
             {
-              "selector": "processed_count",
-              "text": "processed_count",
+              "selector": "model",
+              "text": "model",
+              "type": "string"
+            },
+            {
+              "selector": "split",
+              "text": "split",
+              "type": "string"
+            },
+            {
+              "selector": "processed_percent",
+              "text": "processed_percent",
               "type": "number"
             }
           ],
@@ -283,7 +294,7 @@
           }
         }
       ],
-      "title": "Processing Progress by Dataset",
+      "title": "Processed MG/HG Share of Dataset by Model",
       "transformations": [
         {
           "id": "groupBy",
@@ -293,17 +304,19 @@
                 "aggregations": [],
                 "operation": "groupby"
               },
-              "processed_count": {
-                "aggregations": [
-                  "sum"
-                ],
-                "operation": "aggregate"
+              "model": {
+                "aggregations": [],
+                "operation": "groupby"
               },
-              "updated_at": {
+              "processed_percent": {
                 "aggregations": [
                   "lastNotNull"
                 ],
                 "operation": "aggregate"
+              },
+              "split": {
+                "aggregations": [],
+                "operation": "groupby"
               }
             }
           }
@@ -314,8 +327,7 @@
             "excludeByName": {},
             "indexByName": {},
             "renameByName": {
-              "processed_count (sum)": "processed rows",
-              "updated_at (lastNotNull)": "last update"
+              "processed_percent (lastNotNull)": "processed dataset share"
             }
           }
         }
@@ -553,6 +565,16 @@
             {
               "selector": "processed_count",
               "text": "processed_count",
+              "type": "number"
+            },
+            {
+              "selector": "dataset_size",
+              "text": "dataset_size",
+              "type": "number"
+            },
+            {
+              "selector": "processed_percent",
+              "text": "processed_percent",
               "type": "number"
             },
             {
