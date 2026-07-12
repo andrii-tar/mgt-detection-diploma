@@ -32,16 +32,23 @@ def _normalize_top_logprobs(
     return entries
 
 
-def process_text_batch(texts: list[str], model_id: str = DEFAULT_MODEL_ID, top_n: int = 20) -> list[dict[str, Any]]:
-    """Return exact per-token logprobs for a batch of texts using a local causal LM."""
-
+def load_local_model(model_id: str = DEFAULT_MODEL_ID) -> tuple[Any, Any, torch.device]:
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModelForCausalLM.from_pretrained(model_id)
     model.eval()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
+    return tokenizer, model, device
 
+
+def score_texts_with_model(
+    texts: list[str],
+    tokenizer: Any,
+    model: Any,
+    device: torch.device,
+    top_n: int = 20,
+) -> list[dict[str, Any]]:
     start_token_id = tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id
     if start_token_id is None:
         raise RuntimeError("Tokenizer does not define a BOS/EOS token needed to score prompt tokens.")
@@ -81,6 +88,12 @@ def process_text_batch(texts: list[str], model_id: str = DEFAULT_MODEL_ID, top_n
         results.append({"text": text, "tokens": token_records})
 
     return results
+
+
+def process_text_batch(texts: list[str], model_id: str = DEFAULT_MODEL_ID, top_n: int = 20) -> list[dict[str, Any]]:
+    """Return exact per-token logprobs for a batch of texts using a local causal LM."""
+    tokenizer, model, device = load_local_model(model_id)
+    return score_texts_with_model(texts, tokenizer, model, device, top_n)
 
 
 if __name__ == "__main__":
