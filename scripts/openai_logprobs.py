@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 import torch
-import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 
@@ -18,30 +17,18 @@ def _decode_token(tokenizer: Any, token_id: int) -> str:
 def _normalize_top_logprobs(
     tokenizer: Any,
     log_probs: torch.Tensor,
-    normalized_embeddings: torch.Tensor,
-    ground_truth_token_id: int,
     top_n: int,
 ) -> list[dict[str, Any]]:
     top_k = min(top_n, log_probs.shape[-1])
     top_values, top_indices = torch.topk(log_probs, k=top_k)
-    ground_truth_embedding = normalized_embeddings[ground_truth_token_id]
-    similarities = torch.matmul(normalized_embeddings[top_indices], ground_truth_embedding)
 
     entries = [
-        {
-            "token": _decode_token(tokenizer, idx),
-            "token_id": int(idx),
-            "logprob": float(value),
-            "similarity_to_gt": float(similarity),
-        }
-        for value, idx, similarity in zip(top_values.tolist(), top_indices.tolist(), similarities.tolist())
+        {"token": _decode_token(tokenizer, idx), "token_id": int(idx), "logprob": float(value)}
+        for value, idx in zip(top_values.tolist(), top_indices.tolist())
     ]
 
     if len(entries) < top_n:
-        entries.extend(
-            {"token": None, "token_id": None, "logprob": None, "similarity_to_gt": None}
-            for _ in range(top_n - len(entries))
-        )
+        entries.extend({"token": None, "token_id": None, "logprob": None} for _ in range(top_n - len(entries)))
 
     return entries
 
@@ -69,7 +56,6 @@ def score_texts_with_model(
         raise RuntimeError("Tokenizer does not define a BOS/EOS token needed to score prompt tokens.")
 
     results: list[dict[str, Any]] = []
-    normalized_embeddings = F.normalize(model.get_input_embeddings().weight.detach(), dim=-1)
 
     for text in tqdm(texts, desc=progress_desc, unit="text", disable=progress_desc is None):
         encoded = tokenizer(text, return_tensors="pt", add_special_tokens=False)
@@ -97,13 +83,7 @@ def score_texts_with_model(
                     "token_id": token_id,
                     "logprob": token_logprob,
                     "rank": rank,
-                    "top_logprobs": _normalize_top_logprobs(
-                        tokenizer,
-                        log_probs[position],
-                        normalized_embeddings,
-                        token_id,
-                        top_n,
-                    ),
+                    "top_logprobs": _normalize_top_logprobs(tokenizer, log_probs[position], top_n),
                 }
             )
 
