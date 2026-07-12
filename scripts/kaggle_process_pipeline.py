@@ -128,6 +128,7 @@ def _process_split(
     model_name: str,
     model_id: str,
     top_n: int,
+    inference_batch_size: int,
 ) -> None:
     frame = _load_split_frame(split, split_path)
     last_id = _read_last_processed_id(split, dataset, model_name)
@@ -138,7 +139,15 @@ def _process_split(
         return
 
     texts = batch["text"].tolist()
-    scored = score_texts_with_model(texts, tokenizer, model, device, top_n=top_n, progress_desc=f"{split}: scoring")
+    scored = score_texts_with_model(
+        texts,
+        tokenizer,
+        model,
+        device,
+        top_n=top_n,
+        inference_batch_size=inference_batch_size,
+        progress_desc=f"{split}: scoring",
+    )
 
     records: list[dict[str, Any]] = []
     rows = batch.to_dict(orient="records")
@@ -185,6 +194,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--model-id", default=None, help="Raw Hugging Face model id. Overrides --model.")
     parser.add_argument("--top-n", type=int, default=20, help="Number of top alternatives per token.")
+    parser.add_argument("--inference-batch-size", type=int, default=4, help="Number of texts per model forward pass.")
     return parser.parse_args()
 
 
@@ -211,6 +221,7 @@ def main() -> None:
             model_name,
             model_id,
             args.top_n,
+            args.inference_batch_size,
         )
 
 
