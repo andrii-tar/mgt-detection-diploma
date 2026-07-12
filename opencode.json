@@ -17,14 +17,14 @@
     "external_directory": {
       ".": "allow",
       "D:\\Projects\\master_diploma\\text-detection-data": "allow"
-    }
+    },
     "*": "ask",
     "bash": "allow",
     "read": "allow",
     "edit": "allow",
     "write": "allow",
-    "glob ": "allow",
-    "grep ": "allow",
+    "glob": "allow",
+    "grep": "allow",
     "task": "allow",
     "question": "allow",
 
