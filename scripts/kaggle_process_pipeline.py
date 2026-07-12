@@ -12,6 +12,8 @@ import pandas as pd
 from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
 from openai_logprobs import load_local_model, score_texts_with_model
 
+BATCH_SIZE = 30
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -33,8 +35,12 @@ def _split_dir(split: str, dataset: str, model: str) -> Path:
     return DATA_ROOT / "processed" / _experiment_name(dataset, model) / split
 
 
-def _data_path(split: str, dataset: str, model: str) -> Path:
-    return _split_dir(split, dataset, model) / "data.jsonl"
+def _data_dir(split: str, dataset: str, model: str) -> Path:
+    return _split_dir(split, dataset, model) / "data"
+
+
+def _data_batch_path(split: str, dataset: str, model: str, first_id: int, last_id: int) -> Path:
+    return _data_dir(split, dataset, model) / f"batch_{first_id:08d}_{last_id:08d}.parquet"
 
 
 def _state_path(split: str, dataset: str, model: str) -> Path:
@@ -48,15 +54,15 @@ def _read_last_processed_id(split: str, dataset: str, model: str) -> int:
         if state.get("last_id") is not None:
             return int(state["last_id"])
 
-    data_path = _data_path(split, dataset, model)
-    if not data_path.exists():
+    data_dir = _data_dir(split, dataset, model)
+    if not data_dir.exists():
         return -1
 
     last_id = -1
-    with data_path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if line.strip():
-                last_id = int(json.loads(line)["id"])
+    for data_path in data_dir.glob("*.parquet"):
+        data_frame = pd.read_parquet(data_path, columns=["id"])
+        if not data_frame.empty:
+            last_id = max(last_id, int(data_frame["id"].max()))
 
     return last_id
 
@@ -92,11 +98,17 @@ def _write_state(
     state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _append_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+def _write_parquet_batch(split: str, dataset: str, model: str, rows: list[dict[str, Any]]) -> None:
+    first_id = int(rows[0]["id"])
+    last_id = int(rows[-1]["id"])
+    path = _data_batch_path(split, dataset, model, first_id, last_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    pd.DataFrame(rows).to_parquet(path, compression="zstd", index=False)
+
+
+def _write_parquet_batches(split: str, dataset: str, model: str, rows: list[dict[str, Any]]) -> None:
+    for start in range(0, len(rows), BATCH_SIZE):
+        _write_parquet_batch(split, dataset, model, rows[start : start + BATCH_SIZE])
 
 
 def _load_split_frame(split: str, split_path: str) -> pd.DataFrame:
@@ -168,7 +180,7 @@ def _process_split(
             }
         )
 
-    _append_jsonl(_data_path(split, dataset, model_name), records)
+    _write_parquet_batches(split, dataset, model_name, records)
     _write_state(split, dataset, dataset_name, model_name, model_id, int(batch["id"].iloc[-1]), len(records))
 
     print(
@@ -178,7 +190,7 @@ def _process_split(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Process next HG and MG texts into JSONL logprob files.")
+    parser = argparse.ArgumentParser(description="Process next HG and MG texts into Parquet logprob files.")
     parser.add_argument("--count", type=int, default=None, help="Number of rows to process per split.")
     parser.add_argument(
         "--dataset",

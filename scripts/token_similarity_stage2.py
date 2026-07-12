@@ -38,8 +38,8 @@ def _split_dir(split: str, dataset: str, model: str) -> Path:
     return DATA_ROOT / "processed" / _experiment_name(dataset, model) / split
 
 
-def _data_path(split: str, dataset: str, model: str) -> Path:
-    return _split_dir(split, dataset, model) / "data.jsonl"
+def _data_dir(split: str, dataset: str, model: str) -> Path:
+    return _split_dir(split, dataset, model) / "data"
 
 
 def _similarity_dir(split: str, dataset: str, model: str) -> Path:
@@ -123,15 +123,11 @@ def _write_parquet_batches(split: str, dataset: str, model: str, rows: list[dict
 
 def _iter_unprocessed_rows(path: Path, last_id: int, count: int) -> Iterable[dict[str, Any]]:
     if not path.exists():
-        raise FileNotFoundError(f"Missing stage-1 processed file: {path}")
+        raise FileNotFoundError(f"Missing stage-1 processed directory: {path}")
 
     yielded = 0
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-
-            row = json.loads(line)
+    for data_path in sorted(path.glob("*.parquet")):
+        for row in pd.read_parquet(data_path).to_dict(orient="records"):
             if int(row["id"]) <= last_id:
                 continue
 
@@ -207,7 +203,7 @@ def _process_split(
     model_id: str,
 ) -> None:
     last_id = _read_last_processed_id(split, dataset, model_name)
-    rows = list(_iter_unprocessed_rows(_data_path(split, dataset, model_name), last_id, count))
+    rows = list(_iter_unprocessed_rows(_data_dir(split, dataset, model_name), last_id, count))
 
     if not rows:
         print(f"{split}: no stage-1 rows left after id {last_id}")
@@ -227,7 +223,7 @@ def _process_split(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Stage 2: compute token embedding similarities for processed logprob JSONL.")
+    parser = argparse.ArgumentParser(description="Stage 2: compute token embedding similarities for processed logprob Parquet files.")
     parser.add_argument("--count", type=int, default=None, help="Number of processed rows to process per split.")
     parser.add_argument(
         "--dataset",
