@@ -15,8 +15,9 @@
   },
   "permission": {
     "external_directory": {
-      ".": "allow"
-    },
+      ".": "allow",
+      "D:\\Projects\\master_diploma\\text-detection-data": "allow"
+    }
     "*": "ask",
     "bash": "allow",
     "read": "allow",

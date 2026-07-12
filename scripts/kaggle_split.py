@@ -1,11 +1,11 @@
-from pathlib import Path
-
 import pandas as pd
 
+from experiment_config import DATA_ROOT
 
-INPUT_PATH = Path("data/raw/Training_Essay_Data.csv")
-OUTPUT_HUMAN = Path("data/raw/kaggle_train_hg.csv")
-OUTPUT_GENERATED = Path("data/raw/kaggle_train_mg.csv")
+
+INPUT_PATH = DATA_ROOT / "raw/Training_Essay_Data.csv"
+OUTPUT_HUMAN = DATA_ROOT / "raw/kaggle_train_hg.csv"
+OUTPUT_GENERATED = DATA_ROOT / "raw/kaggle_train_mg.csv"
 
 
 def main() -> None:

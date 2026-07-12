@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from experiment_config import DATASETS, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
 from openai_logprobs import load_local_model, score_texts_with_model
 
 
@@ -30,7 +30,7 @@ def _experiment_params(dataset: str, dataset_name: str, model: str, model_id: st
 
 
 def _split_dir(split: str, dataset: str, model: str) -> Path:
-    return Path("data/processed") / _experiment_name(dataset, model) / split
+    return DATA_ROOT / "processed" / _experiment_name(dataset, model) / split
 
 
 def _data_path(split: str, dataset: str, model: str) -> Path:
