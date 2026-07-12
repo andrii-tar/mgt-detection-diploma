@@ -28,6 +28,20 @@
     "task": "allow",
     "question": "allow",
 
+    "local-git_git_status": "allow",
+    "local-git_git_diff": "allow",
+    "local-git_git_diff_unstaged": "allow",
+    "local-git_git_diff_staged": "allow",
+    "local-git_git_log": "allow",
+    "local-git_git_show": "allow",
+    "local-git_git_branch": "allow",
+
+    "local-git_git_add": "ask",
+    "local-git_git_commit": "ask",
+    "local-git_git_checkout": "ask",
+    "local-git_git_create_branch": "ask",
+    "local-git_git_reset": "ask",
+
     "node --check**": "allow",
 
     "doom_loop": "ask",
