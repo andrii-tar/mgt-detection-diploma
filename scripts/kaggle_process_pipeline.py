@@ -2,46 +2,53 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from openai_logprobs import DEFAULT_MODEL_ID, load_local_model, score_texts_with_model
-
-
-DATASET_NAME = "kaggle_train"
-RAW_SPLITS = {
-    "HG": Path("data/raw/kaggle_train_hg.csv"),
-    "MG": Path("data/raw/kaggle_train_mg.csv"),
-}
+from experiment_config import DATASETS, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+from openai_logprobs import load_local_model, score_texts_with_model
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _split_dir(split: str) -> Path:
-    return Path("data/processed") / f"{DATASET_NAME}__{split}"
+def _path_slug(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9._-]+", "_", value).strip("_").lower()
 
 
-def _data_path(split: str) -> Path:
-    return _split_dir(split) / "data.jsonl"
+def _experiment_name(dataset: str, model: str) -> str:
+    return f"{_path_slug(dataset)}__{_path_slug(model)}"
 
 
-def _state_path(split: str) -> Path:
-    return _split_dir(split) / "state.json"
+def _experiment_params(dataset: str, dataset_name: str, model: str, model_id: str) -> dict[str, str]:
+    return {"dataset": dataset, "dataset_name": dataset_name, "model": model, "model_id": model_id}
 
 
-def _read_last_processed_id(split: str) -> int:
-    state_path = _state_path(split)
+def _split_dir(split: str, dataset: str, model: str) -> Path:
+    return Path("data/processed") / _experiment_name(dataset, model) / split
+
+
+def _data_path(split: str, dataset: str, model: str) -> Path:
+    return _split_dir(split, dataset, model) / "data.jsonl"
+
+
+def _state_path(split: str, dataset: str, model: str) -> Path:
+    return _split_dir(split, dataset, model) / "state.json"
+
+
+def _read_last_processed_id(split: str, dataset: str, model: str) -> int:
+    state_path = _state_path(split, dataset, model)
     if state_path.exists():
         state = json.loads(state_path.read_text(encoding="utf-8"))
         if state.get("last_id") is not None:
             return int(state["last_id"])
 
-    data_path = _data_path(split)
+    data_path = _data_path(split, dataset, model)
     if not data_path.exists():
         return -1
 
@@ -54,8 +61,16 @@ def _read_last_processed_id(split: str) -> int:
     return last_id
 
 
-def _write_state(split: str, last_id: int, processed_count: int) -> None:
-    state_path = _state_path(split)
+def _write_state(
+    split: str,
+    dataset: str,
+    dataset_name: str,
+    model: str,
+    model_id: str,
+    last_id: int,
+    processed_count: int,
+) -> None:
+    state_path = _state_path(split, dataset, model)
     state_path.parent.mkdir(parents=True, exist_ok=True)
     previous_count = 0
     if state_path.exists():
@@ -63,7 +78,12 @@ def _write_state(split: str, last_id: int, processed_count: int) -> None:
         previous_count = int(previous_state.get("processed_count", 0))
 
     payload = {
-        "dataset_name": DATASET_NAME,
+        "dataset": dataset,
+        "dataset_name": dataset_name,
+        "model": model,
+        "model_id": model_id,
+        "experiment_name": _experiment_name(dataset, model),
+        "experiment_params": _experiment_params(dataset, dataset_name, model, model_id),
         "split": split,
         "last_id": last_id,
         "processed_count": previous_count + processed_count,
@@ -79,8 +99,8 @@ def _append_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _load_split_frame(split: str) -> pd.DataFrame:
-    path = RAW_SPLITS[split]
+def _load_split_frame(split: str, split_path: str) -> pd.DataFrame:
+    path = Path(split_path)
     if not path.exists():
         raise FileNotFoundError(f"Missing input split file: {path}")
 
@@ -102,10 +122,15 @@ def _process_split(
     tokenizer: Any,
     model: Any,
     device: Any,
+    dataset: str,
+    dataset_name: str,
+    split_path: str,
+    model_name: str,
+    model_id: str,
     top_n: int,
 ) -> None:
-    frame = _load_split_frame(split)
-    last_id = _read_last_processed_id(split)
+    frame = _load_split_frame(split, split_path)
+    last_id = _read_last_processed_id(split, dataset, model_name)
     batch = _select_next_rows(frame, last_id, count)
 
     if batch.empty:
@@ -120,24 +145,44 @@ def _process_split(
         records.append(
             {
                 "id": int(row["id"]),
-                "dataset_name": DATASET_NAME,
+                "dataset": dataset,
+                "dataset_name": dataset_name,
+                "model": model_name,
+                "model_id": model_id,
+                "experiment_name": _experiment_name(dataset, model_name),
+                "experiment_params": _experiment_params(dataset, dataset_name, model_name, model_id),
                 "split": split,
                 "text": row["text"],
-                "model_id": DEFAULT_MODEL_ID,
                 "tokens": scored_row["tokens"],
                 "processed_at": _utc_now(),
             }
         )
 
-    _append_jsonl(_data_path(split), records)
-    _write_state(split, int(batch["id"].iloc[-1]), len(records))
+    _append_jsonl(_data_path(split, dataset, model_name), records)
+    _write_state(split, dataset, dataset_name, model_name, model_id, int(batch["id"].iloc[-1]), len(records))
 
-    print(f"{split}: processed {len(records)} rows, last_id={int(batch['id'].iloc[-1])}")
+    print(
+        f"{split}: processed {len(records)} rows, "
+        f"experiment={_experiment_name(dataset, model_name)}, last_id={int(batch['id'].iloc[-1])}"
+    )
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Process next HG and MG texts into JSONL logprob files.")
     parser.add_argument("--count", type=int, default=None, help="Number of rows to process per split.")
+    parser.add_argument(
+        "--dataset",
+        default="kaggle_train",
+        choices=sorted(DATASETS),
+        help="Dataset id from experiment_config.py.",
+    )
+    parser.add_argument(
+        "--model",
+        default="smollm2_360m",
+        choices=sorted(MODEL_IDS),
+        help="Model id alias from experiment_config.py.",
+    )
+    parser.add_argument("--model-id", default=None, help="Raw Hugging Face model id. Overrides --model.")
     parser.add_argument("--top-n", type=int, default=20, help="Number of top alternatives per token.")
     return parser.parse_args()
 
@@ -145,11 +190,27 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     count = args.count if args.count is not None else int(input("How many texts per split should be processed? "))
+    dataset_name = resolve_dataset_name(args.dataset)
+    dataset_splits = resolve_dataset_splits(args.dataset)
+    model_id = args.model_id if args.model_id is not None else resolve_model_id(args.model)
+    model_name = args.model if args.model_id is None else args.model_id
 
-    tokenizer, model, device = load_local_model(DEFAULT_MODEL_ID)
+    tokenizer, model, device = load_local_model(model_id)
 
-    for split in ("HG", "MG"):
-        _process_split(split, count, tokenizer, model, device, args.top_n)
+    for split, split_path in dataset_splits.items():
+        _process_split(
+            split,
+            count,
+            tokenizer,
+            model,
+            device,
+            args.dataset,
+            dataset_name,
+            split_path,
+            model_name,
+            model_id,
+            args.top_n,
+        )
 
 
 if __name__ == "__main__":
