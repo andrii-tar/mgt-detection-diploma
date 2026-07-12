@@ -1,0 +1,9 @@
+apiVersion: 1
+
+datasources:
+  - name: Processing States
+    type: yesoreyeram-infinity-datasource
+    uid: processing-states
+    access: proxy
+    isDefault: true
+    editable: true
