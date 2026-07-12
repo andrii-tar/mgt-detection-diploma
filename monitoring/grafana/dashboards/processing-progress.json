@@ -118,6 +118,11 @@
               "type": "string"
             },
             {
+              "selector": "stage",
+              "text": "stage",
+              "type": "string"
+            },
+            {
               "selector": "processed_count",
               "text": "processed_count",
               "type": "number"
@@ -138,7 +143,7 @@
           }
         }
       ],
-      "title": "Processed MG/HG Texts by Dataset and Model",
+      "title": "Processed MG/HG Texts by Stage, Dataset, and Model",
       "transformations": [
         {
           "id": "groupBy",
@@ -157,6 +162,10 @@
                   "sum"
                 ],
                 "operation": "aggregate"
+              },
+              "stage": {
+                "aggregations": [],
+                "operation": "groupby"
               },
               "split": {
                 "aggregations": [],
@@ -274,6 +283,11 @@
               "type": "string"
             },
             {
+              "selector": "stage",
+              "text": "stage",
+              "type": "string"
+            },
+            {
               "selector": "processed_percent",
               "text": "processed_percent",
               "type": "number"
@@ -294,7 +308,7 @@
           }
         }
       ],
-      "title": "Processed MG/HG Share of Dataset by Model",
+      "title": "Processed MG/HG Share of Dataset by Stage",
       "transformations": [
         {
           "id": "groupBy",
@@ -313,6 +327,10 @@
                   "lastNotNull"
                 ],
                 "operation": "aggregate"
+              },
+              "stage": {
+                "aggregations": [],
+                "operation": "groupby"
               },
               "split": {
                 "aggregations": [],
@@ -425,6 +443,11 @@
               "type": "string"
             },
             {
+              "selector": "stage",
+              "text": "stage",
+              "type": "string"
+            },
+            {
               "selector": "processed_count",
               "text": "processed_count",
               "type": "number"
@@ -445,7 +468,7 @@
           }
         }
       ],
-      "title": "Processing Progress by Split Type",
+      "title": "Processing Progress by Stage and Split Type",
       "transformations": [
         {
           "id": "groupBy",
@@ -458,6 +481,10 @@
                 "operation": "aggregate"
               },
               "split": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "stage": {
                 "aggregations": [],
                 "operation": "groupby"
               },
@@ -563,6 +590,11 @@
               "type": "string"
             },
             {
+              "selector": "stage",
+              "text": "stage",
+              "type": "string"
+            },
+            {
               "selector": "processed_count",
               "text": "processed_count",
               "type": "number"
@@ -581,6 +613,21 @@
               "selector": "last_id",
               "text": "last_id",
               "type": "number"
+            },
+            {
+              "selector": "batch_count",
+              "text": "batch_count",
+              "type": "number"
+            },
+            {
+              "selector": "output_format",
+              "text": "output_format",
+              "type": "string"
+            },
+            {
+              "selector": "output_path",
+              "text": "output_path",
+              "type": "string"
             },
             {
               "selector": "updated_at",

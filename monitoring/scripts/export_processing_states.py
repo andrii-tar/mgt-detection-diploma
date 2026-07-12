@@ -15,6 +15,12 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from experiment_config import DATASETS
 
 
+STAGE_OUTPUTS = {
+    "logprobs": "data",
+    "token_similarity": "token_similarities",
+}
+
+
 def count_csv_rows(path: Path) -> int | None:
     if not path.exists():
         return None
@@ -37,7 +43,16 @@ def dataset_sizes() -> dict[str, dict[str, int]]:
     return sizes
 
 
-def enrich_state(state: dict[str, Any], sizes: dict[str, dict[str, int]]) -> dict[str, Any]:
+def enrich_state(state: dict[str, Any], sizes: dict[str, dict[str, int]], state_path: Path) -> dict[str, Any]:
+    stage = state.get("stage") or "logprobs"
+    output_dir = state_path.parent / STAGE_OUTPUTS.get(stage, "data")
+    parquet_files = sorted(output_dir.glob("*.parquet")) if output_dir.exists() else []
+
+    state["stage"] = stage
+    state["output_format"] = "parquet"
+    state["batch_count"] = len(parquet_files)
+    state["output_path"] = str(output_dir)
+
     dataset = state.get("dataset")
     split = state.get("split")
     dataset_size = sizes.get(dataset, {}).get(split)
@@ -56,9 +71,10 @@ def collect_states(processed_root: Path) -> list[dict[str, Any]]:
         return states
 
     sizes = dataset_sizes()
-    for state_path in sorted(processed_root.glob("**/state.json")):
+    state_paths = sorted(processed_root.glob("**/state.json")) + sorted(processed_root.glob("**/similarity_state.json"))
+    for state_path in state_paths:
         try:
-            states.append(enrich_state(json.loads(state_path.read_text(encoding="utf-8")), sizes))
+            states.append(enrich_state(json.loads(state_path.read_text(encoding="utf-8")), sizes, state_path))
         except json.JSONDecodeError as exc:
             print(f"Skipping invalid JSON state file {state_path}: {exc}")
 
