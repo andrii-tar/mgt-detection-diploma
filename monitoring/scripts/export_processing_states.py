@@ -54,7 +54,11 @@ def enrich_state(state: dict[str, Any], sizes: dict[str, dict[str, int]], state_
     state["output_path"] = str(output_dir)
 
     dataset = state.get("dataset")
+    model = state.get("model")
     split = state.get("split")
+    if model and split:
+        state["model_split"] = f"{model} / {split}"
+
     dataset_size = sizes.get(dataset, {}).get(split)
     if dataset_size is None:
         return state
