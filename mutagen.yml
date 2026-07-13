@@ -1,0 +1,36 @@
+sync:
+  td-code:
+    alpha: .
+    beta: linux-box:/workspace/text-detection
+    mode: one-way-safe
+    ignore:
+      vcs: true
+      paths:
+        - "*"
+        - "!scripts"
+        - "!scripts/**"
+        - "!pyproject.toml"
+        - "!uv.lock"
+        - "scripts/**/__pycache__"
+        - "scripts/**/*.pyc"
+
+  data-upload:
+    alpha: D:/Projects/master_diploma/text-detection-data
+    beta: linux-box:/workspace/text-detection/data
+    mode: one-way-safe
+    ignore:
+      vcs: true
+      paths:
+        - "**/__pycache__"
+        - "**/*.pyc"
+        - "Training_Essay_Data.csv"
+
+  data-download:
+    alpha: linux-box:/workspace/text-detection/data
+    beta: D:/Projects/master_diploma/text-detection-data
+    mode: one-way-safe
+    ignore:
+      vcs: true
+      paths:
+        - "**/__pycache__"
+        - "**/*.pyc"
