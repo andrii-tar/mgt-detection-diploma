@@ -15,19 +15,29 @@ sync:
         - "scripts/**/*.pyc"
         - "!.env.linux"
 
-  data-upload:
+  raw-data-upload:
     alpha: D:/Projects/master_diploma/text-detection-data/
     beta: linux-box:/workspace/text-detection/data/
     mode: one-way-safe
     ignore:
       vcs: true
       paths:
-        - "**/__pycache__"
-        - "**/*.pyc"
-        - "Training_Essay_Data.csv"
-        - "processed/**"
-        - "!processed/**/state.json"
-        - "!processed/**/similarity_state.json"
+        - "*"
+        - "!raw/kaggle_train"
+
+
+  processed-states-upload:
+    alpha: D:/Projects/master_diploma/text-detection-data/processed/
+    beta: linux-box:/workspace/text-detection/data/processed/
+    mode: one-way-safe
+    ignore:
+      vcs: true
+      paths:
+        - "**/data"
+        - "**/data/**"
+        - "**/token_similarities"
+        - "**/token_similarities/**"
+        - "**/*.parquet"
 
   data-download:
     alpha: linux-box:/workspace/text-detection/data/

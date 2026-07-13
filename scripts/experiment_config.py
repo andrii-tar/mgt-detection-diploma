@@ -26,8 +26,8 @@ DATASETS = {
     "kaggle_train": {
         "dataset_name": "kaggle_train",
         "splits": {
-            "HG": DATA_ROOT / "raw/kaggle_train_hg.csv",
-            "MG": DATA_ROOT / "raw/kaggle_train_mg.csv",
+            "HG": DATA_ROOT / "raw/kaggle_train/kaggle_train_hg.csv",
+            "MG": DATA_ROOT / "raw/kaggle_train/kaggle_train_mg.csv",
         },
     },
 }
