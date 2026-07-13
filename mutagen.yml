@@ -13,6 +13,7 @@ sync:
         - "!uv.lock"
         - "scripts/**/__pycache__"
         - "scripts/**/*.pyc"
+        - "!.env.linux"
 
   data-upload:
     alpha: D:/Projects/master_diploma/text-detection-data/
