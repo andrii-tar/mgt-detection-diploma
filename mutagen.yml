@@ -25,6 +25,9 @@ sync:
         - "**/__pycache__"
         - "**/*.pyc"
         - "Training_Essay_Data.csv"
+        - "processed/**"
+        - "!processed/**/state.json"
+        - "!processed/**/similarity_state.json"
 
   data-download:
     alpha: linux-box:/workspace/text-detection/data/
