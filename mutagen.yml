@@ -15,8 +15,8 @@ sync:
         - "scripts/**/*.pyc"
 
   data-upload:
-    alpha: D:/Projects/master_diploma/text-detection-data
-    beta: linux-box:/workspace/text-detection/data
+    alpha: D:/Projects/master_diploma/text-detection-data/
+    beta: linux-box:/workspace/text-detection/data/
     mode: one-way-safe
     ignore:
       vcs: true
@@ -26,8 +26,8 @@ sync:
         - "Training_Essay_Data.csv"
 
   data-download:
-    alpha: linux-box:/workspace/text-detection/data
-    beta: D:/Projects/master_diploma/text-detection-data
+    alpha: linux-box:/workspace/text-detection/data/
+    beta: D:/Projects/master_diploma/text-detection-data/
     mode: one-way-safe
     ignore:
       vcs: true
