@@ -34,9 +34,11 @@ sync:
     ignore:
       vcs: true
       paths:
-        - "**/token_similarities"
-        - "**/token_similarities/**"
-        - "**/*.parquet"
+        - "*"
+        - "!*/"
+        - "!**/"
+        - "!**/state.json"
+        - "!**/similarity_state.json"
 
   data-download:
     alpha: linux-box:/workspace/text-detection/data/
