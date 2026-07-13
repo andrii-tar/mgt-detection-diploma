@@ -7,3 +7,4 @@ __pycache__/
 unrelevant/
 .zed/
 mutagen.yml.lock
+.env.linux
