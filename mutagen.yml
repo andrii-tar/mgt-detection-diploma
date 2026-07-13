@@ -23,8 +23,9 @@ sync:
       vcs: true
       paths:
         - "*"
+        - "!raw"
         - "!raw/kaggle_train"
-
+        - "!raw/kaggle_train/**"
 
   processed-states-upload:
     alpha: D:/Projects/master_diploma/text-detection-data/processed/
@@ -33,8 +34,6 @@ sync:
     ignore:
       vcs: true
       paths:
-        - "**/data"
-        - "**/data/**"
         - "**/token_similarities"
         - "**/token_similarities/**"
         - "**/*.parquet"
@@ -43,8 +42,3 @@ sync:
     alpha: linux-box:/workspace/text-detection/data/
     beta: D:/Projects/master_diploma/text-detection-data/
     mode: one-way-safe
-    ignore:
-      vcs: true
-      paths:
-        - "**/__pycache__"
-        - "**/*.pyc"
