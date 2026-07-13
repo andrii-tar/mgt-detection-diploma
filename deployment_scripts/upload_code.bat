@@ -7,31 +7,38 @@ set "REMOTE_BASE=~/workspace"
 set "REMOTE_PROJECT=%REMOTE_BASE%/text-detection"
 set "SCRIPT_DIR=%~dp0"
 set "PROJECT_DIR=%SCRIPT_DIR%.."
+set "STAGE_DIR=%TEMP%\text-detection-upload-code"
 
 echo ==================================================
 echo Uploading project code to %REMOTE_HOST%:%REMOTE_PROJECT%
 echo ==================================================
 
-ssh %REMOTE_HOST% "mkdir -p %REMOTE_PROJECT%/scripts %REMOTE_PROJECT%/monitoring %REMOTE_PROJECT%/deployment_scripts"
+ssh %REMOTE_HOST% "mkdir -p %REMOTE_PROJECT%/scripts"
 if errorlevel 1 goto error
 
-scp -r "%PROJECT_DIR%\scripts" %REMOTE_HOST%:%REMOTE_PROJECT%/
+if exist "%STAGE_DIR%\" rmdir /s /q "%STAGE_DIR%"
+mkdir "%STAGE_DIR%"
+
+robocopy "%PROJECT_DIR%\scripts" "%STAGE_DIR%\scripts" /E /XD __pycache__ /XF *.pyc
+if errorlevel 8 goto error
+
+copy "%PROJECT_DIR%\pyproject.toml" "%STAGE_DIR%\" > nul
 if errorlevel 1 goto error
 
-scp -r "%PROJECT_DIR%\monitoring" %REMOTE_HOST%:%REMOTE_PROJECT%/
+copy "%PROJECT_DIR%\uv.lock" "%STAGE_DIR%\" > nul
 if errorlevel 1 goto error
 
-scp -r "%PROJECT_DIR%\deployment_scripts" %REMOTE_HOST%:%REMOTE_PROJECT%/
+scp -r "%STAGE_DIR%\*" %REMOTE_HOST%:%REMOTE_PROJECT%/
 if errorlevel 1 goto error
 
-scp "%PROJECT_DIR%\pyproject.toml" "%PROJECT_DIR%\uv.lock" "%PROJECT_DIR%\docker-compose.yml" "%PROJECT_DIR%\data_description.md" "%PROJECT_DIR%\AGENTS_DATA.md" %REMOTE_HOST%:%REMOTE_PROJECT%/
-if errorlevel 1 goto error
+if exist "%STAGE_DIR%\" rmdir /s /q "%STAGE_DIR%"
 
 echo Code upload completed.
 goto end
 
 :error
 echo [ERROR] Code upload failed.
+if exist "%STAGE_DIR%\" rmdir /s /q "%STAGE_DIR%"
 exit /b 1
 
 :end
