@@ -43,7 +43,16 @@ def dataset_sizes() -> dict[str, dict[str, int]]:
     return sizes
 
 
-def enrich_state(state: dict[str, Any], sizes: dict[str, dict[str, int]], state_path: Path) -> dict[str, Any]:
+def _state_key(state: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+    return state.get("dataset"), state.get("model"), state.get("split")
+
+
+def enrich_state(
+    state: dict[str, Any],
+    sizes: dict[str, dict[str, int]],
+    stage1_counts: dict[tuple[str | None, str | None, str | None], int],
+    state_path: Path,
+) -> dict[str, Any]:
     stage = state.get("stage") or "logprobs"
     output_dir = state_path.parent / STAGE_OUTPUTS.get(stage, "data")
     parquet_files = sorted(output_dir.glob("*.parquet")) if output_dir.exists() else []
@@ -59,13 +68,21 @@ def enrich_state(state: dict[str, Any], sizes: dict[str, dict[str, int]], state_
     if model and split:
         state["model_split"] = f"{model} / {split}"
 
-    dataset_size = sizes.get(dataset, {}).get(split)
-    if dataset_size is None:
-        return state
-
     processed_count = int(state.get("processed_count", 0))
-    state["dataset_size"] = dataset_size
-    state["processed_percent"] = processed_count / dataset_size if dataset_size else 0
+    dataset_size = sizes.get(dataset, {}).get(split)
+    if dataset_size is not None:
+        state["dataset_size"] = dataset_size
+
+    if stage == "token_similarity":
+        denominator = stage1_counts.get(_state_key(state), 0)
+        state["progress_total"] = denominator
+        state["progress_total_label"] = "stage 1 processed texts"
+    else:
+        denominator = dataset_size or 0
+        state["progress_total"] = denominator
+        state["progress_total_label"] = "dataset texts"
+
+    state["processed_percent"] = processed_count / denominator if denominator else 0
     return state
 
 
@@ -75,10 +92,21 @@ def collect_states(processed_root: Path) -> list[dict[str, Any]]:
         return states
 
     sizes = dataset_sizes()
-    state_paths = sorted(processed_root.glob("**/state.json")) + sorted(processed_root.glob("**/similarity_state.json"))
+    stage1_paths = sorted(processed_root.glob("**/state.json"))
+    stage2_paths = sorted(processed_root.glob("**/similarity_state.json"))
+    stage1_counts: dict[tuple[str | None, str | None, str | None], int] = {}
+
+    for state_path in stage1_paths:
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            stage1_counts[_state_key(state)] = int(state.get("processed_count", 0))
+        except json.JSONDecodeError as exc:
+            print(f"Skipping invalid JSON state file {state_path}: {exc}")
+
+    state_paths = stage1_paths + stage2_paths
     for state_path in state_paths:
         try:
-            states.append(enrich_state(json.loads(state_path.read_text(encoding="utf-8")), sizes, state_path))
+            states.append(enrich_state(json.loads(state_path.read_text(encoding="utf-8")), sizes, stage1_counts, state_path))
         except json.JSONDecodeError as exc:
             print(f"Skipping invalid JSON state file {state_path}: {exc}")
 

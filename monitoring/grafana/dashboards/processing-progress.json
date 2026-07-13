@@ -234,7 +234,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Processed dataset share",
+            "axisLabel": "Relative progress",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "bars",
@@ -411,7 +411,7 @@
             },
             "renameByName": {
               "model_split": "model / split",
-              "processed_percent (lastNotNull)": "processed dataset share"
+              "processed_percent (lastNotNull)": "relative progress"
             }
           }
         }
