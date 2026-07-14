@@ -36,6 +36,11 @@ def test_compute_logprob_metrics_from_token_logprobs():
     assert metrics["text_len_symbols"] == len("One two three.")
     assert metrics["text_len_words"] == 3
     assert metrics["text_len_sentences"] == 1
+    assert "dataset" not in metrics
+    assert "dataset_name" not in metrics
+    assert "model" not in metrics
+    assert "model_id" not in metrics
+    assert "experiment_name" not in metrics
 
 
 def test_compute_logprob_metrics_rejects_missing_logprobs():
