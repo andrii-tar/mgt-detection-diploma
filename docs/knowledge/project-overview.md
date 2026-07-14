@@ -32,16 +32,16 @@ Prepare Outfox ChatGPT CSV inputs:
 uv run python scripts\prepare_outfox_chatgpt.py
 ```
 
-Run stage 1 logprob processing:
+Run stage 1 logprob processing with Facebook OPT:
 
 ```powershell
-uv run python scripts\process_pipeline.py --count 10 --model opt_350m --dataset outfox_chatgpt_train --top-n 20 --inference-batch-size 1
+uv run python scripts\process_pipeline.py --count 10 --model opt_350m --dataset <dataset-alias> --top-n 20 --inference-batch-size 1
 ```
 
 Run stage 2 token similarity processing after stage 1 exists:
 
 ```powershell
-uv run python scripts\token_similarity_stage2.py --count 10 --model opt_350m --dataset outfox_chatgpt_train
+uv run python scripts\token_similarity_stage2.py --count 10 --model opt_350m --dataset <dataset-alias>
 ```
 
 Start monitoring:

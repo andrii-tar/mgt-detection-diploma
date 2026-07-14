@@ -1,6 +1,6 @@
 # Text Detection
 
-Utilities for processing Kaggle text-detection data with local Hugging Face language models.
+Utilities for processing text-detection datasets with local Hugging Face language models.
 
 ## Data Layout
 
@@ -18,12 +18,7 @@ Linux/Vast example:
 /workspace/text-detection/data
 ```
 
-Expected Kaggle split files:
-
-```text
-raw/kaggle_train/kaggle_train_hg.csv
-raw/kaggle_train/kaggle_train_mg.csv
-```
+Dataset split files are configured in `scripts/experiment_config.py`.
 
 Processed outputs are written under:
 
@@ -102,22 +97,16 @@ Do not run upload and download data syncs at the same time unless that is intent
 
 ## Processing Commands
 
-Run a small local SmolLM stage 1 test, 10 rows per split:
+Run a small local Facebook OPT stage 1 test, 10 rows per split:
 
 ```bat
-uv run python scripts\process_pipeline.py --count 10 --model smollm2_360m --dataset kaggle_train --top-n 20 --inference-batch-size 1
+uv run python scripts\process_pipeline.py --count 10 --model opt_350m --dataset <dataset-alias> --top-n 20 --inference-batch-size 1
 ```
 
-Run SmolLM stage 1 on Linux, 1000 rows per split:
+Run Facebook OPT stage 1 on Linux, 1000 rows per split:
 
 ```sh
-uv run python scripts/process_pipeline.py --count 1000 --model smollm2_360m --dataset kaggle_train --top-n 20 --inference-batch-size 4
-```
-
-Run Gemma 2 2B stage 1 on Linux, 100 rows per split:
-
-```sh
-uv run python scripts/process_pipeline.py --count 100 --model gemma_2_2b_it --dataset kaggle_train --top-n 20 --inference-batch-size 1
+uv run python scripts/process_pipeline.py --count 1000 --model opt_350m --dataset <dataset-alias> --top-n 20 --inference-batch-size 4
 ```
 
 If GPU memory is low, reduce `--inference-batch-size` to `1`.

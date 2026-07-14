@@ -48,7 +48,7 @@ The exporter preserves the last good output during transient filesystem errors a
 
 ## Dashboard Variables
 
-- `dataset`: includes `kaggle_train` and `outfox_chatgpt_train`.
+- `dataset`: dashboard dataset selector. Keep it aligned with dataset aliases that should be visible in Grafana.
 - `stage`: `logprobs` or `token_similarity`.
 - `state_files_url`: default Docker URL for Grafana.
 

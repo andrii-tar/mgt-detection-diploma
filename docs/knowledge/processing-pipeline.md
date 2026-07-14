@@ -1,6 +1,6 @@
 # Processing Pipeline
 
-Pipeline commands use dataset and model aliases from `scripts/experiment_config.py`. See `docs/knowledge/data-layout.md` for current aliases, split paths, and state file fields.
+Pipeline commands use dataset and model aliases from `scripts/experiment_config.py`. See `docs/knowledge/data-layout.md` for data layout patterns and state file fields.
 
 ## Stage 0: Dataset Preparation
 
@@ -16,10 +16,10 @@ The script reads from `raw/outfox_raw` and writes to `raw/outfox` under `TEXT_DE
 
 Stage 1 is implemented by `scripts/process_pipeline.py`. It loads a local Hugging Face causal LM, scores text rows, and writes Parquet batches under `processed/{dataset}__{model}/{split}/data`.
 
-Small local example:
+Small local example with Facebook OPT:
 
 ```powershell
-uv run python scripts\process_pipeline.py --count 10 --model opt_350m --dataset outfox_chatgpt_train --top-n 20 --inference-batch-size 1
+uv run python scripts\process_pipeline.py --count 10 --model opt_350m --dataset <dataset-alias> --top-n 20 --inference-batch-size 1
 ```
 
 Key arguments:
@@ -44,7 +44,7 @@ Stage 2 is implemented by `scripts/token_similarity_stage2.py`. It reads stage 1
 Example:
 
 ```powershell
-uv run python scripts\token_similarity_stage2.py --count 10 --model opt_350m --dataset outfox_chatgpt_train
+uv run python scripts\token_similarity_stage2.py --count 10 --model opt_350m --dataset <dataset-alias>
 ```
 
 Stage 2 requires stage 1 output at:

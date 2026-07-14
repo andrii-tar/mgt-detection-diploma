@@ -22,15 +22,15 @@ FileNotFoundError: Missing stage-1 processed directory
 
 Run stage 1 first with the same `--dataset` and `--model` values, then rerun stage 2.
 
-## Grafana Does Not Show Outfox
+## Grafana Does Not Show A Dataset
 
-Confirm the state endpoint includes outfox:
+Confirm the state endpoint includes the dataset:
 
 ```powershell
-Invoke-RestMethod http://localhost:8000/processing-states.json | Where-Object { $_.dataset -like "*outfox*" }
+Invoke-RestMethod http://localhost:8000/processing-states.json | Where-Object { $_.dataset -eq "<dataset-alias>" }
 ```
 
-If the endpoint has outfox but the dropdown does not, restart Grafana and hard-refresh the browser tab:
+If the endpoint has the dataset but the dropdown does not, update the dashboard dataset variable, restart Grafana, and hard-refresh the browser tab:
 
 ```powershell
 docker compose restart grafana

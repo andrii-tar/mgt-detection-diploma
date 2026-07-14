@@ -7,18 +7,18 @@ The dashboard expects a JSON array of state objects exported by `monitoring/scri
 ```json
 [
   {
-    "dataset": "kaggle_train",
-    "dataset_name": "kaggle_train",
-    "model": "smollm2_360m",
-    "model_id": "HuggingFaceTB/SmolLM2-360M",
-    "experiment_name": "kaggle_train__smollm2_360m",
+    "dataset": "<dataset-alias>",
+    "dataset_name": "<dataset-name>",
+    "model": "<model-alias>",
+    "model_id": "<hugging-face-model-id>",
+    "experiment_name": "<dataset-alias>__<model-alias>",
     "split": "HG",
     "stage": "logprobs",
     "last_id": 199,
     "processed_count": 200,
     "output_format": "parquet",
     "batch_count": 7,
-    "output_path": "D:/Projects/master_diploma/text-detection-data/data/processed/kaggle_train__smollm2_360m/HG/data",
+    "output_path": "D:/Projects/master_diploma/text-detection-data/processed/<dataset-alias>__<model-alias>/HG/data",
     "updated_at": "2026-07-12T12:00:00+00:00"
   }
 ]
