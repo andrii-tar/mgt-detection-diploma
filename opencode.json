@@ -45,6 +45,12 @@
     "node --check**": "allow",
 
     "doom_loop": "ask",
-    "delete": "ask"
-  }
+    "delete": "ask",
+    "skill": {
+          "*": "allow"
+        }
+  },
+  "plugin": [
+    "superpowers@git+https://github.com/obra/superpowers.git"
+  ]
 }
