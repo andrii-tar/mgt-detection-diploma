@@ -73,18 +73,6 @@ def _metrics_dir(split: str, dataset: str, model: str) -> Path:
     return _split_dir(split, dataset, model) / "metrics"
 
 
-def _metrics_batch_path(split: str, dataset: str, model: str, first_id: int, last_id: int) -> Path:
-    return _metrics_dir(split, dataset, model) / f"batch_{first_id:08d}_{last_id:08d}.parquet"
-
-
-def _metrics_batch_path(split: str, dataset: str, model: str, first_id: int, last_id: int) -> Path:
-    return _metrics_dir(split, dataset, model) / f"batch_{first_id:08d}_{last_id:08d}.parquet"
-
-
-def _metrics_batch_path(split: str, dataset: str, model: str, first_id: int, last_id: int) -> Path:
-    return _metrics_dir(split, dataset, model) / f"batch_{first_id:08d}_{last_id:08d}.parquet"
-
-
 def _metrics_state_path(split: str, dataset: str, model: str) -> Path:
     return _split_dir(split, dataset, model) / "metrics_state.json"
 
