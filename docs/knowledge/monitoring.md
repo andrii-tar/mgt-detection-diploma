@@ -1,0 +1,75 @@
+# Monitoring
+
+Monitoring is provided by Docker Compose services in `docker-compose.yml`.
+
+## Services
+
+- `grafana`: Grafana UI on port `3000`.
+- `progress-states`: Python HTTP server on port `8000` that serves aggregated processing states.
+
+Start services:
+
+```powershell
+docker compose up -d
+```
+
+Restart only the state server:
+
+```powershell
+docker compose restart progress-states
+```
+
+Recreate the state server after compose environment changes:
+
+```powershell
+docker compose up -d --force-recreate progress-states
+```
+
+## URLs
+
+Use this URL from the browser or host shell:
+
+```text
+http://localhost:8000/processing-states.json
+```
+
+Grafana uses this URL from inside the Docker network:
+
+```text
+http://progress-states:8000/processing-states.json
+```
+
+The state server is plain HTTP. Do not use HTTPS.
+
+Grafana UI:
+
+```text
+http://localhost:3000
+```
+
+Default login:
+
+```text
+admin / admin
+```
+
+## State Exporter
+
+`monitoring/scripts/export_processing_states.py` scans:
+
+```text
+$TEXT_DETECTION_DATA/processed/**/state.json
+$TEXT_DETECTION_DATA/processed/**/similarity_state.json
+```
+
+It writes one JSON array for Grafana. In Docker it refreshes every 5 seconds.
+
+The exporter preserves the last good output during transient filesystem errors and logs failures instead of killing watch mode.
+
+## Dashboard Variables
+
+- `dataset`: includes `kaggle_train` and `outfox_chatgpt_train`.
+- `stage`: `logprobs` or `token_similarity`.
+- `state_files_url`: default Docker URL for Grafana.
+
+If a new dataset is added and should be selectable in Grafana, update `monitoring/grafana/dashboards/processing-progress.json`.
