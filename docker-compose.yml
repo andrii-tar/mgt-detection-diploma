@@ -14,9 +14,11 @@ services:
   progress-states:
     image: python:3.12-slim
     container_name: text-detection-progress-states
+    restart: unless-stopped
     working_dir: /workspace
     environment:
       TEXT_DETECTION_DATA: /data
+      PYTHONUNBUFFERED: 1
     ports:
       - "8000:8000"
     volumes:

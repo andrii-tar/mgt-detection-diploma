@@ -120,6 +120,19 @@ def write_states(processed_root: Path, output: Path) -> None:
     print(f"Exported {len(states)} processing states to {output}")
 
 
+def try_write_states(processed_root: Path, output: Path) -> bool:
+    try:
+        write_states(processed_root, output)
+    except OSError as exc:
+        print(f"Failed to export processing states from {processed_root}: {exc}", flush=True)
+        return False
+    except json.JSONDecodeError as exc:
+        print(f"Failed to parse processing state JSON from {processed_root}: {exc}", flush=True)
+        return False
+
+    return True
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export processing state files into one JSON array for Grafana.")
     parser.add_argument("--processed-root", type=Path, default=Path("data/processed"))
@@ -133,9 +146,9 @@ def main() -> None:
     args = parse_args()
 
     while True:
-        write_states(args.processed_root, args.output)
+        ok = try_write_states(args.processed_root, args.output)
         if not args.watch:
-            break
+            raise SystemExit(0 if ok else 1)
         time.sleep(args.interval)
 
 

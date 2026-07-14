@@ -482,9 +482,14 @@
             "selected": true,
             "text": "kaggle_train",
             "value": "kaggle_train"
+          },
+          {
+            "selected": false,
+            "text": "outfox_chatgpt_train",
+            "value": "outfox_chatgpt_train"
           }
         ],
-        "query": "kaggle_train",
+        "query": "kaggle_train,outfox_chatgpt_train",
         "skipUrlSync": false,
         "type": "custom"
       },
