@@ -10,13 +10,7 @@ PowerShell:
 $env:TEXT_DETECTION_DATA = "D:/Projects/master_diploma/text-detection-data"
 ```
 
-Linux:
-
-```sh
-set -a
-. ./.env
-set +a
-```
+Linux setup is documented in `README.md`.
 
 ## Missing Stage 1 Processed Directory
 

@@ -1,72 +1,96 @@
 # Data Layout
 
-The data root is controlled by `TEXT_DETECTION_DATA`.
+This file describes the data layout patterns. The authoritative source for dataset aliases, model aliases, and concrete input split paths is `scripts/experiment_config.py`.
 
-Common values:
+## Data Root
+
+`TEXT_DETECTION_DATA` points to the external data root.
 
 ```text
-D:/Projects/master_diploma/text-detection-data
-/workspace/text-detection/data
+Local Windows: D:/Projects/master_diploma/text-detection-data
+Linux/Vast:    /workspace/text-detection/data
 ```
+
+Large data stays outside the repository. Do not commit raw files, processed Parquet files, model weights, or generated monitoring output.
+
+## `scripts/experiment_config.py`
+
+This script defines:
+
+- `DATA_ROOT`: `Path(os.environ["TEXT_DETECTION_DATA"])`.
+- `MODEL_IDS`: model alias to Hugging Face model id mapping.
+- `DATASETS`: dataset alias to dataset name and split CSV paths.
+- `resolve_model_id(model)`: returns a registered model id or the raw value.
+- `resolve_dataset_name(dataset)`: returns configured `dataset_name`.
+- `resolve_dataset_splits(dataset)`: returns split labels and CSV paths.
+
+Inspect this file before changing dataset aliases, model aliases, split names, or input paths.
+
+Use `--model <alias>` for models registered in `MODEL_IDS`. Use `--model-id <hugging-face-id>` only for one-off tests of models not yet registered there.
 
 ## Raw Inputs
 
-Kaggle train inputs:
+Raw split CSV paths are configured in `DATASETS` inside `scripts/experiment_config.py`. Each configured input CSV must include stable `id` and `text` columns.
 
-```text
-raw/kaggle_train/kaggle_train_hg.csv
-raw/kaggle_train/kaggle_train_mg.csv
-```
+Current datasets use `HG` and `MG` split labels. Older notes may use `HW` for human-written data; current code and generated files use `HG`.
 
-Outfox prepared inputs:
-
-```text
-raw/outfox/outfox_chatgpt_train_HG.csv
-raw/outfox/outfox_chatgpt_train_MG.csv
-raw/outfox/outfox_chatgpt_valid_HG.csv
-raw/outfox/outfox_chatgpt_valid_MG.csv
-raw/outfox/outfox_chatgpt_test_HG.csv
-raw/outfox/outfox_chatgpt_test_MG.csv
-raw/outfox/outfox_chatgpt_all_HG.csv
-raw/outfox/outfox_chatgpt_all_MG.csv
-```
-
-Outfox raw pickle inputs are expected under:
+Outfox raw pickle inputs follow this pattern before conversion:
 
 ```text
 raw/outfox_raw/common/<split>/<split>_humans.pkl
 raw/outfox_raw/chatgpt/<split>/<split>_lms.pkl
 ```
 
+Prepare Outfox CSV files with `scripts/prepare_outfox_chatgpt.py`.
+
 ## Processed Outputs
 
-Stage 1 writes logprob batches:
+Stage 1 logprob outputs:
 
 ```text
 processed/{dataset}__{model}/{split}/data/*.parquet
 processed/{dataset}__{model}/{split}/state.json
 ```
 
-Stage 2 writes token similarity batches:
+Stage 2 token similarity outputs:
 
 ```text
 processed/{dataset}__{model}/{split}/token_similarities/*.parquet
 processed/{dataset}__{model}/{split}/similarity_state.json
 ```
 
-Example:
-
-```text
-processed/outfox_chatgpt_train__opt_350m/HG/data/batch_00000000_00000009.parquet
-processed/outfox_chatgpt_train__opt_350m/HG/state.json
-processed/outfox_chatgpt_train__opt_350m/HG/token_similarities/batch_00000000_00000009.parquet
-processed/outfox_chatgpt_train__opt_350m/HG/similarity_state.json
-```
-
 ## State Files
 
-`state.json` tracks stage 1 progress. `similarity_state.json` tracks stage 2 progress. Both include dataset, model, split, `last_id`, `processed_count`, and `updated_at` fields.
+`state.json` tracks stage 1 progress. `similarity_state.json` tracks stage 2 progress.
 
-## Legacy Note
+Both state files include:
 
-Older notes may use `HW` for human-written data. Current code and generated Outfox files use `HG`.
+```text
+dataset
+dataset_name
+model
+model_id
+experiment_name
+experiment_params
+split
+last_id
+processed_count
+updated_at
+```
+
+Stage 2 states also include:
+
+```text
+stage = token_similarity
+similarity_method = input_embedding_cosine
+```
+
+## Change Checklist
+
+When adding or renaming datasets, models, stages, or state fields:
+
+- Update `scripts/experiment_config.py` first.
+- Keep input CSVs with stable `id` and `text` columns.
+- Update command examples if aliases changed.
+- Update monitoring dashboard variables and export logic if Grafana should display the new values.
+- Add tests for data imports, processing behavior, public interfaces, monitoring/export contracts, or changes that could silently affect experiment outputs.

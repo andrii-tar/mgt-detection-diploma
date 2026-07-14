@@ -7,6 +7,14 @@ Monitoring is provided by Docker Compose services in `docker-compose.yml`.
 - `grafana`: Grafana UI on port `3000`.
 - `progress-states`: Python HTTP server on port `8000` that serves aggregated processing states.
 
+Core URLs:
+
+- Browser or host shell: `http://localhost:8000/processing-states.json`.
+- Grafana inside Docker: `http://progress-states:8000/processing-states.json`.
+- Grafana UI: `http://localhost:3000`.
+
+The state server is plain HTTP. Do not use HTTPS.
+
 Start services:
 
 ```powershell
@@ -23,34 +31,6 @@ Recreate the state server after compose environment changes:
 
 ```powershell
 docker compose up -d --force-recreate progress-states
-```
-
-## URLs
-
-Use this URL from the browser or host shell:
-
-```text
-http://localhost:8000/processing-states.json
-```
-
-Grafana uses this URL from inside the Docker network:
-
-```text
-http://progress-states:8000/processing-states.json
-```
-
-The state server is plain HTTP. Do not use HTTPS.
-
-Grafana UI:
-
-```text
-http://localhost:3000
-```
-
-Default login:
-
-```text
-admin / admin
 ```
 
 ## State Exporter
@@ -73,3 +53,5 @@ The exporter preserves the last good output during transient filesystem errors a
 - `state_files_url`: default Docker URL for Grafana.
 
 If a new dataset is added and should be selectable in Grafana, update `monitoring/grafana/dashboards/processing-progress.json`.
+
+Detailed Grafana setup lives in `monitoring/grafana/README.md`.

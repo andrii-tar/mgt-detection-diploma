@@ -103,11 +103,6 @@ def compute_logprob_metrics(row: dict[str, Any]) -> dict[str, Any]:
     text = row.get("text") or ""
     metrics = {
         "id": int(row["id"]),
-        "dataset": row.get("dataset"),
-        "dataset_name": row.get("dataset_name"),
-        "model": row.get("model"),
-        "model_id": row.get("model_id"),
-        "experiment_name": row.get("experiment_name"),
         "split": row.get("split"),
         "perplexity": math.exp(-mean),
         "prompt_mu_score": mean,

@@ -105,19 +105,19 @@ Do not run upload and download data syncs at the same time unless that is intent
 Run a small local SmolLM stage 1 test, 10 rows per split:
 
 ```bat
-uv run python scripts\kaggle_process_pipeline.py --count 10 --model smollm2_360m --dataset kaggle_train --top-n 20 --inference-batch-size 1
+uv run python scripts\process_pipeline.py --count 10 --model smollm2_360m --dataset kaggle_train --top-n 20 --inference-batch-size 1
 ```
 
 Run SmolLM stage 1 on Linux, 1000 rows per split:
 
 ```sh
-uv run python scripts/kaggle_process_pipeline.py --count 1000 --model smollm2_360m --dataset kaggle_train --top-n 20 --inference-batch-size 4
+uv run python scripts/process_pipeline.py --count 1000 --model smollm2_360m --dataset kaggle_train --top-n 20 --inference-batch-size 4
 ```
 
 Run Gemma 2 2B stage 1 on Linux, 100 rows per split:
 
 ```sh
-uv run python scripts/kaggle_process_pipeline.py --count 100 --model gemma_2_2b_it --dataset kaggle_train --top-n 20 --inference-batch-size 1
+uv run python scripts/process_pipeline.py --count 100 --model gemma_2_2b_it --dataset kaggle_train --top-n 20 --inference-batch-size 1
 ```
 
 If GPU memory is low, reduce `--inference-batch-size` to `1`.

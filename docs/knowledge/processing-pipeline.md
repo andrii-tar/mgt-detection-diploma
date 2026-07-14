@@ -1,5 +1,7 @@
 # Processing Pipeline
 
+Pipeline commands use dataset and model aliases from `scripts/experiment_config.py`. See `docs/knowledge/data-layout.md` for current aliases, split paths, and state file fields.
+
 ## Stage 0: Dataset Preparation
 
 Outfox ChatGPT pickle files are converted to CSV files by:
@@ -12,15 +14,15 @@ The script reads from `raw/outfox_raw` and writes to `raw/outfox` under `TEXT_DE
 
 ## Stage 1: Token Logprob Processing
 
-Stage 1 is implemented by `scripts/kaggle_process_pipeline.py`. It loads a local Hugging Face causal LM, scores text rows, and writes Parquet batches under `processed/{dataset}__{model}/{split}/data`.
+Stage 1 is implemented by `scripts/process_pipeline.py`. It loads a local Hugging Face causal LM, scores text rows, and writes Parquet batches under `processed/{dataset}__{model}/{split}/data`.
 
 Small local example:
 
 ```powershell
-uv run python scripts\kaggle_process_pipeline.py --count 10 --model opt_350m --dataset outfox_chatgpt_train --top-n 20 --inference-batch-size 1
+uv run python scripts\process_pipeline.py --count 10 --model opt_350m --dataset outfox_chatgpt_train --top-n 20 --inference-batch-size 1
 ```
 
-Important arguments:
+Key arguments:
 
 - `--count`: number of new rows to process per split.
 - `--dataset`: dataset alias from `scripts/experiment_config.py`.
@@ -29,9 +31,9 @@ Important arguments:
 - `--top-n`: number of top alternatives per token.
 - `--inference-batch-size`: number of texts per forward pass.
 
-Resume behavior:
+Resume behavior for stage 1 and stage 2:
 
-- Reads `state.json` when present.
+- Reads `state.json` or `similarity_state.json` when present.
 - Continues after `last_id`.
 - Falls back to existing Parquet max `id` if the state file is missing.
 
