@@ -30,6 +30,34 @@ DATASETS = {
             "MG": DATA_ROOT / "raw/kaggle_train/kaggle_train_mg.csv",
         },
     },
+    "outfox_chatgpt_train": {
+        "dataset_name": "outfox_chatgpt_train",
+        "splits": {
+            "HG": DATA_ROOT / "raw/outfox/outfox_chatgpt_train_HG.csv",
+            "MG": DATA_ROOT / "raw/outfox/outfox_chatgpt_train_MG.csv",
+        },
+    },
+    "outfox_chatgpt_valid": {
+        "dataset_name": "outfox_chatgpt_valid",
+        "splits": {
+            "HG": DATA_ROOT / "raw/outfox/outfox_chatgpt_valid_HG.csv",
+            "MG": DATA_ROOT / "raw/outfox/outfox_chatgpt_valid_MG.csv",
+        },
+    },
+    "outfox_chatgpt_test": {
+        "dataset_name": "outfox_chatgpt_test",
+        "splits": {
+            "HG": DATA_ROOT / "raw/outfox/outfox_chatgpt_test_HG.csv",
+            "MG": DATA_ROOT / "raw/outfox/outfox_chatgpt_test_MG.csv",
+        },
+    },
+    "outfox_chatgpt_all": {
+        "dataset_name": "outfox_chatgpt_all",
+        "splits": {
+            "HG": DATA_ROOT / "raw/outfox/outfox_chatgpt_all_HG.csv",
+            "MG": DATA_ROOT / "raw/outfox/outfox_chatgpt_all_MG.csv",
+        },
+    },
 }
 
 
