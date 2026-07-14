@@ -3,7 +3,7 @@ import math
 import pandas as pd
 import pytest
 
-from scripts.logprob_metrics import compute_logprob_metrics, recreate_output, iter_unprocessed_rows
+from scripts.logprob_metrics import compute_logprob_metrics, recreate_output, iter_unprocessed_rows, write_metrics_files
 
 
 def test_compute_logprob_metrics_from_token_logprobs():
@@ -70,3 +70,19 @@ def test_recreate_output_removes_metrics_dir_and_state(tmp_path):
 
     assert not metrics_dir.exists()
     assert not state_path.exists()
+
+
+def test_write_metrics_files_creates_combined_parquet_and_csv(tmp_path):
+    rows = [
+        {"id": 2, "prompt_mu_score": -2.0, "split": "HG"},
+        {"id": 1, "prompt_mu_score": -1.0, "split": "HG"},
+    ]
+
+    write_metrics_files(tmp_path, rows)
+
+    parquet_path = tmp_path / "metrics.parquet"
+    csv_path = tmp_path / "metrics.csv"
+    assert parquet_path.exists()
+    assert csv_path.exists()
+    assert pd.read_parquet(parquet_path)["id"].tolist() == [1, 2]
+    assert pd.read_csv(csv_path)["id"].tolist() == [1, 2]

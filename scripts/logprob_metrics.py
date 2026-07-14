@@ -12,7 +12,6 @@ from typing import Any, Iterable
 import pandas as pd
 
 
-BATCH_SIZE = 500
 DATA_ROOT: Path | None = None
 DATASETS: dict[str, Any] = {}
 MODEL_IDS: dict[str, str] = {}
@@ -72,6 +71,14 @@ def _data_dir(split: str, dataset: str, model: str) -> Path:
 
 def _metrics_dir(split: str, dataset: str, model: str) -> Path:
     return _split_dir(split, dataset, model) / "metrics"
+
+
+def _metrics_batch_path(split: str, dataset: str, model: str, first_id: int, last_id: int) -> Path:
+    return _metrics_dir(split, dataset, model) / f"batch_{first_id:08d}_{last_id:08d}.parquet"
+
+
+def _metrics_batch_path(split: str, dataset: str, model: str, first_id: int, last_id: int) -> Path:
+    return _metrics_dir(split, dataset, model) / f"batch_{first_id:08d}_{last_id:08d}.parquet"
 
 
 def _metrics_batch_path(split: str, dataset: str, model: str, first_id: int, last_id: int) -> Path:
@@ -168,12 +175,11 @@ def recreate_output(split_dir: Path) -> None:
         state_path.unlink()
 
 
-def _write_parquet_batches(split: str, dataset: str, model: str, rows: list[dict[str, Any]]) -> None:
-    for start in range(0, len(rows), BATCH_SIZE):
-        batch = rows[start : start + BATCH_SIZE]
-        path = _metrics_batch_path(split, dataset, model, int(batch[0]["id"]), int(batch[-1]["id"]))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(batch).to_parquet(path, compression="zstd", index=False)
+def write_metrics_files(metrics_dir: Path, rows: list[dict[str, Any]]) -> None:
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    data_frame = pd.DataFrame(rows).sort_values("id").reset_index(drop=True)
+    data_frame.to_parquet(metrics_dir / "metrics.parquet", compression="zstd", index=False)
+    data_frame.to_csv(metrics_dir / "metrics.csv", index=False)
 
 
 def _write_state(split: str, dataset: str, dataset_name: str, model: str, model_id: str, last_id: int, count: int) -> None:
@@ -209,7 +215,7 @@ def _process_split(split: str, count: int | None, dataset: str, dataset_name: st
         return
 
     records = [compute_logprob_metrics(row) for row in rows]
-    _write_parquet_batches(split, dataset, model_name, records)
+    write_metrics_files(_metrics_dir(split, dataset, model_name), records)
     _write_state(split, dataset, dataset_name, model_name, model_id, int(records[-1]["id"]), len(records))
     print(f"{split}: wrote {len(records)} metric rows, experiment={_experiment_name(dataset, model_name)}, last_id={records[-1]['id']}")
 
