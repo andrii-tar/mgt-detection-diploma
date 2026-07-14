@@ -11,5 +11,13 @@ dependencies = [
     "tqdm>=4.66.5",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
 [[tool.uv.index]]
 url = "https://download.pytorch.org/whl/cu124"
