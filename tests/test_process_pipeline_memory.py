@@ -22,6 +22,7 @@ def test_process_split_scores_and_writes_small_chunks(tmp_path, monkeypatch):
     monkeypatch.setattr(process_pipeline, "DATA_ROOT", data_root)
 
     scored_chunk_sizes: list[int] = []
+    progress_descriptions: list[str | None] = []
 
     def fake_score_texts_with_model(
         texts: list[str],
@@ -34,6 +35,7 @@ def test_process_split_scores_and_writes_small_chunks(tmp_path, monkeypatch):
         progress_desc: str | None,
     ) -> list[dict[str, Any]]:
         scored_chunk_sizes.append(len(texts))
+        progress_descriptions.append(progress_desc)
         return [{"text": text, "tokens": []} for text in texts]
 
     monkeypatch.setattr(process_pipeline, "score_texts_with_model", fake_score_texts_with_model)
@@ -55,6 +57,7 @@ def test_process_split_scores_and_writes_small_chunks(tmp_path, monkeypatch):
     )
 
     assert scored_chunk_sizes == [25, 25, 15]
+    assert progress_descriptions == [None, None, None]
 
     output_dir = data_root / "processed" / "kaggle_train__gemma_2_2b_it" / "HG" / "data"
     assert sorted(path.name for path in output_dir.glob("*.parquet")) == [
