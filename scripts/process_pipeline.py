@@ -102,8 +102,10 @@ def _write_parquet_batch(split: str, dataset: str, model: str, rows: list[dict[s
     first_id = int(rows[0]["id"])
     last_id = int(rows[-1]["id"])
     path = _data_batch_path(split, dataset, model, first_id, last_id)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
     path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(rows).to_parquet(path, compression="zstd", index=False)
+    pd.DataFrame(rows).to_parquet(temp_path, compression="zstd", index=False)
+    temp_path.replace(path)
 
 
 def _write_parquet_batches(split: str, dataset: str, model: str, rows: list[dict[str, Any]]) -> None:
@@ -141,52 +143,65 @@ def _process_split(
     model_id: str,
     top_n: int,
     inference_batch_size: int,
+    write_batch_size: int,
 ) -> None:
     frame = _load_split_frame(split, split_path)
     last_id = _read_last_processed_id(split, dataset, model_name)
-    batch = _select_next_rows(frame, last_id, count)
+    remaining_count = count
+    total_processed = 0
 
-    if batch.empty:
-        print(f"{split}: no unprocessed rows left after id {last_id}")
-        return
+    while remaining_count > 0:
+        batch = _select_next_rows(frame, last_id, min(write_batch_size, remaining_count))
 
-    texts = batch["text"].tolist()
-    scored = score_texts_with_model(
-        texts,
-        tokenizer,
-        model,
-        device,
-        top_n=top_n,
-        inference_batch_size=inference_batch_size,
-        progress_desc=f"{split}: scoring",
-    )
+        if batch.empty:
+            if total_processed == 0:
+                print(f"{split}: no unprocessed rows left after id {last_id}")
+            break
 
-    records: list[dict[str, Any]] = []
-    rows = batch.to_dict(orient="records")
-    for row, scored_row in zip(rows, scored):
-        records.append(
-            {
-                "id": int(row["id"]),
-                "dataset": dataset,
-                "dataset_name": dataset_name,
-                "model": model_name,
-                "model_id": model_id,
-                "experiment_name": _experiment_name(dataset, model_name),
-                "experiment_params": _experiment_params(dataset, dataset_name, model_name, model_id),
-                "split": split,
-                "text": row["text"],
-                "tokens": scored_row["tokens"],
-                "processed_at": _utc_now(),
-            }
+        texts = batch["text"].tolist()
+        scored = score_texts_with_model(
+            texts,
+            tokenizer,
+            model,
+            device,
+            top_n=top_n,
+            inference_batch_size=inference_batch_size,
+            progress_desc=f"{split}: scoring",
         )
 
-    _write_parquet_batches(split, dataset, model_name, records)
-    _write_state(split, dataset, dataset_name, model_name, model_id, int(batch["id"].iloc[-1]), len(records))
+        records: list[dict[str, Any]] = []
+        rows = batch.to_dict(orient="records")
+        for row, scored_row in zip(rows, scored):
+            records.append(
+                {
+                    "id": int(row["id"]),
+                    "dataset": dataset,
+                    "dataset_name": dataset_name,
+                    "model": model_name,
+                    "model_id": model_id,
+                    "experiment_name": _experiment_name(dataset, model_name),
+                    "experiment_params": _experiment_params(dataset, dataset_name, model_name, model_id),
+                    "split": split,
+                    "text": row["text"],
+                    "tokens": scored_row["tokens"],
+                    "processed_at": _utc_now(),
+                }
+            )
 
-    print(
-        f"{split}: processed {len(records)} rows, "
-        f"experiment={_experiment_name(dataset, model_name)}, last_id={int(batch['id'].iloc[-1])}"
-    )
+        _write_parquet_batch(split, dataset, model_name, records)
+        processed_count = len(records)
+        last_id = int(batch["id"].iloc[-1])
+        total_processed += processed_count
+        remaining_count -= processed_count
+        _write_state(split, dataset, dataset_name, model_name, model_id, last_id, processed_count)
+
+        print(
+            f"{split}: processed chunk {processed_count} rows, "
+            f"experiment={_experiment_name(dataset, model_name)}, last_id={last_id}"
+        )
+
+    if total_processed:
+        print(f"{split}: processed {total_processed} rows, experiment={_experiment_name(dataset, model_name)}, last_id={last_id}")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -207,11 +222,20 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--model-id", default=None, help="Raw Hugging Face model id. Overrides --model.")
     parser.add_argument("--top-n", type=int, default=20, help="Number of top alternatives per token.")
     parser.add_argument("--inference-batch-size", type=int, default=4, help="Number of texts per model forward pass.")
+    parser.add_argument(
+        "--write-batch-size",
+        type=int,
+        default=BATCH_SIZE,
+        help="Number of processed texts to score and write per Parquet file.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
+    if args.write_batch_size < 1:
+        raise ValueError("--write-batch-size must be at least 1")
+
     count = args.count if args.count is not None else int(input("How many texts per split should be processed? "))
     dataset_name = resolve_dataset_name(args.dataset)
     dataset_splits = resolve_dataset_splits(args.dataset)
@@ -234,6 +258,7 @@ def main() -> None:
             model_id,
             args.top_n,
             args.inference_batch_size,
+            args.write_batch_size,
         )
 
 
