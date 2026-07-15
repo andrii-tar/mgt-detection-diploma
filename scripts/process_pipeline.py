@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from tqdm import tqdm
 
 from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
 from openai_logprobs import load_local_model, score_texts_with_model
@@ -150,55 +151,52 @@ def _process_split(
     remaining_count = count
     total_processed = 0
 
-    while remaining_count > 0:
-        batch = _select_next_rows(frame, last_id, min(write_batch_size, remaining_count))
+    with tqdm(total=count, desc=f"{split}: processing", unit="text") as progress:
+        while remaining_count > 0:
+            batch = _select_next_rows(frame, last_id, min(write_batch_size, remaining_count))
 
-        if batch.empty:
-            if total_processed == 0:
-                print(f"{split}: no unprocessed rows left after id {last_id}")
-            break
+            if batch.empty:
+                if total_processed == 0:
+                    print(f"{split}: no unprocessed rows left after id {last_id}")
+                break
 
-        texts = batch["text"].tolist()
-        scored = score_texts_with_model(
-            texts,
-            tokenizer,
-            model,
-            device,
-            top_n=top_n,
-            inference_batch_size=inference_batch_size,
-            progress_desc=f"{split}: scoring",
-        )
-
-        records: list[dict[str, Any]] = []
-        rows = batch.to_dict(orient="records")
-        for row, scored_row in zip(rows, scored):
-            records.append(
-                {
-                    "id": int(row["id"]),
-                    "dataset": dataset,
-                    "dataset_name": dataset_name,
-                    "model": model_name,
-                    "model_id": model_id,
-                    "experiment_name": _experiment_name(dataset, model_name),
-                    "experiment_params": _experiment_params(dataset, dataset_name, model_name, model_id),
-                    "split": split,
-                    "text": row["text"],
-                    "tokens": scored_row["tokens"],
-                    "processed_at": _utc_now(),
-                }
+            texts = batch["text"].tolist()
+            scored = score_texts_with_model(
+                texts,
+                tokenizer,
+                model,
+                device,
+                top_n=top_n,
+                inference_batch_size=inference_batch_size,
+                progress_desc=None,
             )
 
-        _write_parquet_batch(split, dataset, model_name, records)
-        processed_count = len(records)
-        last_id = int(batch["id"].iloc[-1])
-        total_processed += processed_count
-        remaining_count -= processed_count
-        _write_state(split, dataset, dataset_name, model_name, model_id, last_id, processed_count)
+            records: list[dict[str, Any]] = []
+            rows = batch.to_dict(orient="records")
+            for row, scored_row in zip(rows, scored):
+                records.append(
+                    {
+                        "id": int(row["id"]),
+                        "dataset": dataset,
+                        "dataset_name": dataset_name,
+                        "model": model_name,
+                        "model_id": model_id,
+                        "experiment_name": _experiment_name(dataset, model_name),
+                        "experiment_params": _experiment_params(dataset, dataset_name, model_name, model_id),
+                        "split": split,
+                        "text": row["text"],
+                        "tokens": scored_row["tokens"],
+                        "processed_at": _utc_now(),
+                    }
+                )
 
-        print(
-            f"{split}: processed chunk {processed_count} rows, "
-            f"experiment={_experiment_name(dataset, model_name)}, last_id={last_id}"
-        )
+            _write_parquet_batch(split, dataset, model_name, records)
+            processed_count = len(records)
+            last_id = int(batch["id"].iloc[-1])
+            total_processed += processed_count
+            remaining_count -= processed_count
+            _write_state(split, dataset, dataset_name, model_name, model_id, last_id, processed_count)
+            progress.update(processed_count)
 
     if total_processed:
         print(f"{split}: processed {total_processed} rows, experiment={_experiment_name(dataset, model_name)}, last_id={last_id}")
