@@ -18,7 +18,11 @@ MODEL_IDS = {
     "gemma_2_2b_it": "google/gemma-2-2b-it",
     "gemma_3_1b_it": "google/gemma-3-1b-it",
     "gpt2": "openai-community/gpt2",
+    "llama_3_2_1b": "meta-llama/Llama-3.2-1B",
+    "llama_3_2_3b": "meta-llama/Llama-3.2-3B",
     "opt_350m": "facebook/opt-350m",
+    "phi_4_mini_instruct": "microsoft/Phi-4-mini-instruct",
+    "phi_4_mini_reasoning": "microsoft/Phi-4-mini-reasoning",
     "smollm2_360m": "HuggingFaceTB/SmolLM2-360M-Instruct",
 }
 
