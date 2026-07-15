@@ -26,6 +26,8 @@ sync:
         - "!raw"
         - "!raw/kaggle_train"
         - "!raw/kaggle_train/**"
+        - "!raw/outfox_chatgpt_train"
+        - "!raw/outfox_chatgpt_train/**"
 
   processed-states-upload:
     alpha: D:/Projects/master_diploma/text-detection-data/processed/
