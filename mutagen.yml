@@ -44,3 +44,10 @@ sync:
     alpha: linux-box:/workspace/text-detection/data/
     beta: D:/Projects/master_diploma/text-detection-data/
     mode: one-way-safe
+    ignore:
+      vcs: true
+      paths:
+        - "*.tmp"
+        - "**/*.tmp"
+        - "*.parquet.tmp"
+        - "**/*.parquet.tmp"
