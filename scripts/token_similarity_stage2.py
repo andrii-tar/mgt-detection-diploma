@@ -205,6 +205,7 @@ def _process_split(
     model_id: str,
 ) -> None:
     last_id = _read_last_processed_id(split, dataset, model_name)
+    print(f"{split}: reading stage-1 rows after id {last_id}", flush=True)
     rows = list(_iter_unprocessed_rows(_data_dir(split, dataset, model_name), last_id, count))
 
     if not rows:
@@ -260,7 +261,9 @@ def run_stage_2(dataset: str, model_name: str, model_id: str, count: int) -> Non
     dataset_name = resolve_dataset_name(dataset)
     dataset_splits = resolve_dataset_splits(dataset)
 
+    print(f"Loading model for stage 2: {model_id}", flush=True)
     _, model, _ = load_local_model(model_id)
+    print("Normalizing input embeddings", flush=True)
     normalized_embeddings = F.normalize(model.get_input_embeddings().weight.detach(), dim=-1)
 
     for split in dataset_splits:
