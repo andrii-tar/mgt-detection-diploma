@@ -485,11 +485,26 @@
           },
           {
             "selected": false,
+            "text": "outfox_chatgpt_all",
+            "value": "outfox_chatgpt_all"
+          },
+          {
+            "selected": false,
+            "text": "outfox_chatgpt_test",
+            "value": "outfox_chatgpt_test"
+          },
+          {
+            "selected": false,
             "text": "outfox_chatgpt_train",
             "value": "outfox_chatgpt_train"
+          },
+          {
+            "selected": false,
+            "text": "outfox_chatgpt_valid",
+            "value": "outfox_chatgpt_valid"
           }
         ],
-        "query": "kaggle_train,outfox_chatgpt_train",
+        "query": "kaggle_train,outfox_chatgpt_all,outfox_chatgpt_test,outfox_chatgpt_train,outfox_chatgpt_valid",
         "skipUrlSync": false,
         "type": "custom"
       },

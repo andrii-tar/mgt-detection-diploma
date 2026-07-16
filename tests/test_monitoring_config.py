@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 import json
+import os
 from pathlib import Path
+
+os.environ.setdefault("TEXT_DETECTION_DATA", str(Path(__file__).resolve().parents[1]))
+
+from scripts.experiment_config import DATASETS
 
 
 class MonitoringConfigTest(unittest.TestCase):
@@ -16,14 +21,13 @@ class MonitoringConfigTest(unittest.TestCase):
         self.assertNotIn("https://progress-states:8000/processing-states.json", dashboard)
         self.assertIn("http://localhost:8000/processing-states.json", readme)
 
-    def test_dashboard_dataset_variable_includes_outfox(self) -> None:
+    def test_dashboard_dataset_variable_includes_configured_datasets(self) -> None:
         dashboard = json.loads(Path("monitoring/grafana/dashboards/processing-progress.json").read_text(encoding="utf-8"))
         variables = {variable["name"]: variable for variable in dashboard["templating"]["list"]}
         dataset = variables["dataset"]
 
         self.assertEqual(dataset["type"], "custom")
-        self.assertIn("kaggle_train", dataset["query"])
-        self.assertIn("outfox_chatgpt_train", dataset["query"])
+        self.assertEqual(dataset["query"], ",".join(sorted(DATASETS)))
 
 
 if __name__ == "__main__":
