@@ -13,6 +13,7 @@ from tqdm import tqdm
 from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
 from interactive_cli import input_int, select_key
 from openai_logprobs import load_local_model, score_texts_with_model
+from token_similarity_stage2 import run_stage_2
 
 BATCH_SIZE = 30
 DEFAULT_COUNT = 100
@@ -231,6 +232,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Number of processed texts to score and write per Parquet file.",
     )
+    parser.add_argument(
+        "--no-stage-2",
+        action="store_false",
+        dest="run_stage_2",
+        help="Only run stage 1 logprob processing; skip token similarity stage 2.",
+    )
+    parser.set_defaults(run_stage_2=True)
     return parser.parse_args(argv)
 
 
@@ -253,8 +261,8 @@ def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
     return args
 
 
-def main() -> None:
-    args = _resolve_args(_parse_args())
+def main(args: argparse.Namespace | None = None) -> None:
+    args = _resolve_args(_parse_args() if args is None else args)
     if args.write_batch_size < 1:
         raise ValueError("--write-batch-size must be at least 1")
 
@@ -282,6 +290,9 @@ def main() -> None:
             args.inference_batch_size,
             args.write_batch_size,
         )
+
+    if args.run_stage_2:
+        run_stage_2(dataset=args.dataset, model_name=model_name, model_id=model_id, count=count*2)
 
 
 if __name__ == "__main__":

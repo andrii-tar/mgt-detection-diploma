@@ -256,19 +256,23 @@ def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
     return args
 
 
-def main() -> None:
-    args = _resolve_args(_parse_args())
-    count = args.count
-    dataset_name = resolve_dataset_name(args.dataset)
-    dataset_splits = resolve_dataset_splits(args.dataset)
-    model_id = args.model_id if args.model_id is not None else resolve_model_id(args.model)
-    model_name = args.model if args.model_id is None else args.model_id
+def run_stage_2(dataset: str, model_name: str, model_id: str, count: int) -> None:
+    dataset_name = resolve_dataset_name(dataset)
+    dataset_splits = resolve_dataset_splits(dataset)
 
     _, model, _ = load_local_model(model_id)
     normalized_embeddings = F.normalize(model.get_input_embeddings().weight.detach(), dim=-1)
 
     for split in dataset_splits:
-        _process_split(split, count, normalized_embeddings, args.dataset, dataset_name, model_name, model_id)
+        _process_split(split, count, normalized_embeddings, dataset, dataset_name, model_name, model_id)
+
+
+def main() -> None:
+    args = _resolve_args(_parse_args())
+    count = args.count
+    model_id = args.model_id if args.model_id is not None else resolve_model_id(args.model)
+    model_name = args.model if args.model_id is None else args.model_id
+    run_stage_2(args.dataset, model_name, model_id, count)
 
 
 if __name__ == "__main__":

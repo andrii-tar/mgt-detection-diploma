@@ -48,6 +48,64 @@ def test_process_pipeline_keeps_explicit_args():
     assert resolved.count == 7
     assert resolved.inference_batch_size == 3
     assert resolved.write_batch_size == 5
+    assert resolved.run_stage_2 is True
+
+
+def test_process_pipeline_can_disable_stage_2():
+    args = process_pipeline._parse_args(
+        [
+            "--dataset",
+            "kaggle_train",
+            "--model",
+            "opt_350m",
+            "--count",
+            "7",
+            "--inference-batch-size",
+            "3",
+            "--write-batch-size",
+            "5",
+            "--no-stage-2",
+        ]
+    )
+
+    resolved = process_pipeline._resolve_args(args)
+
+    assert resolved.run_stage_2 is False
+
+
+def test_process_pipeline_runs_stage_2_after_stage_1(monkeypatch):
+    args = process_pipeline._parse_args(
+        [
+            "--dataset",
+            "kaggle_train",
+            "--model",
+            "opt_350m",
+            "--count",
+            "7",
+            "--inference-batch-size",
+            "3",
+            "--write-batch-size",
+            "5",
+        ]
+    )
+
+    calls = []
+    monkeypatch.setattr(process_pipeline, "load_local_model", lambda model_id: ("tokenizer", "model", "device"))
+    monkeypatch.setattr(process_pipeline, "_process_split", lambda *args: calls.append(("stage1", args[0])))
+    monkeypatch.setattr(process_pipeline, "run_stage_2", lambda **kwargs: calls.append(("stage2", kwargs)))
+
+    process_pipeline.main(args)
+
+    assert calls[:2] == [("stage1", "HG"), ("stage1", "MG")]
+    assert calls[2] == (
+        "stage2",
+        {
+            "dataset": "kaggle_train",
+            "model_name": "opt_350m",
+            "model_id": "facebook/opt-350m",
+            "count": 7,
+        },
+    )
 
 
 def test_similarity_stage2_resolves_missing_args_interactively(monkeypatch):
