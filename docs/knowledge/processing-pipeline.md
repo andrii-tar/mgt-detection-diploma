@@ -7,7 +7,7 @@ Pipeline commands use dataset and model aliases from `scripts/experiment_config.
 Outfox ChatGPT pickle files are converted to CSV files by:
 
 ```powershell
-uv run python scripts\prepare_outfox_chatgpt.py
+uv run python scripts\extract_data\prepare_outfox_chatgpt.py
 ```
 
 The script reads from `raw/outfox_raw` and writes to `raw/outfox` under `TEXT_DETECTION_DATA` by default.

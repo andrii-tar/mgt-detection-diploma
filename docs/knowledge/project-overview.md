@@ -29,7 +29,7 @@ uv run python -m unittest discover -s tests -v
 Prepare Outfox ChatGPT CSV inputs:
 
 ```powershell
-uv run python scripts\prepare_outfox_chatgpt.py
+uv run python scripts\extract_data\prepare_outfox_chatgpt.py
 ```
 
 Run stage 1 logprob processing with Facebook OPT:
@@ -53,7 +53,7 @@ docker compose up -d
 ## Code Map
 
 - `scripts/experiment_config.py`: source of truth for model aliases, dataset aliases, and input split paths.
-- `scripts/prepare_outfox_chatgpt.py`: converts Outfox pickle files into project CSV split files.
+- `scripts/extract_data/prepare_outfox_chatgpt.py`: converts Outfox pickle files into project CSV split files.
 - `scripts/process_pipeline.py`: stage 1 logprob processing into `data/*.parquet` plus `state.json`.
 - `scripts/token_similarity_stage2.py`: stage 2 token embedding similarity processing into `token_similarities/*.parquet` plus `similarity_state.json`.
 - `monitoring/scripts/export_processing_states.py`: aggregates processing state files for Grafana.

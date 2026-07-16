@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from scripts.prepare_outfox_chatgpt import prepare_outfox_chatgpt
+from scripts.extract_data.prepare_outfox_chatgpt import prepare_outfox_chatgpt
 
 
 class PrepareOutfoxChatgptTest(unittest.TestCase):

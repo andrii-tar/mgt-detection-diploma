@@ -41,7 +41,7 @@ raw/outfox_raw/common/<split>/<split>_humans.pkl
 raw/outfox_raw/chatgpt/<split>/<split>_lms.pkl
 ```
 
-Prepare Outfox CSV files with `scripts/prepare_outfox_chatgpt.py`.
+Prepare Outfox CSV files with `scripts/extract_data/prepare_outfox_chatgpt.py`.
 
 ## Processed Outputs
 

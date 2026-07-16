@@ -87,11 +87,17 @@ def prepare_outfox_chatgpt(input_root: Path, output_root: Path) -> None:
 
 
 def _parse_args() -> argparse.Namespace:
-    data_root = _data_root()
     parser = argparse.ArgumentParser(description="Prepare OUTFOX ChatGPT HG/MG CSV files for processing.")
-    parser.add_argument("--input-root", type=Path, default=data_root / "raw" / "outfox_raw")
-    parser.add_argument("--output-root", type=Path, default=data_root / "raw" / "outfox")
-    return parser.parse_args()
+    parser.add_argument("--input-root", type=Path, default=None)
+    parser.add_argument("--output-root", type=Path, default=None)
+    args = parser.parse_args()
+    if args.input_root is None or args.output_root is None:
+        data_root = _data_root()
+        if args.input_root is None:
+            args.input_root = data_root / "raw" / "outfox_raw"
+        if args.output_root is None:
+            args.output_root = data_root / "raw" / "outfox"
+    return args
 
 
 def main() -> None:

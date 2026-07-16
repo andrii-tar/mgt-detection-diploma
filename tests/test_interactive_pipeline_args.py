@@ -103,7 +103,7 @@ def test_process_pipeline_runs_stage_2_after_stage_1(monkeypatch):
             "dataset": "kaggle_train",
             "model_name": "opt_350m",
             "model_id": "facebook/opt-350m",
-            "count": 7,
+            "count": 14,
         },
     )
 
