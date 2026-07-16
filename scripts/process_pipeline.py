@@ -11,7 +11,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
-from interactive_cli import input_int, select_key
+from interactive_cli import input_int, optional_choice, select_key
 from openai_logprobs import load_local_model, score_texts_with_model
 from token_similarity_stage2 import run_stage_2
 
@@ -224,6 +224,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Model id alias from experiment_config.py.",
     )
     parser.add_argument("--model-id", default=None, help="Raw Hugging Face model id. Overrides --model.")
+    parser.add_argument("--split", choices=("HG", "MG"), default=None, help="Only process one split. Defaults to both splits.")
     parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N, help="Number of top alternatives per token.")
     parser.add_argument("--inference-batch-size", type=int, default=None, help="Number of texts per model forward pass.")
     parser.add_argument(
@@ -243,6 +244,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
+    is_interactive = args.model is None and args.model_id is None and args.dataset is None
+
     if args.model is None and args.model_id is None:
         args.model = select_key("Select model", dict(sorted(MODEL_IDS.items())))
 
@@ -251,6 +254,9 @@ def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
 
     if args.count is None:
         args.count = input_int("Count per split", DEFAULT_COUNT)
+
+    if args.split is None and is_interactive:
+        args.split = optional_choice("Split", ["HG", "MG"])
 
     if args.inference_batch_size is None:
         args.inference_batch_size = input_int("Inference batch size", DEFAULT_INFERENCE_BATCH_SIZE)
@@ -269,12 +275,14 @@ def main(args: argparse.Namespace | None = None) -> None:
     count = args.count
     dataset_name = resolve_dataset_name(args.dataset)
     dataset_splits = resolve_dataset_splits(args.dataset)
+    selected_splits = [args.split] if args.split is not None else list(dataset_splits)
     model_id = args.model_id if args.model_id is not None else resolve_model_id(args.model)
     model_name = args.model if args.model_id is None else args.model_id
 
     tokenizer, model, device = load_local_model(model_id)
 
-    for split, split_path in dataset_splits.items():
+    for split in selected_splits:
+        split_path = dataset_splits[split]
         _process_split(
             split,
             count,
@@ -292,7 +300,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         )
 
     if args.run_stage_2:
-        run_stage_2(dataset=args.dataset, model_name=model_name, model_id=model_id, count=count*2)
+        run_stage_2(dataset=args.dataset, model_name=model_name, model_id=model_id, count=count * len(selected_splits), splits=selected_splits)
 
 
 if __name__ == "__main__":

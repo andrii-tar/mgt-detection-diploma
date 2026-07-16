@@ -257,16 +257,17 @@ def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
     return args
 
 
-def run_stage_2(dataset: str, model_name: str, model_id: str, count: int) -> None:
+def run_stage_2(dataset: str, model_name: str, model_id: str, count: int, splits: list[str] | None = None) -> None:
     dataset_name = resolve_dataset_name(dataset)
     dataset_splits = resolve_dataset_splits(dataset)
+    selected_splits = splits if splits is not None else list(dataset_splits)
 
     print(f"Loading model for stage 2: {model_id}", flush=True)
     _, model, _ = load_local_model(model_id)
     print("Normalizing input embeddings", flush=True)
     normalized_embeddings = F.normalize(model.get_input_embeddings().weight.detach(), dim=-1)
 
-    for split in dataset_splits:
+    for split in selected_splits:
         _process_split(split, count, normalized_embeddings, dataset, dataset_name, model_name, model_id)
 
 

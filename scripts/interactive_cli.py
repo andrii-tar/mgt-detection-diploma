@@ -41,3 +41,17 @@ def input_int(prompt: str, default: int, minimum: int = 1) -> int:
             return parsed
 
         print(f"Enter an integer greater than or equal to {minimum}.")
+
+
+def optional_choice(prompt: str, choices: list[str]) -> str | None:
+    choices_text = "/".join(choices)
+    while True:
+        value = input(f"{prompt} [{choices_text}, Enter=all]: ").strip()
+        if value == "":
+            return None
+
+        normalized = value.upper()
+        if normalized in choices:
+            return normalized
+
+        print(f"Enter one of {choices_text}, or press Enter for all.")
