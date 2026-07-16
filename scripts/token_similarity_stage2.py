@@ -13,9 +13,11 @@ import pandas as pd
 from tqdm import tqdm
 
 from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+from interactive_cli import input_int, select_key
 from openai_logprobs import load_local_model
 
 BATCH_SIZE = 100
+DEFAULT_COUNT = 200
 
 
 def _utc_now() -> str:
@@ -222,28 +224,41 @@ def _process_split(
     )
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stage 2: compute token embedding similarities for processed logprob Parquet files.")
     parser.add_argument("--count", type=int, default=None, help="Number of processed rows to process per split.")
     parser.add_argument(
         "--dataset",
-        default="kaggle_train",
+        default=None,
         choices=sorted(DATASETS),
         help="Dataset id from experiment_config.py.",
     )
     parser.add_argument(
         "--model",
-        default="smollm2_360m",
+        default=None,
         choices=sorted(MODEL_IDS),
         help="Model id alias from experiment_config.py.",
     )
     parser.add_argument("--model-id", default=None, help="Raw Hugging Face model id. Overrides --model.")
-    return parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
+    if args.model is None and args.model_id is None:
+        args.model = select_key("Select model", dict(sorted(MODEL_IDS.items())))
+
+    if args.dataset is None:
+        args.dataset = select_key("Select dataset", {key: DATASETS[key] for key in sorted(DATASETS)})
+
+    if args.count is None:
+        args.count = input_int("Count per split", DEFAULT_COUNT)
+
+    return args
 
 
 def main() -> None:
-    args = _parse_args()
-    count = args.count if args.count is not None else int(input("How many processed texts per split should be processed? "))
+    args = _resolve_args(_parse_args())
+    count = args.count
     dataset_name = resolve_dataset_name(args.dataset)
     dataset_splits = resolve_dataset_splits(args.dataset)
     model_id = args.model_id if args.model_id is not None else resolve_model_id(args.model)

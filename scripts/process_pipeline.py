@@ -11,9 +11,14 @@ import pandas as pd
 from tqdm import tqdm
 
 from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+from interactive_cli import input_int, select_key
 from openai_logprobs import load_local_model, score_texts_with_model
 
 BATCH_SIZE = 30
+DEFAULT_COUNT = 100
+DEFAULT_INFERENCE_BATCH_SIZE = 2
+DEFAULT_WRITE_BATCH_SIZE = 20
+DEFAULT_TOP_N = 20
 
 
 def _utc_now() -> str:
@@ -202,39 +207,58 @@ def _process_split(
         print(f"{split}: processed {total_processed} rows, experiment={_experiment_name(dataset, model_name)}, last_id={last_id}")
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Process next HG and MG texts into Parquet logprob files.")
     parser.add_argument("--count", type=int, default=None, help="Number of rows to process per split.")
     parser.add_argument(
         "--dataset",
-        default="kaggle_train",
+        default=None,
         choices=sorted(DATASETS),
         help="Dataset id from experiment_config.py.",
     )
     parser.add_argument(
         "--model",
-        default="smollm2_360m",
+        default=None,
         choices=sorted(MODEL_IDS),
         help="Model id alias from experiment_config.py.",
     )
     parser.add_argument("--model-id", default=None, help="Raw Hugging Face model id. Overrides --model.")
-    parser.add_argument("--top-n", type=int, default=20, help="Number of top alternatives per token.")
-    parser.add_argument("--inference-batch-size", type=int, default=4, help="Number of texts per model forward pass.")
+    parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N, help="Number of top alternatives per token.")
+    parser.add_argument("--inference-batch-size", type=int, default=None, help="Number of texts per model forward pass.")
     parser.add_argument(
         "--write-batch-size",
         type=int,
-        default=BATCH_SIZE,
+        default=None,
         help="Number of processed texts to score and write per Parquet file.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
+    if args.model is None and args.model_id is None:
+        args.model = select_key("Select model", dict(sorted(MODEL_IDS.items())))
+
+    if args.dataset is None:
+        args.dataset = select_key("Select dataset", {key: DATASETS[key] for key in sorted(DATASETS)})
+
+    if args.count is None:
+        args.count = input_int("Count per split", DEFAULT_COUNT)
+
+    if args.inference_batch_size is None:
+        args.inference_batch_size = input_int("Inference batch size", DEFAULT_INFERENCE_BATCH_SIZE)
+
+    if args.write_batch_size is None:
+        args.write_batch_size = input_int("Write batch size", DEFAULT_WRITE_BATCH_SIZE)
+
+    return args
 
 
 def main() -> None:
-    args = _parse_args()
+    args = _resolve_args(_parse_args())
     if args.write_batch_size < 1:
         raise ValueError("--write-batch-size must be at least 1")
 
-    count = args.count if args.count is not None else int(input("How many texts per split should be processed? "))
+    count = args.count
     dataset_name = resolve_dataset_name(args.dataset)
     dataset_splits = resolve_dataset_splits(args.dataset)
     model_id = args.model_id if args.model_id is not None else resolve_model_id(args.model)
