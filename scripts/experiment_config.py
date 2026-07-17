@@ -62,6 +62,18 @@ DATASETS = {
             "MG": DATA_ROOT / "raw/outfox/outfox_chatgpt_all_MG.csv",
         },
     },
+    "bbc_news_content": {
+        "dataset_name": "bbc_news_content",
+        "splits": {
+            "HG": DATA_ROOT / "raw/bbc_news/bbc_news_content_HG.csv",
+        },
+    },
+    "bbc_news_titles": {
+        "dataset_name": "bbc_news_titles",
+        "splits": {
+            "HG": DATA_ROOT / "raw/bbc_news/bbc_news_titles_HG.csv",
+        },
+    },
 }
 
 
