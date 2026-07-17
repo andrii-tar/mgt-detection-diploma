@@ -18,7 +18,11 @@
         "uvx",
         "jupyter-mcp-server"
       ],
-      "enabled": true
+      "enabled": true,
+      "env": {
+        "JUPYTER_URL": "http://localhost:8888",
+        "JUPYTER_TOKEN": "{env:JUPYTER_TOKEN}"
+      }
     }
 
   },
