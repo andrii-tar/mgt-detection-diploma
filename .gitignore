@@ -8,3 +8,6 @@ unrelevant/
 .zed/
 mutagen.yml.lock
 .env.linux
+notebooks/.ipynb_checkpoints/
+.jupyter_ystore.db
+uv.lock
