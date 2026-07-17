@@ -11,7 +11,16 @@
         "."
       ],
       "enabled": true
+    },
+    "jupyter": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "jupyter-mcp-server"
+      ],
+      "enabled": true
     }
+
   },
   "permission": {
     "external_directory": {
