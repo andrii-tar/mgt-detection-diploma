@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+from typing import Any, Mapping
 
 import pandas as pd
 from tqdm import tqdm
@@ -40,6 +41,10 @@ def _similarity_dir(processed_root: Path, dataset: str, model: str, split: str) 
 
 def _stats_path(processed_root: Path, dataset: str, model: str, split: str) -> Path:
     return processed_root / _experiment_name(dataset, model) / split / "token_similarity_stats" / STATS_FILE_NAME
+
+
+def _parquet_row_count(paths: list[Path]) -> int:
+    return sum(len(pd.read_parquet(path, columns=["id"])) for path in paths)
 
 
 def token_similarity_stats(row: pd.Series) -> dict[str, float | int | str | None]:
@@ -107,22 +112,60 @@ def export_token_similarity_stats(processed_root: Path, dataset: str, model: str
     return output_path
 
 
+def _needs_export(processed_root: Path, dataset: str, model: str, split: str) -> bool:
+    similarity_dir = _similarity_dir(processed_root, dataset, model, split)
+    similarity_paths = sorted(similarity_dir.glob("*.parquet")) if similarity_dir.exists() else []
+    if not similarity_paths:
+        return False
+
+    stats_path = _stats_path(processed_root, dataset, model, split)
+    if not stats_path.exists():
+        return True
+
+    return _parquet_row_count(similarity_paths) > _parquet_row_count([stats_path])
+
+
+def export_stale_token_similarity_stats(
+    processed_root: Path,
+    datasets: Mapping[str, Mapping[str, Any]],
+    models: Mapping[str, Any],
+) -> list[Path]:
+    output_paths: list[Path] = []
+    for dataset, config in sorted(datasets.items()):
+        for model in sorted(models):
+            for split in sorted(config["splits"]):
+                if _needs_export(processed_root, dataset, model, split):
+                    output_paths.append(export_token_similarity_stats(processed_root, dataset, model, split))
+    return output_paths
+
+
 def _parse_args() -> argparse.Namespace:
     from scripts.experiment_config import DATASETS, MODEL_IDS
 
-    parser = argparse.ArgumentParser(description="Export combined token similarity stats for one dataset/model/split.")
-    parser.add_argument("--dataset", required=True, choices=sorted(DATASETS), help="Dataset alias from experiment_config.py.")
-    parser.add_argument("--model", required=True, choices=sorted(MODEL_IDS), help="Model alias from experiment_config.py.")
-    parser.add_argument("--split", required=True, help="Split label, e.g. HG or MG.")
+    parser = argparse.ArgumentParser(description="Export missing or stale token similarity stats.")
+    parser.add_argument("--dataset", choices=sorted(DATASETS), help="Dataset alias from experiment_config.py.")
+    parser.add_argument("--model", choices=sorted(MODEL_IDS), help="Model alias from experiment_config.py.")
+    parser.add_argument("--split", help="Split label, e.g. HG or MG.")
     parser.add_argument("--processed-root", type=Path, default=None, help="Defaults to TEXT_DETECTION_DATA/processed.")
     return parser.parse_args()
 
 
 def main() -> None:
+    from scripts.experiment_config import DATASETS, MODEL_IDS
+
     args = _parse_args()
     processed_root = args.processed_root if args.processed_root is not None else _data_root() / "processed"
-    output_path = export_token_similarity_stats(processed_root, args.dataset, args.model, args.split)
-    print(f"wrote {output_path}")
+    if args.dataset is not None or args.model is not None or args.split is not None:
+        if args.dataset is None or args.model is None or args.split is None:
+            raise ValueError("--dataset, --model, and --split must be provided together for explicit export")
+        output_paths = [export_token_similarity_stats(processed_root, args.dataset, args.model, args.split)]
+    else:
+        output_paths = export_stale_token_similarity_stats(processed_root, DATASETS, MODEL_IDS)
+
+    if not output_paths:
+        print("no missing or stale token similarity stats found")
+    for output_path in output_paths:
+        print(f"wrote {output_path}")
 
 
 if __name__ == "__main__":
