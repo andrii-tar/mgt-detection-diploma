@@ -235,6 +235,55 @@ def plot_similarity_scatter_pair(data: pd.DataFrame, *, alpha: float = 0.65) -> 
         plt.show()
 
 
+def plot_similarity_kde_pair(data: pd.DataFrame, *, fill: bool = False, thresh: float = 0.05) -> None:
+    for dataset, model in data[["dataset", "model"]].drop_duplicates().itertuples(index=False):
+        experiment_df = data[(data["dataset"] == dataset) & (data["model"] == model)]
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
+        for axis, spec in zip(axes, _similarity_plot_specs()):
+            kde_df = experiment_df.dropna(subset=[spec["x"], spec["y"]])
+            if kde_df.empty:
+                axis.set_title(spec["title"])
+                axis.set_xlabel(spec["xlabel"])
+                axis.set_ylabel(spec["ylabel"])
+                continue
+
+            sns.kdeplot(
+                data=kde_df,
+                x=spec["x"],
+                y=spec["y"],
+                hue="split",
+                common_norm=False,
+                fill=fill,
+                thresh=thresh,
+                ax=axis,
+            )
+            axis.set_title(spec["title"])
+            axis.set_xlabel(spec["xlabel"])
+            axis.set_ylabel(spec["ylabel"])
+        fig.suptitle(f"Token similarity KDE: {dataset} / {model}", y=1.04)
+        plt.show()
+
+
+def plot_token_similarity(
+    data: pd.DataFrame,
+    *,
+    plot_type: str,
+    selected_datasets: list[str] | None = None,
+    selected_models: list[str] | None = None,
+) -> None:
+    plot_df = filter_metrics(data, selected_datasets, selected_models)
+    if plot_df.empty:
+        raise ValueError("No token similarity rows match selected datasets/models")
+
+    if plot_type == "scatter":
+        plot_similarity_scatter_pair(plot_df)
+        return
+    if plot_type == "kde":
+        plot_similarity_kde_pair(plot_df)
+        return
+    raise ValueError("plot_type must be one of: scatter, kde")
+
+
 def plot_aggregate_similarity_scatter(data: pd.DataFrame, group_column: str, *, alpha: float = 0.65) -> None:
     for group_value in sorted(data[group_column].dropna().unique()):
         group_df = data[data[group_column] == group_value]
