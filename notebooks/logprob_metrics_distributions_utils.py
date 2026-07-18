@@ -293,3 +293,55 @@ def plot_global_similarity_scatter(data: pd.DataFrame, *, alpha: float = 0.65) -
         axis.set_ylabel(spec["ylabel"])
         axis.legend(title="split | dataset / model", bbox_to_anchor=(1.02, 1), loc="upper left")
         plt.show()
+
+
+def plot_hg_metric_mean_std_kde_by_model(
+    metrics_df: pd.DataFrame,
+    similarity_stats_df: pd.DataFrame,
+    *,
+    fill: bool = False,
+    thresh: float = 0.05,
+) -> None:
+    specs = [
+        {
+            "title": "Token similarity",
+            "data": similarity_stats_df,
+            "mean_column": "selected_similarity_mean",
+            "std_column": "selected_similarity_std",
+        },
+        {"title": "Prompt mu", "data": metrics_df, "mean_column": "prompt_mu_score", "std_column": "prompt_sigma_score"},
+        {"title": "Prompt sigma", "data": metrics_df, "mean_column": "prompt_sigma_score", "std_column": "prompt_mu_score"},
+        {"title": "Perplexity", "data": metrics_df, "mean_column": "perplexity", "std_column": "prompt_sigma_score"},
+    ]
+    models = sorted(set(metrics_df["model"].dropna().unique()) | set(similarity_stats_df["model"].dropna().unique()))
+
+    for model in models:
+        fig, axes = plt.subplots(1, len(specs), figsize=(5 * len(specs), 4.5), constrained_layout=True)
+        for axis, spec in zip(axes, specs):
+            source_df = spec["data"]
+            model_df = source_df[(source_df["split"] == "HG") & (source_df["model"] == model)]
+            columns = [spec["mean_column"], spec["std_column"]]
+            model_df = model_df.dropna(subset=columns)
+            if model_df.empty:
+                axis.set_title(spec["title"])
+                axis.set_xlabel("mean")
+                axis.set_ylabel("std")
+                continue
+
+            plot_df = model_df.rename(columns={spec["mean_column"]: "mean", spec["std_column"]: "std"})
+            sns.kdeplot(
+                data=plot_df,
+                x="mean",
+                y="std",
+                hue="dataset",
+                common_norm=False,
+                fill=fill,
+                thresh=thresh,
+                warn_singular=False,
+                ax=axis,
+            )
+            axis.set_title(spec["title"])
+            axis.set_xlabel("mean")
+            axis.set_ylabel("std")
+        fig.suptitle(f"HG metric mean/std KDE by dataset: {model}", y=1.04)
+        plt.show()

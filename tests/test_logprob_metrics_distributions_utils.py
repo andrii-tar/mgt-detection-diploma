@@ -7,7 +7,11 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from notebooks.logprob_metrics_distributions_utils import load_token_similarity_stats, plot_token_similarity
+from notebooks.logprob_metrics_distributions_utils import (
+    load_token_similarity_stats,
+    plot_hg_metric_mean_std_kde_by_model,
+    plot_token_similarity,
+)
 
 
 class LoadTokenSimilarityStatsTest(unittest.TestCase):
@@ -79,6 +83,51 @@ class PlotTokenSimilarityTest(unittest.TestCase):
             "selected_similarity_std": 0.1,
             "candidate_similarity_mean": 0.8,
             "candidate_similarity_std": 0.2,
+        }
+
+
+class PlotHgMetricMeanStdKdeByModelTest(unittest.TestCase):
+    def test_dispatches_per_text_rows_to_kde(self) -> None:
+        metrics_df = pd.DataFrame(
+            [
+                self._metric_row(index, "dataset_a", "model_a", "HG")
+                for index in range(4)
+            ]
+            + [self._metric_row(5, "dataset_a", "model_a", "MG")]
+        )
+        similarity_stats_df = pd.DataFrame(
+            [
+                self._similarity_row(index, "dataset_a", "model_a", "HG")
+                for index in range(4)
+            ]
+        )
+
+        with patch("notebooks.logprob_metrics_distributions_utils.sns.kdeplot") as kdeplot, patch("notebooks.logprob_metrics_distributions_utils.plt.show"):
+            plot_hg_metric_mean_std_kde_by_model(metrics_df, similarity_stats_df)
+
+        first_call_data = kdeplot.call_args_list[0].kwargs["data"]
+        self.assertEqual(len(first_call_data), 4)
+        self.assertEqual(set(first_call_data["split"]), {"HG"})
+
+    def _metric_row(self, row_id: int, dataset: str, model: str, split: str) -> dict[str, object]:
+        return {
+            "id": row_id,
+            "dataset": dataset,
+            "model": model,
+            "split": split,
+            "prompt_mu_score": float(row_id),
+            "prompt_sigma_score": float(row_id) + 0.1,
+            "perplexity": float(row_id) + 10.0,
+        }
+
+    def _similarity_row(self, row_id: int, dataset: str, model: str, split: str) -> dict[str, object]:
+        return {
+            "id": row_id,
+            "dataset": dataset,
+            "model": model,
+            "split": split,
+            "selected_similarity_mean": float(row_id) / 10,
+            "selected_similarity_std": float(row_id) / 20,
         }
 
 
