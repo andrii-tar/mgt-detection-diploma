@@ -236,6 +236,7 @@ def plot_similarity_scatter_pair(data: pd.DataFrame, *, alpha: float = 0.65) -> 
 
 
 def plot_similarity_kde_pair(data: pd.DataFrame, *, fill: bool = False, thresh: float = 0.05) -> None:
+    split_palette = {"HG": "#1f77b4", "MG": "#ff7f0e"}
     for dataset, model in data[["dataset", "model"]].drop_duplicates().itertuples(index=False):
         experiment_df = data[(data["dataset"] == dataset) & (data["model"] == model)]
         fig, axes = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
@@ -252,6 +253,7 @@ def plot_similarity_kde_pair(data: pd.DataFrame, *, fill: bool = False, thresh: 
                 x=spec["x"],
                 y=spec["y"],
                 hue="split",
+                palette={split: split_palette.get(split, "#7f7f7f") for split in sorted(kde_df["split"].dropna().unique())},
                 common_norm=False,
                 fill=fill,
                 thresh=thresh,

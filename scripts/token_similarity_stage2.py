@@ -212,16 +212,21 @@ def _process_split(
         print(f"{split}: no stage-1 rows left after id {last_id}")
         return
 
-    records = [
-        _row_similarities(row, normalized_embeddings)
-        for row in tqdm(rows, desc=f"{split}: similarity", unit="text")
-    ]
-    _write_parquet_batches(split, dataset, model_name, records)
-    _write_state(split, dataset, dataset_name, model_name, model_id, int(records[-1]["id"]), len(records))
+    total_processed = 0
+    last_record_id = last_id
+    for start in tqdm(range(0, len(rows), BATCH_SIZE), desc=f"{split}: similarity", unit="batch"):
+        records = [
+            _row_similarities(row, normalized_embeddings)
+            for row in rows[start : start + BATCH_SIZE]
+        ]
+        _write_parquet_batch(split, dataset, model_name, records)
+        last_record_id = int(records[-1]["id"])
+        total_processed += len(records)
+        _write_state(split, dataset, dataset_name, model_name, model_id, last_record_id, len(records))
 
     print(
-        f"{split}: processed {len(records)} similarity rows, "
-        f"experiment={_experiment_name(dataset, model_name)}, last_id={int(records[-1]['id'])}"
+        f"{split}: processed {total_processed} similarity rows, "
+        f"experiment={_experiment_name(dataset, model_name)}, last_id={last_record_id}"
     )
 
 
