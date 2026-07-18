@@ -7,7 +7,7 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 import pandas as pd
 
@@ -165,6 +165,27 @@ def write_metrics_files(metrics_dir: Path, rows: list[dict[str, Any]]) -> None:
     data_frame.to_csv(metrics_dir / "metrics.csv", index=False)
 
 
+def _parquet_row_count(paths: list[Path]) -> int:
+    return sum(len(pd.read_parquet(path, columns=["id"])) for path in paths)
+
+
+def _metrics_path(split: str, dataset: str, model: str) -> Path:
+    return _metrics_dir(split, dataset, model) / "metrics.parquet"
+
+
+def _needs_metrics(split: str, dataset: str, model: str) -> bool:
+    data_dir = _data_dir(split, dataset, model)
+    data_paths = sorted(data_dir.glob("*.parquet")) if data_dir.exists() else []
+    if not data_paths:
+        return False
+
+    metrics_path = _metrics_path(split, dataset, model)
+    if not metrics_path.exists():
+        return True
+
+    return _parquet_row_count(data_paths) > _parquet_row_count([metrics_path])
+
+
 def _write_state(split: str, dataset: str, dataset_name: str, model: str, model_id: str, last_id: int, count: int) -> None:
     state_path = _metrics_state_path(split, dataset, model)
     state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -203,14 +224,30 @@ def _process_split(split: str, count: int | None, dataset: str, dataset_name: st
     print(f"{split}: wrote {len(records)} metric rows, experiment={_experiment_name(dataset, model_name)}, last_id={records[-1]['id']}")
 
 
+def process_stale_metrics(
+    datasets: Mapping[str, Mapping[str, Any]],
+    models: Mapping[str, Any],
+) -> list[Path]:
+    output_paths: list[Path] = []
+    for dataset, config in sorted(datasets.items()):
+        dataset_name = resolve_dataset_name(dataset) if resolve_dataset_name is not None else dataset
+        for model_name in sorted(models):
+            model_id = resolve_model_id(model_name) if resolve_model_id is not None else str(models[model_name])
+            for split in sorted(config["splits"]):
+                if _needs_metrics(split, dataset, model_name):
+                    _process_split(split, None, dataset, dataset_name, model_name, model_id, recreate=True)
+                    output_paths.append(_metrics_path(split, dataset, model_name))
+    return output_paths
+
+
 def _parse_args() -> argparse.Namespace:
     _load_experiment_config()
     parser = argparse.ArgumentParser(description="Compute scalar logprob metrics from processed token Parquet files.")
     parser.add_argument("--count", type=int, default=None, help="Number of processed rows to process per split.")
     parser.add_argument("--all", action="store_true", help="Process all remaining rows per split.")
     parser.add_argument("--recreate", action="store_true", help="Delete existing metrics output before processing.")
-    parser.add_argument("--dataset", default="kaggle_train", choices=sorted(DATASETS), help="Dataset id from experiment_config.py.")
-    parser.add_argument("--model", default="smollm2_360m", choices=sorted(MODEL_IDS), help="Model alias from experiment_config.py.")
+    parser.add_argument("--dataset", choices=sorted(DATASETS), help="Dataset id from experiment_config.py.")
+    parser.add_argument("--model", choices=sorted(MODEL_IDS), help="Model alias from experiment_config.py.")
     parser.add_argument("--model-id", default=None, help="Raw Hugging Face model id. Overrides --model.")
     return parser.parse_args()
 
@@ -218,6 +255,17 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     _load_experiment_config()
     args = _parse_args()
+    if args.dataset is None and args.model is None and args.model_id is None:
+        output_paths = process_stale_metrics(DATASETS, MODEL_IDS)
+        if not output_paths:
+            print("no missing or stale metrics found")
+        for output_path in output_paths:
+            print(f"wrote {output_path.relative_to(DATA_ROOT / 'processed')}")
+        return
+
+    if args.dataset is None or (args.model is None and args.model_id is None):
+        raise ValueError("--dataset and --model/--model-id must be provided together for explicit metrics processing")
+
     count = None if args.all else args.count
     if count is None and not args.all:
         count = int(input("How many processed texts per split should be processed? "))

@@ -3,7 +3,8 @@ import math
 import pandas as pd
 import pytest
 
-from scripts.logprob_metrics import compute_logprob_metrics, recreate_output, iter_unprocessed_rows, write_metrics_files
+import scripts.logprob_metrics as logprob_metrics
+from scripts.logprob_metrics import compute_logprob_metrics, process_stale_metrics, recreate_output, iter_unprocessed_rows, write_metrics_files
 
 
 def test_compute_logprob_metrics_from_token_logprobs():
@@ -91,3 +92,55 @@ def test_write_metrics_files_creates_combined_parquet_and_csv(tmp_path):
     assert csv_path.exists()
     assert pd.read_parquet(parquet_path)["id"].tolist() == [1, 2]
     assert pd.read_csv(csv_path)["id"].tolist() == [1, 2]
+
+
+def test_process_stale_metrics_scans_configured_dataset_model_pairs(tmp_path, monkeypatch):
+    data_root = tmp_path
+    monkeypatch.setattr(logprob_metrics, "DATA_ROOT", data_root)
+    datasets = {"dataset_a": {"splits": {"HG": "", "MG": ""}}, "dataset_b": {"splits": {"HG": ""}}}
+    models = {"model_a": "model-a", "model_b": "model-b"}
+
+    _write_stage1_rows(data_root, "dataset_a", "model_a", "HG", [0, 1])
+    _write_stage1_rows(data_root, "dataset_a", "model_a", "MG", [0, 1])
+    _write_stage1_rows(data_root, "dataset_b", "model_a", "HG", [0])
+    write_metrics_files(
+        data_root / "processed" / "dataset_a__model_a" / "MG" / "metrics",
+        [compute_logprob_metrics(_stage1_row(0, "dataset_a", "model_a", "MG"))],
+    )
+    write_metrics_files(
+        data_root / "processed" / "dataset_b__model_a" / "HG" / "metrics",
+        [compute_logprob_metrics(_stage1_row(0, "dataset_b", "model_a", "HG"))],
+    )
+
+    outputs = process_stale_metrics(datasets, models)
+
+    assert outputs == [
+        data_root / "processed" / "dataset_a__model_a" / "HG" / "metrics" / "metrics.parquet",
+        data_root / "processed" / "dataset_a__model_a" / "MG" / "metrics" / "metrics.parquet",
+    ]
+    assert pd.read_parquet(outputs[0])["id"].tolist() == [0, 1]
+    assert pd.read_parquet(outputs[1])["id"].tolist() == [0, 1]
+    assert pd.read_parquet(data_root / "processed" / "dataset_b__model_a" / "HG" / "metrics" / "metrics.parquet")["id"].tolist() == [0]
+
+
+def _stage1_row(row_id: int, dataset: str, model: str, split: str) -> dict[str, object]:
+    return {
+        "id": row_id,
+        "dataset": dataset,
+        "dataset_name": dataset,
+        "model": model,
+        "model_id": model,
+        "experiment_name": f"{dataset}__{model}",
+        "split": split,
+        "text": "One two three.",
+        "tokens": [{"logprob": -1.0}],
+    }
+
+
+def _write_stage1_rows(data_root, dataset: str, model: str, split: str, ids: list[int]) -> None:
+    data_dir = data_root / "processed" / f"{dataset}__{model}" / split / "data"
+    data_dir.mkdir(parents=True)
+    pd.DataFrame([_stage1_row(row_id, dataset, model, split) for row_id in ids]).to_parquet(
+        data_dir / f"batch_{ids[0]:08d}_{ids[-1]:08d}.parquet",
+        index=False,
+    )
