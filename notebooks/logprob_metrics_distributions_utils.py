@@ -5,7 +5,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from tqdm.auto import tqdm
 
 
 DEFAULT_METRICS = [
@@ -129,67 +128,15 @@ def plot_experiment_metric_row(data: pd.DataFrame, dataset: str, model: str, met
     plt.show()
 
 
-def discover_similarity_files(processed_root: Path) -> list[Path]:
-    return sorted(processed_root.glob("*/*/token_similarities/*.parquet"))
-
-
-def token_similarity_stats(row: pd.Series) -> dict[str, float | int | str | None]:
-    selected_similarities = []
-    token_candidate_means = []
-    token_candidate_stds = []
-    for token in row["token_similarities"]:
-        top_logprobs = token.get("top_logprobs")
-        if top_logprobs is None or len(top_logprobs) == 0:
-            continue
-        selected_similarity = top_logprobs[0].get("similarity_to_gt")
-        if selected_similarity is not None:
-            selected_similarities.append(float(selected_similarity))
-        candidate_similarities = [
-            float(candidate["similarity_to_gt"])
-            for candidate in top_logprobs
-            if candidate.get("similarity_to_gt") is not None
-        ]
-        if candidate_similarities:
-            series = pd.Series(candidate_similarities, dtype="float64")
-            token_candidate_means.append(float(series.mean()))
-            token_candidate_stds.append(float(series.std(ddof=0)))
-
-    stats = {
-        "id": int(row["id"]),
-        "dataset": row["dataset"],
-        "model": row["model"],
-        "experiment_name": row["experiment_name"],
-        "split": row["split"],
-        "selected_similarity_count": len(selected_similarities),
-        "selected_similarity_mean": None,
-        "selected_similarity_std": None,
-        "candidate_similarity_token_count": len(token_candidate_means),
-        "candidate_similarity_mean": None,
-        "candidate_similarity_std": None,
-    }
-    if selected_similarities:
-        selected_series = pd.Series(selected_similarities, dtype="float64")
-        stats["selected_similarity_mean"] = float(selected_series.mean())
-        stats["selected_similarity_std"] = float(selected_series.std(ddof=0))
-    if token_candidate_means:
-        stats["candidate_similarity_mean"] = float(pd.Series(token_candidate_means, dtype="float64").mean())
-        stats["candidate_similarity_std"] = float(pd.Series(token_candidate_stds, dtype="float64").mean())
-    return stats
+def discover_token_similarity_stats_files(processed_root: Path) -> list[Path]:
+    return sorted(processed_root.glob("*/*/token_similarity_stats/token_similarity_stats.parquet"))
 
 
 def load_token_similarity_stats(processed_root: Path) -> pd.DataFrame:
-    rows = []
-    paths = discover_similarity_files(processed_root)
-    for path in tqdm(paths, desc="Similarity files", unit="file"):
-        frame = pd.read_parquet(path)
-        row_iter = frame.iterrows()
-        rows.extend(
-            token_similarity_stats(row)
-            for _, row in tqdm(row_iter, total=len(frame), desc=path.parent.parent.name, unit="text", leave=False)
-        )
-    if not rows:
-        raise FileNotFoundError(f"No token similarity files found under {processed_root}")
-    return pd.DataFrame(rows)
+    paths = discover_token_similarity_stats_files(processed_root)
+    if not paths:
+        raise FileNotFoundError(f"No token similarity stats files found under {processed_root}")
+    return pd.concat((pd.read_parquet(path) for path in paths), ignore_index=True)
 
 
 def _similarity_plot_specs() -> list[dict[str, str]]:
