@@ -34,6 +34,13 @@ DATASETS = {
             "MG": DATA_ROOT / "raw/kaggle_train/kaggle_train_mg.csv",
         },
     },
+    "mage_train": {
+        "dataset_name": "mage_train",
+        "splits": {
+            "HG": DATA_ROOT / "raw/MAGE/train/MAGE_train_HG.csv",
+            "MG": DATA_ROOT / "raw/MAGE/train/MAGE_train_MG.csv",
+        },
+    },
     "outfox_chatgpt_train": {
         "dataset_name": "outfox_chatgpt_train",
         "splits": {

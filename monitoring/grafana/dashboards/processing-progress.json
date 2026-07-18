@@ -479,9 +479,24 @@
         "name": "dataset",
         "options": [
           {
+            "selected": false,
+            "text": "bbc_news_content",
+            "value": "bbc_news_content"
+          },
+          {
+            "selected": false,
+            "text": "bbc_news_titles",
+            "value": "bbc_news_titles"
+          },
+          {
             "selected": true,
             "text": "kaggle_train",
             "value": "kaggle_train"
+          },
+          {
+            "selected": false,
+            "text": "mage_train",
+            "value": "mage_train"
           },
           {
             "selected": false,
