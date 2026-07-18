@@ -87,27 +87,34 @@ class PlotTokenSimilarityTest(unittest.TestCase):
 
 
 class PlotHgMetricMeanStdKdeByModelTest(unittest.TestCase):
-    def test_dispatches_per_text_rows_to_kde(self) -> None:
+    def test_dispatches_selected_split_per_text_rows_to_kde(self) -> None:
         metrics_df = pd.DataFrame(
             [
                 self._metric_row(index, "dataset_a", "model_a", "HG")
                 for index in range(4)
             ]
-            + [self._metric_row(5, "dataset_a", "model_a", "MG")]
+            + [
+                self._metric_row(index, "dataset_a", "model_a", "MG")
+                for index in range(4, 8)
+            ]
         )
         similarity_stats_df = pd.DataFrame(
             [
                 self._similarity_row(index, "dataset_a", "model_a", "HG")
                 for index in range(4)
             ]
+            + [
+                self._similarity_row(index, "dataset_a", "model_a", "MG")
+                for index in range(4, 8)
+            ]
         )
 
         with patch("notebooks.logprob_metrics_distributions_utils.sns.kdeplot") as kdeplot, patch("notebooks.logprob_metrics_distributions_utils.plt.show"):
-            plot_hg_metric_mean_std_kde_by_model(metrics_df, similarity_stats_df)
+            plot_hg_metric_mean_std_kde_by_model(metrics_df, similarity_stats_df, split="MG")
 
         first_call_data = kdeplot.call_args_list[0].kwargs["data"]
         self.assertEqual(len(first_call_data), 4)
-        self.assertEqual(set(first_call_data["split"]), {"HG"})
+        self.assertEqual(set(first_call_data["split"]), {"MG"})
 
     def _metric_row(self, row_id: int, dataset: str, model: str, split: str) -> dict[str, object]:
         return {

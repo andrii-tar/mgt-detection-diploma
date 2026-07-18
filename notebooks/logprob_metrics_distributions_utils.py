@@ -299,6 +299,7 @@ def plot_hg_metric_mean_std_kde_by_model(
     metrics_df: pd.DataFrame,
     similarity_stats_df: pd.DataFrame,
     *,
+    split: str = "HG",
     fill: bool = False,
     thresh: float = 0.05,
 ) -> None:
@@ -319,7 +320,7 @@ def plot_hg_metric_mean_std_kde_by_model(
         fig, axes = plt.subplots(1, len(specs), figsize=(5 * len(specs), 4.5), constrained_layout=True)
         for axis, spec in zip(axes, specs):
             source_df = spec["data"]
-            model_df = source_df[(source_df["split"] == "HG") & (source_df["model"] == model)]
+            model_df = source_df[(source_df["split"] == split) & (source_df["model"] == model)]
             columns = [spec["mean_column"], spec["std_column"]]
             model_df = model_df.dropna(subset=columns)
             if model_df.empty:
@@ -343,5 +344,5 @@ def plot_hg_metric_mean_std_kde_by_model(
             axis.set_title(spec["title"])
             axis.set_xlabel("mean")
             axis.set_ylabel("std")
-        fig.suptitle(f"HG metric mean/std KDE by dataset: {model}", y=1.04)
+        fig.suptitle(f"{split} metric mean/std KDE by dataset: {model}", y=1.04)
         plt.show()
