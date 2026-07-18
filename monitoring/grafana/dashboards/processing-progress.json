@@ -519,7 +519,7 @@
             "value": "outfox_chatgpt_valid"
           }
         ],
-        "query": "kaggle_train,outfox_chatgpt_all,outfox_chatgpt_test,outfox_chatgpt_train,outfox_chatgpt_valid",
+        "query": "bbc_news_content,bbc_news_titles,kaggle_train,mage_train,outfox_chatgpt_all,outfox_chatgpt_test,outfox_chatgpt_train,outfox_chatgpt_valid",
         "skipUrlSync": false,
         "type": "custom"
       },
