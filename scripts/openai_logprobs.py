@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import os
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -8,6 +9,7 @@ from tqdm import tqdm
 
 
 DEFAULT_MODEL_ID = "HuggingFaceTB/SmolLM2-360M-Instruct"
+TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 
 
 def _decode_token(tokenizer: Any, token_id: int) -> str:
@@ -34,8 +36,14 @@ def _normalize_top_logprobs(
 
 
 def load_local_model(model_id: str = DEFAULT_MODEL_ID) -> tuple[Any, Any, torch.device]:
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForCausalLM.from_pretrained(model_id)
+    local_files_only = (
+        os.environ.get("HF_HUB_OFFLINE", "").strip().lower() in TRUE_ENV_VALUES
+        or os.environ.get("TRANSFORMERS_OFFLINE", "").strip().lower() in TRUE_ENV_VALUES
+    )
+    load_kwargs = {"local_files_only": True} if local_files_only else {}
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id, **load_kwargs)
+    model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
     model.eval()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
