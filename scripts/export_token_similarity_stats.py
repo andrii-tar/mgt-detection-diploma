@@ -165,7 +165,7 @@ def main() -> None:
     if not output_paths:
         print("no missing or stale token similarity stats found")
     for output_path in output_paths:
-        print(f"wrote {output_path}")
+        print(f"wrote {output_path.relative_to(processed_root)}")
 
 
 if __name__ == "__main__":
