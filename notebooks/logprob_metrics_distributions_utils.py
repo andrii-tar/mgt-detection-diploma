@@ -368,6 +368,24 @@ def plot_hg_metric_mean_std_kde_by_model(
         {"title": "Prompt mu", "data": metrics_df, "mean_column": "prompt_mu_score", "std_column": "prompt_sigma_score"},
         {"title": "Prompt sigma", "data": metrics_df, "mean_column": "prompt_sigma_score", "std_column": "prompt_mu_score"},
         {"title": "Perplexity", "data": metrics_df, "mean_column": "perplexity", "std_column": "prompt_sigma_score"},
+        {
+            "title": "D-score vs coverage",
+            "data": metrics_df,
+            "mean_column": "d_score_top20",
+            "std_column": "d_score_top20_coverage",
+        },
+        {
+            "title": "D-score vs prompt mu",
+            "data": metrics_df,
+            "mean_column": "d_score_top20",
+            "std_column": "prompt_mu_score",
+        },
+        {
+            "title": "Coverage vs prompt mu",
+            "data": metrics_df,
+            "mean_column": "d_score_top20_coverage",
+            "std_column": "prompt_mu_score",
+        },
     ]
     models = sorted(set(metrics_df["model"].dropna().unique()) | set(similarity_stats_df["model"].dropna().unique()))
 

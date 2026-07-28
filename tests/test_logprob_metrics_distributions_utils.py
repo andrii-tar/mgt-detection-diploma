@@ -134,6 +134,28 @@ class SplitMetricSummaryTest(unittest.TestCase):
 
 
 class PlotHgMetricMeanStdKdeByModelTest(unittest.TestCase):
+    def test_includes_d_score_relationship_kdes(self) -> None:
+        metrics_df = pd.DataFrame([self._metric_row(0, "dataset_a", "model_a", "HG")])
+        similarity_stats_df = pd.DataFrame([self._similarity_row(0, "dataset_a", "model_a", "HG")])
+
+        with patch("notebooks.logprob_metrics_distributions_utils.sns.kdeplot") as kdeplot, patch("notebooks.logprob_metrics_distributions_utils.plt.show"):
+            plot_hg_metric_mean_std_kde_by_model(metrics_df, similarity_stats_df)
+
+        plotted_pairs = {
+            (
+                call.kwargs["data"]["mean"].iat[0],
+                call.kwargs["data"]["std"].iat[0],
+            )
+            for call in kdeplot.call_args_list
+        }
+        self.assertTrue(
+            {
+                (-2.0, 0.5),
+                (-2.0, 0.0),
+                (0.5, 0.0),
+            }.issubset(plotted_pairs)
+        )
+
     def test_dispatches_selected_split_per_text_rows_to_kde(self) -> None:
         metrics_df = pd.DataFrame(
             [
@@ -172,6 +194,8 @@ class PlotHgMetricMeanStdKdeByModelTest(unittest.TestCase):
             "prompt_mu_score": float(row_id),
             "prompt_sigma_score": float(row_id) + 0.1,
             "perplexity": float(row_id) + 10.0,
+            "d_score_top20": float(row_id) - 2.0,
+            "d_score_top20_coverage": 0.5 + float(row_id) / 10,
         }
 
     def _similarity_row(self, row_id: int, dataset: str, model: str, split: str) -> dict[str, object]:
