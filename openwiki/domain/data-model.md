@@ -61,10 +61,18 @@ The stage 2 rows keep the same experiment identity fields and add similarity arr
 
 Two downstream reductions are important:
 
-- [`scripts/logprob_metrics.py`](../scripts/logprob_metrics.py) derives `perplexity`, prompt score summaries, and text-length controls from stage 1 rows.
+- [`scripts/logprob_metrics.py`](../scripts/logprob_metrics.py) derives `perplexity`, prompt score summaries, text-length controls, and top-20 candidate metrics from stage 1 rows.
 - [`scripts/export_token_similarity_stats.py`](../scripts/export_token_similarity_stats.py) derives summary statistics from stage 2 rows.
 
-Those exports are useful because they convert nested token structures into flat tables for analysis and dashboards.
+The stage 1 metrics output now uses `metrics_version = logprob_metrics_v3` and includes:
+
+- `d_score_top20`: a passage-level standardized difference between the actual token logprob and the weighted mean of finite top-20 candidate logprobs; it is `NaN` when no valid candidate distribution exists or its aggregate variance is non-positive.
+- `d_score_top20_coverage`: the mean finite candidate probability mass represented by the supplied top-20 logprobs, or `NaN` when no valid candidate mass exists.
+- `d_score_top20_num_tokens`: the number of eligible tokens with at least one candidate logprob.
+
+These exports are useful because they convert nested token structures into flat tables for analysis and dashboards. Their progress metadata is written to `metrics_state.json` with the same `metrics_version`.
+
+The metric calculations and missing-candidate behavior are covered by [`tests/test_logprob_metrics.py`](../tests/test_logprob_metrics.py) and summarized in the [pipeline workflow](../workflows/pipeline.md).
 
 ## State-file contract
 

@@ -32,6 +32,7 @@ The README and knowledge docs use `uv run python -m unittest discover -s tests -
 
 ### Metrics export and utilities
 
+- [`tests/test_logprob_metrics.py`](../tests/test_logprob_metrics.py) covers scalar metrics, including the top-20 D-score's truncated weighted distribution, passage-level variance aggregation, `NaN` behavior without valid candidates, top-20 probability-mass coverage, and the `d_score_top20_num_tokens` count.
 - [`tests/test_export_token_similarity_stats.py`](../tests/test_export_token_similarity_stats.py) covers the token similarity summary export path.
 - [`tests/test_openai_logprobs.py`](../tests/test_openai_logprobs.py) covers local scoring behavior in the logprob helper.
 

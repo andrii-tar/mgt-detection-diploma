@@ -46,10 +46,12 @@ Stage 2 depends on stage 1 data already existing in `processed/{dataset}__{model
 
 After stage 1 and stage 2, the repository has two useful reduction paths:
 
-- [`scripts/logprob_metrics.py`](../scripts/logprob_metrics.py) computes scalar logprob metrics from stage 1 outputs.
+- [`scripts/logprob_metrics.py`](../scripts/logprob_metrics.py) computes scalar logprob metrics from stage 1 outputs, including the top-20 D-score, average top-20 candidate probability-mass coverage, and the count of tokens with candidate logprobs. Its output and state contract is `metrics_version = logprob_metrics_v3`.
 - [`scripts/export_token_similarity_stats.py`](../scripts/export_token_similarity_stats.py) computes summary statistics from stage 2 outputs.
 
-These export steps are not the main pipeline itself, but they are part of the downstream analysis workflow and should be updated when output schemas change.
+The top-20 D-score uses a truncated candidate distribution per token, aggregates the candidate variance across valid tokens, and returns `NaN` when no valid candidates exist or the aggregate variance is non-positive. Coverage averages the unnormalized probability mass represented by finite candidate logprobs and also returns `NaN` when no candidates are valid.
+
+These export steps are not the main pipeline itself, but they are part of the downstream analysis workflow and should be updated when output schemas change. The metrics schema is summarized in the [domain model and data layout](../domain/data-model.md), and the calculation contract is protected by [testing guidance](../testing.md).
 
 ## What to watch out for
 
