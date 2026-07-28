@@ -100,6 +100,22 @@ def test_compute_logprob_metrics_from_token_logprobs():
     assert "experiment_name" not in metrics
 
 
+def test_compute_logprob_metrics_accepts_parquet_array_backed_candidates(tmp_path):
+    row = {
+        "id": 12,
+        "split": "HG",
+        "text": "One two three.",
+        "tokens": [_top20_token(math.log(0.5))],
+    }
+    input_path = tmp_path / "stage1.parquet"
+    pd.DataFrame([row]).to_parquet(input_path, index=False)
+    restored_row = pd.read_parquet(input_path).iloc[0].to_dict()
+
+    metrics = compute_logprob_metrics(restored_row)
+
+    assert metrics["d_score_top20"] == pytest.approx(1.0)
+
+
 def test_compute_logprob_metrics_rejects_missing_logprobs():
     with pytest.raises(ValueError, match="at least one token logprob"):
         compute_logprob_metrics({"id": 1, "text": "", "tokens": []})

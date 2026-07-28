@@ -164,7 +164,8 @@ def compute_logprob_metrics(row: dict[str, Any]) -> dict[str, Any]:
         token
         for token in row.get("tokens", [])
         if token.get("logprob") is not None
-        and token.get("top_logprobs")
+        and token.get("top_logprobs") is not None
+        and len(token["top_logprobs"]) > 0
     ]
 
     text = row.get("text") or ""
