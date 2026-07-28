@@ -97,16 +97,22 @@ Do not run upload and download data syncs at the same time unless that is intent
 
 ## Processing Commands
 
-Run a small local Facebook OPT stage 1 test, 10 rows per split:
+Run a small local Facebook OPT processing test, 10 stage-1 rows per split:
 
 ```bat
 uv run python scripts\process_pipeline.py --count 10 --model opt_350m --dataset <dataset-alias> --top-n 20 --inference-batch-size 1
 ```
 
-Run Facebook OPT stage 1 on Linux, 1000 rows per split:
+`process_pipeline.py` runs stage 2 token similarity processing after stage 1 by
+default. Add `--no-stage-2` when only stage 1 logprob output is required.
+
+Run Facebook OPT processing on Linux, 1000 stage-1 rows per split:
 
 ```sh
 uv run python scripts/process_pipeline.py --count 1000 --model opt_350m --dataset <dataset-alias> --top-n 20 --inference-batch-size 4
 ```
+
+The Linux command also runs stage 2 by default; use `--no-stage-2` for stage 1
+only.
 
 If GPU memory is low, reduce `--inference-batch-size` to `1`.

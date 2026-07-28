@@ -32,7 +32,8 @@ Important CLI behavior:
 - `--dataset` and `--model` pick registered aliases; `--model-id` overrides the alias with a raw Hugging Face ID.
 - `--top-n` controls the number of top alternatives stored per token.
 - `--inference-batch-size` and `--write-batch-size` keep memory and file sizes bounded.
-- `--no-stage-2` skips the downstream similarity stage when stage 1 only is desired.
+- Stage 2 token similarity runs automatically after stage 1 by default; `--no-stage-2` disables it when stage 1 output is required without downstream similarity processing.
+- When stage 2 runs through this command, its requested count is `count * len(selected_splits)`, so the request scales with the number of selected splits.
 
 The stage 1 tests verify exactly these behaviors: chunk sizes, temp-file cleanup, and `state.json` updates.
 
