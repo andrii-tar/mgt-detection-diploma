@@ -13,6 +13,8 @@ DEFAULT_METRICS = [
     "perplexity",
     "num_tokens",
     "text_len_words",
+    "d_score_top20",
+    "d_score_top20_coverage",
 ]
 
 
@@ -77,8 +79,61 @@ def available_metric_columns(metrics_df: pd.DataFrame) -> list[str]:
         "text_len_symbols",
         "text_len_words",
         "text_len_sentences",
+        "d_score_top20",
+        "d_score_top20_coverage",
     ]
     return [metric for metric in candidates if metric in metrics_df.columns]
+
+
+def split_metric_summary(data: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
+    grouped = data.groupby(["dataset", "model", "split"], dropna=False)[metrics]
+    summary = grouped.agg(["count", "mean", "median", "std"]).reset_index()
+    summary.columns = [
+        "_".join(part for part in column if part).rstrip("_")
+        if isinstance(column, tuple)
+        else column
+        for column in summary.columns
+    ]
+    return summary.sort_values(["dataset", "model", "split"])
+
+
+def plot_split_metric_comparison(data: pd.DataFrame, metrics: list[str]) -> None:
+    pairs = data[["dataset", "model"]].drop_duplicates().sort_values(["dataset", "model"])
+    split_palette = {"HG": "#1f77b4", "MG": "#ff7f0e"}
+    fig, axes = plt.subplots(
+        len(metrics),
+        len(pairs),
+        figsize=(4.2 * len(pairs), 3.2 * len(metrics)),
+        squeeze=False,
+        constrained_layout=True,
+    )
+
+    for row, metric in enumerate(metrics):
+        metric_available = metric in data.columns
+        for column, (dataset, model) in enumerate(pairs.itertuples(index=False)):
+            axis = axes[row, column]
+            if not metric_available:
+                axis.set_title(f"{metric} (missing)")
+                axis.set_axis_off()
+                continue
+
+            experiment_df = data[(data["dataset"] == dataset) & (data["model"] == model)]
+            sns.histplot(
+                data=experiment_df,
+                x=metric,
+                hue="split",
+                palette=split_palette,
+                bins=50,
+                stat="density",
+                common_norm=False,
+                element="step",
+                ax=axis,
+            )
+            axis.set_title(f"{dataset} / {model}: {metric}")
+            axis.set_ylabel("density")
+
+    fig.suptitle("HG/MG metric comparison by dataset/model", y=1.02)
+    plt.show()
 
 
 def plot_metric_distributions(data: pd.DataFrame, metric: str, *, bins: int = 50) -> None:

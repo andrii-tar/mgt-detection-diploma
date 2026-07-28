@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import json
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from unittest.mock import patch
@@ -8,9 +9,11 @@ from unittest.mock import patch
 import pandas as pd
 
 from notebooks.logprob_metrics_distributions_utils import (
+    available_metric_columns,
     load_token_similarity_stats,
     plot_hg_metric_mean_std_kde_by_model,
     plot_token_similarity,
+    split_metric_summary,
 )
 
 
@@ -84,6 +87,50 @@ class PlotTokenSimilarityTest(unittest.TestCase):
             "candidate_similarity_mean": 0.8,
             "candidate_similarity_std": 0.2,
         }
+
+
+class SplitMetricSummaryTest(unittest.TestCase):
+    def test_available_metric_columns_includes_d_score_fields(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "d_score_top20": [0.1],
+                "d_score_top20_coverage": [0.8],
+            }
+        )
+
+        available = available_metric_columns(frame)
+
+        self.assertIn("d_score_top20", available)
+        self.assertIn("d_score_top20_coverage", available)
+
+    def test_split_metric_summary_accepts_hg_and_mg_rows(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "dataset": ["demo", "demo"],
+                "model": ["model", "model"],
+                "split": ["HG", "MG"],
+                "d_score_top20": [1.0, 2.0],
+                "d_score_top20_coverage": [0.8, 0.6],
+            }
+        )
+
+        summary = split_metric_summary(frame, ["d_score_top20", "d_score_top20_coverage"])
+
+        self.assertEqual(set(summary["split"]), {"HG", "MG"})
+        self.assertEqual(summary.loc[summary["split"] == "MG", "d_score_top20_mean"].iat[0], 2.0)
+
+    def test_d_score_summary_result_is_displayed_in_dedicated_cell(self) -> None:
+        notebook_path = Path(__file__).parents[1] / "notebooks" / "logprob_metrics_distributions.ipynb"
+        notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+
+        summary_cells = [
+            "".join(cell.get("source", []))
+            for cell in notebook["cells"]
+            if cell.get("id") == "d-score-comparison-code"
+        ]
+
+        self.assertEqual(len(summary_cells), 1)
+        self.assertRegex(summary_cells[0], r"\bdisplay\(\s*split_metric_summary\(")
 
 
 class PlotHgMetricMeanStdKdeByModelTest(unittest.TestCase):

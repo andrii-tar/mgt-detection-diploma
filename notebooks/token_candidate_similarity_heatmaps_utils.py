@@ -1,16 +1,32 @@
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.colors import TwoSlopeNorm
+from IPython.display import display
+
+from scripts.logprob_metrics import compute_top20_coverage, compute_top20_d_score
 
 
 LOGPROB_CMAP = "coolwarm"
 SIMILARITY_CMAP = "viridis"
+COVERAGE_CMAP = "magma"
+
+
+class TextHeatmapMatrices(NamedTuple):
+    logprob_matrix: np.ndarray
+    similarity_matrix: np.ndarray
+    token_labels: list[str]
+    logprob_scale: tuple[float, float]
+    similarity_scale: tuple[float, float]
+    coverage_matrix: np.ndarray
+    coverage_scale: tuple[float, float]
 
 
 def path_slug(value: str) -> str:
@@ -57,6 +73,35 @@ def finite_min_max(matrix: np.ndarray) -> tuple[float, float]:
     return float(finite.min()), float(finite.max())
 
 
+def _finite_candidate_logprobs(token: dict) -> list[float]:
+    candidates = token.get("top_logprobs")
+    candidates = [] if candidates is None else list(candidates)
+    values = []
+    for candidate in candidates:
+        value = candidate.get("logprob")
+        values.append(float(value) if value is not None and math.isfinite(float(value)) else math.nan)
+    return values
+
+
+def text_d_score_summary(logprob_row: pd.Series) -> dict[str, float | int]:
+    tokens = list(logprob_row.get("tokens", []))
+    d_score_tokens = [
+        token
+        for token in tokens
+        if token.get("logprob") is not None
+        and token.get("top_logprobs") is not None
+        and len(token["top_logprobs"]) > 0
+    ]
+    return {
+        "d_score_top20": compute_top20_d_score(d_score_tokens),
+        "d_score_top20_coverage": compute_top20_coverage(d_score_tokens),
+        "d_score_top20_num_tokens": sum(
+            any(candidate.get("logprob") is not None for candidate in token.get("top_logprobs", []))
+            for token in d_score_tokens
+        ),
+    }
+
+
 def parse_token_range(token_range: str | tuple[int | None, int | None] | slice | None) -> slice:
     if token_range is None:
         return slice(None)
@@ -78,27 +123,29 @@ def build_text_heatmap_matrices(
     similarity_row: pd.Series,
     top_k: int = 20,
     token_range: str | tuple[int | None, int | None] | slice | None = None,
-) -> tuple[np.ndarray, np.ndarray, list[str], tuple[float, float], tuple[float, float]]:
+) -> TextHeatmapMatrices:
     tokens = list(logprob_row["tokens"])[parse_token_range(token_range)]
     similarities = list(similarity_row["token_similarities"])[parse_token_range(token_range)]
     width = min(len(tokens), len(similarities))
     height = top_k + 1
     logprob_matrix = np.full((height, width), np.nan, dtype="float64")
     similarity_matrix = np.full((height, width), np.nan, dtype="float64")
+    coverage_matrix = np.full((top_k, width), np.nan, dtype="float64")
     token_labels = []
 
     for column, (token, similarity_token) in enumerate(zip(tokens[:width], similarities[:width])):
         token_labels.append(str(token.get("token", "")))
 
         gt_logprob = token.get("logprob")
-        top_logprobs = token.get("top_logprobs")
-        top_logprobs = [] if top_logprobs is None else list(top_logprobs)
-        candidate_logprobs = [candidate.get("logprob") for candidate in top_logprobs[:top_k]]
+        candidate_logprobs = _finite_candidate_logprobs(token)[:top_k]
         logprob_values = [gt_logprob] + candidate_logprobs + [None] * (top_k - len(candidate_logprobs))
         logprob_matrix[:, column] = [
             np.nan if value is None or gt_logprob is None else float(value) - float(gt_logprob)
             for value in logprob_values
         ]
+        coverage_matrix[:, column] = [math.exp(value) if math.isfinite(value) else math.nan for value in candidate_logprobs[:top_k]] + [
+            np.nan
+        ] * (top_k - len(candidate_logprobs))
 
         similarity_top_logprobs = similarity_token.get("top_logprobs")
         similarity_top_logprobs = [] if similarity_top_logprobs is None else list(similarity_top_logprobs)
@@ -108,12 +155,15 @@ def build_text_heatmap_matrices(
 
     logprob_scale = finite_min_max(logprob_matrix)
     similarity_scale = finite_min_max(similarity_matrix)
-    return (
-        np.nan_to_num(logprob_matrix, nan=0.0),
-        np.nan_to_num(similarity_matrix, nan=0.0),
+    coverage_scale = finite_min_max(coverage_matrix)
+    return TextHeatmapMatrices(
+        logprob_matrix,
+        similarity_matrix,
         token_labels,
         logprob_scale,
         similarity_scale,
+        coverage_matrix,
+        coverage_scale,
     )
 
 
@@ -124,6 +174,8 @@ def draw_square_heatmap(
     value_scale: tuple[float, float],
     cmap: str,
     center_zero: bool = False,
+    y_label: str = "GT + top candidates",
+    row_labels: list[str] | None = None,
     square_size_px: int = 10,
     dpi: int = 100,
 ) -> None:
@@ -138,10 +190,15 @@ def draw_square_heatmap(
     else:
         image = axis.imshow(matrix, aspect="auto", interpolation="nearest", cmap=cmap, vmin=value_scale[0], vmax=value_scale[1])
     axis.set_title(title)
-    axis.set_ylabel("GT + top candidates")
+    axis.set_ylabel(y_label)
     axis.set_xlabel("Token position")
-    axis.set_yticks([0, 1, height - 1])
-    axis.set_yticklabels(["GT", "top 1", f"top {height - 1}"])
+    if row_labels is None:
+        tick_positions = sorted(set([0, min(1, height - 1), height - 1]))
+        axis.set_yticks(tick_positions)
+        axis.set_yticklabels(["GT" if position == 0 else f"top {position}" for position in tick_positions])
+    else:
+        axis.set_yticks(range(height))
+        axis.set_yticklabels(row_labels)
     axis.set_xticks([])
     colorbar = fig.colorbar(image, ax=axis, fraction=0.015, pad=0.01)
     colorbar.set_label(f"Value range: min={value_scale[0]:.4g}, max={value_scale[1]:.4g}")
@@ -166,7 +223,7 @@ def visualize_text_similarities(
 ) -> None:
     logprob_row = load_text_row(processed_root, dataset, model, split, text_index)
     similarity_row = load_similarity_row(processed_root, dataset, model, split, int(logprob_row["id"]))
-    logprob_matrix, similarity_matrix, token_labels, logprob_scale, similarity_scale = build_text_heatmap_matrices(
+    matrices = build_text_heatmap_matrices(
         logprob_row,
         similarity_row,
         top_k=top_k,
@@ -174,18 +231,34 @@ def visualize_text_similarities(
     )
 
     print(f"dataset={dataset}, model={model}, split={split}, text_index={text_index}, id={int(logprob_row['id'])}, token_range={token_range}")
-    print(f"tokens={len(token_labels)}, rows={top_k + 1}")
+    print(f"tokens={len(matrices.token_labels)}, rows={top_k + 1}")
+    summary = text_d_score_summary(logprob_row)
+    summary["text_id"] = int(logprob_row["id"])
+    display(pd.DataFrame([summary], columns=[
+        "text_id",
+        "d_score_top20",
+        "d_score_top20_coverage",
+        "d_score_top20_num_tokens",
+    ]))
     display(pd.DataFrame({"text": [logprob_row.get("text", "")]}))
     draw_square_heatmap(
-        logprob_matrix,
+        matrices.logprob_matrix,
         "Signed candidate logprob - GT logprob",
-        value_scale=logprob_scale,
+        value_scale=matrices.logprob_scale,
         cmap=LOGPROB_CMAP,
         center_zero=True,
     )
     draw_square_heatmap(
-        similarity_matrix,
+        matrices.similarity_matrix,
         "Candidate similarity to GT token",
-        value_scale=similarity_scale,
+        value_scale=matrices.similarity_scale,
         cmap=SIMILARITY_CMAP,
+    )
+    draw_square_heatmap(
+        matrices.coverage_matrix,
+        "Candidate probability-mass coverage",
+        value_scale=matrices.coverage_scale,
+        cmap=COVERAGE_CMAP,
+        y_label="Candidate rank",
+        row_labels=[f"top {rank}" for rank in range(1, top_k + 1)],
     )
