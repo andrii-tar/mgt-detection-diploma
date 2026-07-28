@@ -30,6 +30,7 @@ $env:TEXT_DETECTION_DATA = "D:/Projects/master_diploma/text-detection-data"
 - Before changing dataset or model aliases, inspect `scripts/experiment_config.py`.
 - After adding datasets or changing dataset names, model names, stages, or processing state fields, check and update monitoring docs, dashboard variables, and state export logic as needed.
 - For notebooks, keep reusable logic out of `.ipynb` cells. Put functions/classes in version-controlled Python modules named `{notebook_name}_utils.py` next to the notebook, or split them into several meaningfully named `.py` files when the logic has distinct responsibilities. Notebooks should only import those utilities, set experiment parameters, run visualizations, and display results.
+- Commit Jupyter notebooks only without stored cell outputs. If a notebook contains outputs, ask the user whether to clean them before removing anything.
 
 ## Knowledge Base
 
