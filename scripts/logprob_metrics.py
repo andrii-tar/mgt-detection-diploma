@@ -95,10 +95,57 @@ def _finite_logprobs(tokens: list[dict[str, Any]]) -> list[float]:
     return logprobs
 
 
+def compute_top20_d_score(tokens: list[dict[str, Any]]) -> float:
+    numerator = 0.0
+    variance_sum = 0.0
+    valid_token_count = 0
+
+    for token in tokens:
+        actual_logprob = token.get("logprob")
+        if actual_logprob is None or not math.isfinite(float(actual_logprob)):
+            continue
+
+        candidate_logprobs = [
+            float(candidate["logprob"])
+            for candidate in token.get("top_logprobs", [])
+            if candidate.get("logprob") is not None
+            and math.isfinite(float(candidate["logprob"]))
+        ]
+        if not candidate_logprobs:
+            continue
+
+        max_logprob = max(candidate_logprobs)
+        weights = [math.exp(value - max_logprob) for value in candidate_logprobs]
+        weight_sum = sum(weights)
+        probabilities = [weight / weight_sum for weight in weights]
+        candidate_mean = sum(
+            probability * logprob
+            for probability, logprob in zip(probabilities, candidate_logprobs)
+        )
+        candidate_variance = sum(
+            probability * (logprob - candidate_mean) ** 2
+            for probability, logprob in zip(probabilities, candidate_logprobs)
+        )
+
+        numerator += float(actual_logprob) - candidate_mean
+        variance_sum += candidate_variance
+        valid_token_count += 1
+
+    if valid_token_count == 0 or variance_sum <= 0:
+        return float("nan")
+    return numerator / math.sqrt(variance_sum)
+
+
 def compute_logprob_metrics(row: dict[str, Any]) -> dict[str, Any]:
     logprobs = _finite_logprobs(row.get("tokens", []))
     mean = sum(logprobs) / len(logprobs)
     variance = sum((value - mean) ** 2 for value in logprobs) / len(logprobs)
+    d_score_tokens = [
+        token
+        for token in row.get("tokens", [])
+        if token.get("logprob") is not None
+        and token.get("top_logprobs")
+    ]
 
     text = row.get("text") or ""
     metrics = {
@@ -108,7 +155,13 @@ def compute_logprob_metrics(row: dict[str, Any]) -> dict[str, Any]:
         "prompt_mu_score": mean,
         "prompt_sigma_score": math.sqrt(variance),
         "num_tokens": len(logprobs),
-        "metrics_version": "logprob_metrics_v1",
+        "metrics_version": "logprob_metrics_v2",
+        "d_score_top20": compute_top20_d_score(d_score_tokens),
+        "d_score_top20_num_tokens": sum(
+            1
+            for token in d_score_tokens
+            if any(candidate.get("logprob") is not None for candidate in token.get("top_logprobs", []))
+        ),
         "processed_at": _utc_now(),
     }
     metrics.update(_text_controls(text))
@@ -200,7 +253,7 @@ def _write_state(split: str, dataset: str, dataset_name: str, model: str, model_
         "model_id": model_id,
         "experiment_name": _experiment_name(dataset, model),
         "stage": "logprob_metrics",
-        "metrics_version": "logprob_metrics_v1",
+        "metrics_version": "logprob_metrics_v2",
         "last_id": last_id,
         "processed_count": previous_count + count,
         "updated_at": _utc_now(),
