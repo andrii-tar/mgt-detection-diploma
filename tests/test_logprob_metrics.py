@@ -6,6 +6,7 @@ import pytest
 import scripts.logprob_metrics as logprob_metrics
 from scripts.logprob_metrics import (
     compute_logprob_metrics,
+    compute_top20_coverage,
     compute_top20_d_score,
     process_stale_metrics,
     recreate_output,
@@ -46,6 +47,19 @@ def test_compute_top20_d_score_returns_nan_without_valid_candidates():
     assert math.isnan(score)
 
 
+def test_compute_top20_coverage_returns_original_probability_mass():
+    tokens = [{
+        "logprob": math.log(0.4),
+        "top_logprobs": [
+            {"logprob": math.log(0.4)},
+            {"logprob": math.log(0.3)},
+            {"logprob": math.log(0.2)},
+        ],
+    }]
+
+    assert compute_top20_coverage(tokens) == pytest.approx(0.9)
+
+
 def test_compute_logprob_metrics_from_token_logprobs():
     row = {
         "id": 12,
@@ -78,6 +92,7 @@ def test_compute_logprob_metrics_from_token_logprobs():
     assert metrics["text_len_sentences"] == 1
     assert math.isnan(metrics["d_score_top20"])
     assert metrics["d_score_top20_num_tokens"] == 0
+    assert math.isnan(metrics["d_score_top20_coverage"])
     assert "dataset" not in metrics
     assert "dataset_name" not in metrics
     assert "model" not in metrics

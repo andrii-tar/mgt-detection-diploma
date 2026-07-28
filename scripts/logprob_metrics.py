@@ -95,6 +95,31 @@ def _finite_logprobs(tokens: list[dict[str, Any]]) -> list[float]:
     return logprobs
 
 
+def _top20_candidate_logprobs(token: dict[str, Any]) -> list[float]:
+    return [
+        float(candidate["logprob"])
+        for candidate in token.get("top_logprobs", [])
+        if candidate.get("logprob") is not None
+        and math.isfinite(float(candidate["logprob"]))
+    ]
+
+
+def compute_top20_coverage(tokens: list[dict[str, Any]]) -> float:
+    coverages = []
+    for token in tokens:
+        actual_logprob = token.get("logprob")
+        if actual_logprob is None or not math.isfinite(float(actual_logprob)):
+            continue
+
+        candidate_logprobs = _top20_candidate_logprobs(token)
+        if candidate_logprobs:
+            coverages.append(math.fsum(math.exp(value) for value in candidate_logprobs))
+
+    if not coverages:
+        return float("nan")
+    return math.fsum(coverages) / len(coverages)
+
+
 def compute_top20_d_score(tokens: list[dict[str, Any]]) -> float:
     numerator = 0.0
     variance_sum = 0.0
@@ -105,12 +130,7 @@ def compute_top20_d_score(tokens: list[dict[str, Any]]) -> float:
         if actual_logprob is None or not math.isfinite(float(actual_logprob)):
             continue
 
-        candidate_logprobs = [
-            float(candidate["logprob"])
-            for candidate in token.get("top_logprobs", [])
-            if candidate.get("logprob") is not None
-            and math.isfinite(float(candidate["logprob"]))
-        ]
+        candidate_logprobs = _top20_candidate_logprobs(token)
         if not candidate_logprobs:
             continue
 
@@ -155,8 +175,9 @@ def compute_logprob_metrics(row: dict[str, Any]) -> dict[str, Any]:
         "prompt_mu_score": mean,
         "prompt_sigma_score": math.sqrt(variance),
         "num_tokens": len(logprobs),
-        "metrics_version": "logprob_metrics_v2",
+        "metrics_version": "logprob_metrics_v3",
         "d_score_top20": compute_top20_d_score(d_score_tokens),
+        "d_score_top20_coverage": compute_top20_coverage(d_score_tokens),
         "d_score_top20_num_tokens": sum(
             1
             for token in d_score_tokens
@@ -253,7 +274,7 @@ def _write_state(split: str, dataset: str, dataset_name: str, model: str, model_
         "model_id": model_id,
         "experiment_name": _experiment_name(dataset, model),
         "stage": "logprob_metrics",
-        "metrics_version": "logprob_metrics_v2",
+        "metrics_version": "logprob_metrics_v3",
         "last_id": last_id,
         "processed_count": previous_count + count,
         "updated_at": _utc_now(),
