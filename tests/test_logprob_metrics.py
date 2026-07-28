@@ -4,7 +4,60 @@ import pandas as pd
 import pytest
 
 import scripts.logprob_metrics as logprob_metrics
-from scripts.logprob_metrics import compute_logprob_metrics, process_stale_metrics, recreate_output, iter_unprocessed_rows, write_metrics_files
+from scripts.logprob_metrics import (
+    compute_logprob_metrics,
+    compute_top20_coverage,
+    compute_top20_d_score,
+    process_stale_metrics,
+    recreate_output,
+    iter_unprocessed_rows,
+    write_metrics_files,
+)
+
+
+def _top20_token(actual_logprob: float) -> dict:
+    return {
+        "logprob": actual_logprob,
+        "top_logprobs": [
+            {"logprob": math.log(0.5)},
+            {"logprob": math.log(0.25)},
+            {"logprob": math.log(0.25)},
+        ],
+    }
+
+
+def test_compute_top20_d_score_uses_truncated_weighted_distribution():
+    score = compute_top20_d_score([_top20_token(math.log(0.5))])
+
+    assert score == pytest.approx(1.0)
+
+
+def test_compute_top20_d_score_aggregates_token_variance_at_passage_level():
+    score = compute_top20_d_score([
+        _top20_token(math.log(0.5)),
+        _top20_token(math.log(0.5)),
+    ])
+
+    assert score == pytest.approx(math.sqrt(2.0))
+
+
+def test_compute_top20_d_score_returns_nan_without_valid_candidates():
+    score = compute_top20_d_score([{"logprob": -1.0, "top_logprobs": []}])
+
+    assert math.isnan(score)
+
+
+def test_compute_top20_coverage_returns_original_probability_mass():
+    tokens = [{
+        "logprob": math.log(0.4),
+        "top_logprobs": [
+            {"logprob": math.log(0.4)},
+            {"logprob": math.log(0.3)},
+            {"logprob": math.log(0.2)},
+        ],
+    }]
+
+    assert compute_top20_coverage(tokens) == pytest.approx(0.9)
 
 
 def test_compute_logprob_metrics_from_token_logprobs():
@@ -37,6 +90,9 @@ def test_compute_logprob_metrics_from_token_logprobs():
     assert metrics["text_len_symbols"] == len("One two three.")
     assert metrics["text_len_words"] == 3
     assert metrics["text_len_sentences"] == 1
+    assert math.isnan(metrics["d_score_top20"])
+    assert metrics["d_score_top20_num_tokens"] == 0
+    assert math.isnan(metrics["d_score_top20_coverage"])
     assert "dataset" not in metrics
     assert "dataset_name" not in metrics
     assert "model" not in metrics
