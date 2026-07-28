@@ -23,7 +23,7 @@ The pipeline is staged so each step can resume from state files and write output
 Run all tests:
 
 ```powershell
-uv run python -m unittest discover -s tests -v
+uv run pytest -q
 ```
 
 Prepare Outfox ChatGPT CSV inputs:
@@ -37,6 +37,9 @@ Run stage 1 logprob processing with Facebook OPT:
 ```powershell
 uv run python scripts\process_pipeline.py --count 10 --model opt_350m --dataset <dataset-alias> --top-n 20 --inference-batch-size 1
 ```
+
+The command runs stage 2 token similarity processing after stage 1 by default.
+Add `--no-stage-2` to run stage 1 only.
 
 Run stage 2 token similarity processing after stage 1 exists:
 
@@ -58,4 +61,4 @@ docker compose up -d
 - `scripts/token_similarity_stage2.py`: stage 2 token embedding similarity processing into `token_similarities/*.parquet` plus `similarity_state.json`.
 - `monitoring/scripts/export_processing_states.py`: aggregates processing state files for Grafana.
 - `monitoring/grafana/`: Grafana dashboard, datasource provisioning, and monitoring documentation.
-- `tests/`: unittest-based regression tests.
+- `tests/`: pytest-based regression tests.

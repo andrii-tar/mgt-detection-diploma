@@ -1,18 +1,24 @@
 ---
 type: Testing Guide
 title: Testing Guidance
-description: Practical testing guide for the repository's pipeline and monitoring contracts. Summarizes the existing unittest coverage, the kinds of behavior that should be tested when changing scripts, and the standard test command.
-tags: [testing, pytest, unittest, contracts]
+description: Practical testing guide for the repository's pipeline and monitoring contracts. Summarizes the existing pytest coverage, the kinds of behavior that should be tested when changing scripts, and the standard test command.
+tags: [testing, pytest, contracts]
 resource: /tests
 ---
 
 # Testing guidance
 
-The repository's tests are mostly contract tests: they verify CLI/environment loading, data-layout assumptions, batch sizing, resume behavior, and monitoring configuration.
+The repository's pytest tests are mostly contract tests: they verify CLI/environment loading, data-layout assumptions, batch sizing, resume behavior, and monitoring configuration.
 
 ## Test command
 
-The README and knowledge docs use `uv run python -m unittest discover -s tests -v` as the standard repository-wide test command.
+The standard repository-wide test command is:
+
+```sh
+uv run pytest -q
+```
+
+Pytest is included in the development dependency group and is configured in `pyproject.toml`; the repository tests use pytest-style discovery and assertions.
 
 ## What the tests cover
 

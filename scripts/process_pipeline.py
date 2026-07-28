@@ -10,10 +10,16 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
-from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
-from interactive_cli import input_int, optional_choice, select_key
-from openai_logprobs import load_local_model, score_texts_with_model
-from token_similarity_stage2 import run_stage_2
+if __package__:
+    from .experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+    from .interactive_cli import input_int, optional_choice, select_key
+    from .openai_logprobs import load_local_model, score_texts_with_model
+    from .token_similarity_stage2 import run_stage_2
+else:
+    from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+    from interactive_cli import input_int, optional_choice, select_key
+    from openai_logprobs import load_local_model, score_texts_with_model
+    from token_similarity_stage2 import run_stage_2
 
 BATCH_SIZE = 30
 DEFAULT_COUNT = 100

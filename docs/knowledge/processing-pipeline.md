@@ -14,7 +14,7 @@ The script reads from `raw/outfox_raw` and writes to `raw/outfox` under `TEXT_DE
 
 ## Stage 1: Token Logprob Processing
 
-Stage 1 is implemented by `scripts/process_pipeline.py`. It loads a local Hugging Face causal LM, scores text rows, and writes Parquet batches under `processed/{dataset}__{model}/{split}/data`.
+Stage 1 is implemented by `scripts/process_pipeline.py`. It loads a local Hugging Face causal LM, scores text rows, and writes Parquet batches under `processed/{dataset}__{model}/{split}/data`. The command also runs stage 2 token similarity processing by default; pass `--no-stage-2` when only stage 1 output is required.
 
 Small local example with Facebook OPT:
 
@@ -30,6 +30,10 @@ Key arguments:
 - `--model-id`: raw Hugging Face model id, used instead of `--model` when provided.
 - `--top-n`: number of top alternatives per token.
 - `--inference-batch-size`: number of texts per forward pass.
+
+When stage 2 is run by the same command, its requested count is multiplied by
+the number of selected splits by the current implementation. Run stage 2
+separately when an exact per-split stage 2 count is required.
 
 Resume behavior for stage 1 and stage 2:
 
@@ -64,5 +68,5 @@ Resume behavior:
 Run tests after behavior changes:
 
 ```powershell
-uv run python -m unittest discover -s tests -v
+uv run pytest -q
 ```
