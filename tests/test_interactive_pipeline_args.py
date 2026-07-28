@@ -10,9 +10,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from scripts import process_pipeline, token_similarity_stage2
 
 
+def _menu_number(options, key):
+    return str(sorted(options).index(key) + 1)
+
+
 def test_process_pipeline_resolves_missing_args_interactively(monkeypatch):
     args = process_pipeline._parse_args([])
-    responses = iter(["2", "1", "", "", "", ""])
+    responses = iter(
+        [
+            _menu_number(process_pipeline.MODEL_IDS, "gemma_3_1b_it"),
+            _menu_number(process_pipeline.DATASETS, "kaggle_train"),
+            "",
+            "",
+            "",
+            "",
+        ]
+    )
     monkeypatch.setattr("builtins.input", lambda prompt: next(responses))
 
     resolved = process_pipeline._resolve_args(args)
@@ -173,7 +186,13 @@ def test_process_pipeline_runs_only_selected_split(monkeypatch):
 
 def test_similarity_stage2_resolves_missing_args_interactively(monkeypatch):
     args = token_similarity_stage2._parse_args([])
-    responses = iter(["3", "4", ""])
+    responses = iter(
+        [
+            _menu_number(token_similarity_stage2.MODEL_IDS, "gpt2"),
+            _menu_number(token_similarity_stage2.DATASETS, "outfox_chatgpt_train"),
+            "",
+        ]
+    )
     monkeypatch.setattr("builtins.input", lambda prompt: next(responses))
 
     resolved = token_similarity_stage2._resolve_args(args)
