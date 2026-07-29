@@ -18,6 +18,8 @@ uv run python -m scripts.process_pipeline --help
 uv run python -m scripts.token_similarity_stage2 --help
 ```
 
+Commands load `TEXT_DETECTION_DATA` from the checkout's `.env` at the CLI boundary. Keep the same absolute data path in the `.env` files used by the main checkout and its worktrees.
+
 ## Stage 0: Dataset Preparation
 
 Outfox ChatGPT pickle files are converted to CSV files by:
