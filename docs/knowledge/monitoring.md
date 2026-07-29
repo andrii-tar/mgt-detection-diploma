@@ -52,6 +52,6 @@ The exporter preserves the last good output during transient filesystem errors a
 - `stage`: `logprobs` or `token_similarity`.
 - `state_files_url`: default Docker URL for Grafana.
 
-If a new dataset is added and should be selectable in Grafana, update `monitoring/grafana/dashboards/processing-progress.json`.
+The exporter also serves `/datasets.json`, generated from `DATASETS` in `scripts/experiment_config.py`. Adding a configured dataset makes it selectable in Grafana without editing the dashboard.
 
 Detailed Grafana setup lives in `monitoring/grafana/README.md`.

@@ -48,6 +48,22 @@ class ExportProcessingStatesTest(unittest.TestCase):
             self.assertTrue(ok)
             self.assertEqual(json.loads(output.read_text(encoding="utf-8")), [{"dataset": "new"}])
 
+    def test_dataset_choices_are_sorted_from_configured_datasets(self) -> None:
+        exporter = self._load_exporter(Path.cwd())
+        with mock.patch.object(exporter, "DATASETS", {"zeta": {}, "alpha": {}}):
+            self.assertEqual(exporter.dataset_choices(), ["alpha", "zeta"])
+
+    def test_write_dataset_choices_writes_json_array(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            exporter = self._load_exporter(root)
+            output = root / "datasets.json"
+
+            with mock.patch.object(exporter, "DATASETS", {"zeta": {}, "alpha": {}}):
+                exporter.write_dataset_choices(output)
+
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8")), ["alpha", "zeta"])
+
 
 if __name__ == "__main__":
     unittest.main()

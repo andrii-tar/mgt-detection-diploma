@@ -25,9 +25,11 @@ services:
       - .:/workspace:ro
       - ${TEXT_DETECTION_DATA:?Set TEXT_DETECTION_DATA to your external data directory}:/data:ro
     command: >
-      sh -c "python monitoring/scripts/export_processing_states.py
+      sh -c "python -m pip install --quiet python-dotenv &&
+      python monitoring/scripts/export_processing_states.py
       --processed-root /data/processed
       --output /tmp/processing-states.json
+      --datasets-output /tmp/datasets.json
       --watch &
       python -m http.server 8000 --directory /tmp"
 

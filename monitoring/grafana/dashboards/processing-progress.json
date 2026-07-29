@@ -472,56 +472,41 @@
           "text": "kaggle_train",
           "value": "kaggle_train"
         },
+        "datasource": {
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "",
         "hide": 0,
         "includeAll": false,
         "label": "Dataset",
         "multi": false,
         "name": "dataset",
-        "options": [
-          {
-            "selected": false,
-            "text": "bbc_news_content",
-            "value": "bbc_news_content"
-          },
-          {
-            "selected": false,
-            "text": "bbc_news_titles",
-            "value": "bbc_news_titles"
-          },
-          {
-            "selected": true,
-            "text": "kaggle_train",
-            "value": "kaggle_train"
-          },
-          {
-            "selected": false,
-            "text": "mage_train",
-            "value": "mage_train"
-          },
-          {
-            "selected": false,
-            "text": "outfox_chatgpt_all",
-            "value": "outfox_chatgpt_all"
-          },
-          {
-            "selected": false,
-            "text": "outfox_chatgpt_test",
-            "value": "outfox_chatgpt_test"
-          },
-          {
-            "selected": false,
-            "text": "outfox_chatgpt_train",
-            "value": "outfox_chatgpt_train"
-          },
-          {
-            "selected": false,
-            "text": "outfox_chatgpt_valid",
-            "value": "outfox_chatgpt_valid"
+        "options": [],
+        "query": {
+          "columns": [
+            {
+              "selector": "$",
+              "text": "value",
+              "type": "string"
+            }
+          ],
+          "format": "table",
+          "parser": "backend",
+          "root_selector": "$",
+          "source": "url",
+          "type": "json",
+          "url": "http://progress-states:8000/datasets.json",
+          "url_options": {
+            "data": "",
+            "method": "GET"
           }
-        ],
-        "query": "bbc_news_content,bbc_news_titles,kaggle_train,mage_train,outfox_chatgpt_all,outfox_chatgpt_test,outfox_chatgpt_train,outfox_chatgpt_valid",
+        },
+        "refresh": 1,
+        "regex": "",
         "skipUrlSync": false,
-        "type": "custom"
+        "sort": 1,
+        "type": "query"
       },
       {
         "current": {

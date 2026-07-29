@@ -7,9 +7,6 @@ from pathlib import Path
 
 os.environ.setdefault("TEXT_DETECTION_DATA", str(Path(__file__).resolve().parents[1]))
 
-from scripts.experiment_config import DATASETS
-
-
 class MonitoringConfigTest(unittest.TestCase):
     def test_progress_states_uses_http_and_unbuffered_python(self) -> None:
         compose = Path("docker-compose.yml").read_text(encoding="utf-8")
@@ -26,8 +23,11 @@ class MonitoringConfigTest(unittest.TestCase):
         variables = {variable["name"]: variable for variable in dashboard["templating"]["list"]}
         dataset = variables["dataset"]
 
-        self.assertEqual(dataset["type"], "custom")
-        self.assertEqual(dataset["query"], ",".join(sorted(DATASETS)))
+        self.assertEqual(dataset["type"], "query")
+        self.assertEqual(dataset["datasource"]["type"], "yesoreyeram-infinity-datasource")
+        self.assertEqual(dataset["query"]["url"], "http://progress-states:8000/datasets.json")
+        self.assertEqual(dataset["query"]["root_selector"], "$")
+        self.assertNotIn("custom", dataset["query"])
 
 
 if __name__ == "__main__":
