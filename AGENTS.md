@@ -24,7 +24,7 @@ $env:TEXT_DETECTION_DATA = "D:/Projects/master_diploma/text-detection-data"
 - Do not run Docker builds, data processing jobs, or git commits unless the user explicitly asks for that exact action.
 - Do not start, stop, or inspect Mutagen sessions; the user runs all Mutagen commands manually.
 - Do not run large model processing unless the user explicitly requests it.
-- Do not overuse TDD for small, low-risk tasks. Make simple documentation, wording, rename-reference, and config-comment changes directly without adding tests. Keep tests for data imports, processing behavior, public interfaces, monitoring/export contracts, and changes that could silently affect experiment outputs.
+- Use spec-driven development and test-driven development for substantive implementation changes, including changes to local or internal tools. Skip SDD and TDD for small, simple changes or changes that can be confidently validated by reading the diff. Keep tests for data imports, processing behavior, public interfaces, monitoring/export contracts, and changes that could silently affect experiment outputs.
 - Prefer small smoke runs before large runs: use low `--count` values and `--inference-batch-size 1` when memory is uncertain.
 - Do not run Mutagen upload and download data sync sessions together unless the user explicitly wants bidirectional activity.
 - Before changing dataset or model aliases, inspect `scripts/experiment_config.py`.
