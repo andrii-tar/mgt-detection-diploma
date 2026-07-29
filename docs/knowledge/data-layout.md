@@ -17,7 +17,8 @@ Large data stays outside the repository. Do not commit raw files, processed Parq
 
 This script defines:
 
-- `DATA_ROOT`: `Path(os.environ["TEXT_DETECTION_DATA"])`.
+- `build_datasets(data_root)`: builds the configured split paths under an explicit root.
+- `DATA_ROOT`: a relative placeholder used only for import-safe static configuration; CLIs resolve the real root through the shared data-root helper.
 - `MODEL_IDS`: model alias to Hugging Face model id mapping.
 - `DATASETS`: dataset alias to dataset name and split CSV paths.
 - `resolve_model_id(model)`: returns a registered model id or the raw value.

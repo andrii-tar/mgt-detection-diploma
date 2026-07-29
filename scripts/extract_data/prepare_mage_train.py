@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 import pandas as pd
@@ -9,13 +8,6 @@ import pandas as pd
 
 REQUIRED_COLUMNS = {"text", "label", "src"}
 OUTPUT_COLUMNS = ["id", "text", "src"]
-
-
-def _data_root() -> Path:
-    value = os.environ.get("TEXT_DETECTION_DATA")
-    if value is None:
-        raise RuntimeError("TEXT_DETECTION_DATA is not set")
-    return Path(value)
 
 
 def _validate_frame(frame: pd.DataFrame) -> None:
@@ -60,7 +52,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=None)
     args = parser.parse_args()
     if args.input_path is None or args.output_root is None:
-        data_root = _data_root()
+        from scripts.data_root import resolve_data_root
+
+        data_root = resolve_data_root()
         if args.input_path is None:
             args.input_path = data_root / "raw" / "MAGE_train.csv"
         if args.output_root is None:

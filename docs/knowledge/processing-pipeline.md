@@ -2,6 +2,8 @@
 
 Pipeline commands use dataset and model aliases from `scripts/experiment_config.py`. See `docs/knowledge/data-layout.md` for data layout patterns and state file fields.
 
+Commands load `TEXT_DETECTION_DATA` from the checkout's `.env` at the CLI boundary. Keep the same absolute data path in the `.env` files used by the main checkout and its worktrees.
+
 ## Stage 0: Dataset Preparation
 
 Outfox ChatGPT pickle files are converted to CSV files by:

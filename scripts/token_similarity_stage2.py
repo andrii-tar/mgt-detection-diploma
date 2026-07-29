@@ -14,10 +14,12 @@ from tqdm import tqdm
 
 if __package__:
     from .experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+    from .data_root import resolve_data_root
     from .interactive_cli import input_int, select_key
     from .openai_logprobs import load_local_model
 else:
     from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+    from data_root import resolve_data_root
     from interactive_cli import input_int, select_key
     from openai_logprobs import load_local_model
 
@@ -282,6 +284,8 @@ def run_stage_2(dataset: str, model_name: str, model_id: str, count: int, splits
 
 
 def main() -> None:
+    global DATA_ROOT
+    DATA_ROOT = resolve_data_root()
     args = _resolve_args(_parse_args())
     count = args.count
     model_id = args.model_id if args.model_id is not None else resolve_model_id(args.model)

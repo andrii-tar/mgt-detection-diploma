@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -22,13 +21,6 @@ STATS_COLUMNS = [
     "candidate_similarity_mean",
     "candidate_similarity_std",
 ]
-
-
-def _data_root() -> Path:
-    value = os.environ.get("TEXT_DETECTION_DATA")
-    if value is None:
-        raise RuntimeError("TEXT_DETECTION_DATA is not set")
-    return Path(value)
 
 
 def _experiment_name(dataset: str, model: str) -> str:
@@ -154,7 +146,12 @@ def main() -> None:
     from scripts.experiment_config import DATASETS, MODEL_IDS
 
     args = _parse_args()
-    processed_root = args.processed_root if args.processed_root is not None else _data_root() / "processed"
+    if args.processed_root is None:
+        from scripts.data_root import resolve_data_root
+
+        processed_root = resolve_data_root() / "processed"
+    else:
+        processed_root = args.processed_root
     if args.dataset is not None or args.model is not None or args.split is not None:
         if args.dataset is None or args.model is None or args.split is None:
             raise ValueError("--dataset, --model, and --split must be provided together for explicit export")

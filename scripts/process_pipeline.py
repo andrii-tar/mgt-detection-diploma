@@ -12,11 +12,13 @@ from tqdm import tqdm
 
 if __package__:
     from .experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+    from .data_root import resolve_data_root
     from .interactive_cli import input_int, optional_choice, select_key
     from .openai_logprobs import load_local_model, score_texts_with_model
     from .token_similarity_stage2 import run_stage_2
 else:
     from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+    from data_root import resolve_data_root
     from interactive_cli import input_int, optional_choice, select_key
     from openai_logprobs import load_local_model, score_texts_with_model
     from token_similarity_stage2 import run_stage_2
@@ -274,13 +276,15 @@ def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace | None = None) -> None:
+    global DATA_ROOT
+    DATA_ROOT = resolve_data_root()
     args = _resolve_args(_parse_args() if args is None else args)
     if args.write_batch_size < 1:
         raise ValueError("--write-batch-size must be at least 1")
 
     count = args.count
     dataset_name = resolve_dataset_name(args.dataset)
-    dataset_splits = resolve_dataset_splits(args.dataset)
+    dataset_splits = resolve_dataset_splits(args.dataset, DATA_ROOT)
     selected_splits = [args.split] if args.split is not None else list(dataset_splits)
     model_id = args.model_id if args.model_id is not None else resolve_model_id(args.model)
     model_name = args.model if args.model_id is None else args.model_id

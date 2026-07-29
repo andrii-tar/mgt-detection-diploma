@@ -1,22 +1,8 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-
-load_dotenv()
-
-
-def _data_root() -> Path:
-    value = os.environ.get("TEXT_DETECTION_DATA")
-    if value is None:
-        raise RuntimeError("TEXT_DETECTION_DATA is not set")
-    return Path(value)
-
-
-DATA_ROOT = _data_root()
+DATA_ROOT = Path(".")
 
 
 MODEL_IDS = {
@@ -31,62 +17,66 @@ MODEL_IDS = {
     "smollm2_360m": "HuggingFaceTB/SmolLM2-360M-Instruct",
 }
 
-DATASETS = {
-    "kaggle_train": {
+def build_datasets(data_root: Path) -> dict[str, dict[str, object]]:
+    return {
+        "kaggle_train": {
         "dataset_name": "kaggle_train",
         "splits": {
-            "HG": DATA_ROOT / "raw/kaggle_train/kaggle_train_hg.csv",
-            "MG": DATA_ROOT / "raw/kaggle_train/kaggle_train_mg.csv",
+            "HG": data_root / "raw/kaggle_train/kaggle_train_hg.csv",
+            "MG": data_root / "raw/kaggle_train/kaggle_train_mg.csv",
         },
     },
     "mage_train": {
         "dataset_name": "mage_train",
         "splits": {
-            "HG": DATA_ROOT / "raw/MAGE/train/MAGE_train_HG.csv",
-            "MG": DATA_ROOT / "raw/MAGE/train/MAGE_train_MG.csv",
+            "HG": data_root / "raw/MAGE/train/MAGE_train_HG.csv",
+            "MG": data_root / "raw/MAGE/train/MAGE_train_MG.csv",
         },
     },
     "outfox_chatgpt_train": {
         "dataset_name": "outfox_chatgpt_train",
         "splits": {
-            "HG": DATA_ROOT / "raw/outfox/outfox_chatgpt_train_HG.csv",
-            "MG": DATA_ROOT / "raw/outfox/outfox_chatgpt_train_MG.csv",
+            "HG": data_root / "raw/outfox/outfox_chatgpt_train_HG.csv",
+            "MG": data_root / "raw/outfox/outfox_chatgpt_train_MG.csv",
         },
     },
     "outfox_chatgpt_valid": {
         "dataset_name": "outfox_chatgpt_valid",
         "splits": {
-            "HG": DATA_ROOT / "raw/outfox/outfox_chatgpt_valid_HG.csv",
-            "MG": DATA_ROOT / "raw/outfox/outfox_chatgpt_valid_MG.csv",
+            "HG": data_root / "raw/outfox/outfox_chatgpt_valid_HG.csv",
+            "MG": data_root / "raw/outfox/outfox_chatgpt_valid_MG.csv",
         },
     },
     "outfox_chatgpt_test": {
         "dataset_name": "outfox_chatgpt_test",
         "splits": {
-            "HG": DATA_ROOT / "raw/outfox/outfox_chatgpt_test_HG.csv",
-            "MG": DATA_ROOT / "raw/outfox/outfox_chatgpt_test_MG.csv",
+            "HG": data_root / "raw/outfox/outfox_chatgpt_test_HG.csv",
+            "MG": data_root / "raw/outfox/outfox_chatgpt_test_MG.csv",
         },
     },
     "outfox_chatgpt_all": {
         "dataset_name": "outfox_chatgpt_all",
         "splits": {
-            "HG": DATA_ROOT / "raw/outfox/outfox_chatgpt_all_HG.csv",
-            "MG": DATA_ROOT / "raw/outfox/outfox_chatgpt_all_MG.csv",
+            "HG": data_root / "raw/outfox/outfox_chatgpt_all_HG.csv",
+            "MG": data_root / "raw/outfox/outfox_chatgpt_all_MG.csv",
         },
     },
     "bbc_news_content": {
         "dataset_name": "bbc_news_content",
         "splits": {
-            "HG": DATA_ROOT / "raw/bbc_news/bbc_news_content_HG.csv",
+            "HG": data_root / "raw/bbc_news/bbc_news_content_HG.csv",
         },
     },
     "bbc_news_titles": {
         "dataset_name": "bbc_news_titles",
         "splits": {
-            "HG": DATA_ROOT / "raw/bbc_news/bbc_news_titles_HG.csv",
+            "HG": data_root / "raw/bbc_news/bbc_news_titles_HG.csv",
         },
     },
-}
+    }
+
+
+DATASETS = build_datasets(DATA_ROOT)
 
 
 def resolve_model_id(model: str) -> str:
@@ -97,5 +87,5 @@ def resolve_dataset_name(dataset: str) -> str:
     return DATASETS.get(dataset, {}).get("dataset_name", dataset)
 
 
-def resolve_dataset_splits(dataset: str) -> dict[str, str]:
-    return DATASETS[dataset]["splits"]
+def resolve_dataset_splits(dataset: str, data_root: Path = DATA_ROOT) -> dict[str, Path]:
+    return build_datasets(data_root)[dataset]["splits"]
