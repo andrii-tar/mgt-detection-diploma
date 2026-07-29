@@ -43,6 +43,15 @@ def dataset_sizes() -> dict[str, dict[str, int]]:
     return sizes
 
 
+def dataset_choices() -> list[str]:
+    return sorted(DATASETS)
+
+
+def write_dataset_choices(output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(dataset_choices(), indent=2), encoding="utf-8")
+
+
 def _state_key(state: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
     return state.get("dataset"), state.get("model"), state.get("split")
 
@@ -133,10 +142,21 @@ def try_write_states(processed_root: Path, output: Path) -> bool:
     return True
 
 
+def try_write_dataset_choices(output: Path) -> bool:
+    try:
+        write_dataset_choices(output)
+    except OSError as exc:
+        print(f"Failed to export dataset choices to {output}: {exc}", flush=True)
+        return False
+
+    return True
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export processing state files into one JSON array for Grafana.")
     parser.add_argument("--processed-root", type=Path, default=Path("data/processed"))
     parser.add_argument("--output", type=Path, default=Path("processing-states.json"))
+    parser.add_argument("--datasets-output", type=Path, default=Path("datasets.json"))
     parser.add_argument("--watch", action="store_true", help="Keep refreshing the output file.")
     parser.add_argument("--interval", type=float, default=5.0, help="Refresh interval in seconds when --watch is set.")
     return parser.parse_args()
@@ -147,8 +167,9 @@ def main() -> None:
 
     while True:
         ok = try_write_states(args.processed_root, args.output)
+        choices_ok = try_write_dataset_choices(args.datasets_output)
         if not args.watch:
-            raise SystemExit(0 if ok else 1)
+            raise SystemExit(0 if ok and choices_ok else 1)
         time.sleep(args.interval)
 
 
