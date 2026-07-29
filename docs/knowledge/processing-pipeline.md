@@ -2,6 +2,22 @@
 
 Pipeline commands use dataset and model aliases from `scripts/experiment_config.py`. See `docs/knowledge/data-layout.md` for data layout patterns and state file fields.
 
+The default installation supports dataset preparation, stage 1, and stage 2.
+Install the optional notebook extra for Jupyter and visualization workflows:
+
+```powershell
+uv sync --extra notebook
+```
+
+The supported command forms are direct scripts and package modules, for
+example:
+
+```powershell
+uv run python scripts\extract_data\prepare_outfox_chatgpt.py
+uv run python -m scripts.process_pipeline --help
+uv run python -m scripts.token_similarity_stage2 --help
+```
+
 ## Stage 0: Dataset Preparation
 
 Outfox ChatGPT pickle files are converted to CSV files by:

@@ -123,11 +123,6 @@ def _write_parquet_batch(split: str, dataset: str, model: str, rows: list[dict[s
     data_frame.to_parquet(path, compression="zstd", index=False)
 
 
-def _write_parquet_batches(split: str, dataset: str, model: str, rows: list[dict[str, Any]]) -> None:
-    for start in range(0, len(rows), BATCH_SIZE):
-        _write_parquet_batch(split, dataset, model, rows[start : start + BATCH_SIZE])
-
-
 def _iter_unprocessed_rows(path: Path, last_id: int, count: int) -> Iterable[dict[str, Any]]:
     if not path.exists():
         raise FileNotFoundError(f"Missing stage-1 processed directory: {path}")

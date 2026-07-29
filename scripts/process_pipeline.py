@@ -121,11 +121,6 @@ def _write_parquet_batch(split: str, dataset: str, model: str, rows: list[dict[s
     temp_path.replace(path)
 
 
-def _write_parquet_batches(split: str, dataset: str, model: str, rows: list[dict[str, Any]]) -> None:
-    for start in range(0, len(rows), BATCH_SIZE):
-        _write_parquet_batch(split, dataset, model, rows[start : start + BATCH_SIZE])
-
-
 def _load_split_frame(split: str, split_path: str) -> pd.DataFrame:
     path = Path(split_path)
     if not path.exists():

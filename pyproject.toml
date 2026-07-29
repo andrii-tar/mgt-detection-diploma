@@ -4,20 +4,22 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "accelerate>=1.14.0",
-    "jupyter>=1.1.1",
-    "matplotlib>=3.10.0",
     "pandas>=3.0.3",
     "pyarrow>=18.0.0",
     "python-dotenv>=1.0.1",
-    "seaborn>=0.13.2",
     "torch>=2.6.0",
     "transformers>=5.13.1",
     "tqdm>=4.66.5",
-    "jupyter-collaboration>=3.1.2",
 ]
 
-[project.scripts]
-j-lab = "scripts.jupyter_lab:main"
+[project.optional-dependencies]
+notebook = [
+    "jupyter>=1.1.1",
+    "jupyter-collaboration>=3.1.2",
+    "matplotlib>=3.10.0",
+    "numpy",
+    "seaborn>=0.13.2",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -20,6 +20,22 @@ The pipeline is staged so each step can resume from state files and write output
 
 ## Common Commands
 
+The default installation contains the dataset preparation and staged
+processing dependencies. Install notebook and visualization dependencies
+explicitly when needed:
+
+```powershell
+uv sync --extra notebook
+```
+
+The supported preparation and processing entrypoints are:
+
+```powershell
+uv run python scripts\extract_data\prepare_outfox_chatgpt.py
+uv run python -m scripts.process_pipeline --help
+uv run python -m scripts.token_similarity_stage2 --help
+```
+
 Run all tests:
 
 ```powershell

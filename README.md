@@ -42,6 +42,13 @@ $env:TEXT_DETECTION_DATA = "D:/Projects/master_diploma/text-detection-data"
 uv sync
 ```
 
+For notebook and visualization workflows, install the optional notebook
+dependencies instead:
+
+```powershell
+uv sync --extra notebook
+```
+
 ## Linux Setup
 
 Create `/workspace/text-detection/.env` on the remote machine:
@@ -96,6 +103,15 @@ data-download           remote data root -> local data root
 Do not run upload and download data syncs at the same time unless that is intentional.
 
 ## Processing Commands
+
+Dataset preparation and the two staged processing commands are the supported
+entrypoints. They can be run as scripts or as package modules:
+
+```bat
+uv run python scripts\extract_data\prepare_outfox_chatgpt.py
+uv run python -m scripts.process_pipeline --help
+uv run python -m scripts.token_similarity_stage2 --help
+```
 
 Run a small local Facebook OPT processing test, 10 stage-1 rows per split:
 
