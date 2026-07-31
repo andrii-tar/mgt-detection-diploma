@@ -83,6 +83,23 @@ def _finite_candidate_logprobs(token: dict) -> list[float]:
     return values
 
 
+def compute_token_coverage(
+    logprob_row: pd.Series,
+    top_k: int = 20,
+    token_range: str | tuple[int | None, int | None] | slice | None = None,
+) -> np.ndarray:
+    """Return cumulative top-k candidate probability mass per token position."""
+    coverage = []
+    for token in list(logprob_row["tokens"])[parse_token_range(token_range)]:
+        actual_logprob = token.get("logprob")
+        if actual_logprob is None or not math.isfinite(float(actual_logprob)):
+            coverage.append(math.nan)
+            continue
+        candidate_logprobs = _finite_candidate_logprobs(token)[:top_k]
+        coverage.append(math.fsum(math.exp(value) for value in candidate_logprobs) if candidate_logprobs else math.nan)
+    return np.asarray(coverage, dtype="float64")
+
+
 def text_d_score_summary(logprob_row: pd.Series) -> dict[str, float | int]:
     tokens = list(logprob_row.get("tokens", []))
     d_score_tokens = [
@@ -211,6 +228,19 @@ def draw_square_heatmap(
     plt.show()
 
 
+def draw_token_coverage_scatter(coverage: np.ndarray) -> None:
+    positions = np.flatnonzero(np.isfinite(coverage))
+    values = coverage[positions]
+    fig, axis = plt.subplots(figsize=(max(len(coverage) * 10 / 100, 6), 3), dpi=100)
+    axis.scatter(positions, values, s=12)
+    axis.set_title("Top-20 candidate probability-mass coverage by token")
+    axis.set_xlabel("Token position")
+    axis.set_ylabel("Cumulative top-20 probability mass")
+    axis.set_ylim(0.0, 1.0)
+    axis.grid(axis="y", alpha=0.25)
+    plt.show()
+
+
 def visualize_text_similarities(
     processed_root: Path,
     dataset: str,
@@ -233,6 +263,7 @@ def visualize_text_similarities(
     print(f"dataset={dataset}, model={model}, split={split}, text_index={text_index}, id={int(logprob_row['id'])}, token_range={token_range}")
     print(f"tokens={len(matrices.token_labels)}, rows={top_k + 1}")
     summary = text_d_score_summary(logprob_row)
+    print(f"d_score_top20_coverage={summary['d_score_top20_coverage']:.6g}")
     summary["text_id"] = int(logprob_row["id"])
     display(pd.DataFrame([summary], columns=[
         "text_id",
@@ -262,3 +293,4 @@ def visualize_text_similarities(
         y_label="Candidate rank",
         row_labels=[f"top {rank}" for rank in range(1, top_k + 1)],
     )
+    draw_token_coverage_scatter(compute_token_coverage(logprob_row, top_k=top_k, token_range=token_range))

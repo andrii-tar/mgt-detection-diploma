@@ -10,6 +10,7 @@ import pytest
 from scripts.logprob_metrics import compute_logprob_metrics
 from notebooks.token_candidate_similarity_heatmaps_utils import (
     build_text_heatmap_matrices,
+    compute_token_coverage,
     text_d_score_summary,
 )
 
@@ -96,6 +97,30 @@ def test_invalid_candidate_logprobs_are_omitted_from_coverage_matrix():
     assert math.isnan(matrices.logprob_matrix[3, 0])
     assert matrices.similarity_matrix[1:, 0] == pytest.approx([0.1, 0.2, 0.3, 0.4])
     assert matrices.coverage_scale == pytest.approx((0.5, 0.5))
+
+
+def test_compute_token_coverage_returns_cumulative_top_k_mass_per_position():
+    row = pd.Series(
+        {
+            "tokens": [
+                {
+                    "logprob": math.log(0.25),
+                    "top_logprobs": [
+                        {"logprob": math.log(0.5)},
+                        {"logprob": math.log(0.25)},
+                    ],
+                },
+                {
+                    "logprob": math.log(0.5),
+                    "top_logprobs": [],
+                },
+            ]
+        }
+    )
+
+    coverage = compute_token_coverage(row, top_k=2)
+
+    assert coverage == pytest.approx([0.75, math.nan], nan_ok=True)
 
 
 def test_summary_candidate_count_matches_production_non_none_semantics():
