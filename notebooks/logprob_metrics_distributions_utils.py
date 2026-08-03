@@ -272,9 +272,8 @@ def plot_length_metric_distributions(data: pd.DataFrame, metric: str, *, bins: i
                 centers = (edges[:-1] + edges[1:]) / 2
                 axis.plot(
                     centers,
+                    np.full(centers.shape, token_length),
                     density,
-                    zs=token_length,
-                    zdir="z",
                     color=split_palette.get(split, "#7f7f7f"),
                     alpha=0.8,
                 )
@@ -288,8 +287,8 @@ def plot_length_metric_distributions(data: pd.DataFrame, metric: str, *, bins: i
             axis.legend(handles=handles, title="split")
         axis.set_title(f"{metric} distribution by token length: {dataset} / {model}")
         axis.set_xlabel(metric)
-        axis.set_ylabel("density")
-        axis.set_zlabel("token length")
+        axis.set_ylabel("token length")
+        axis.set_zlabel("density")
         plt.show()
 
 
