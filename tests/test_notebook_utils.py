@@ -144,6 +144,23 @@ def test_plot_length_metric_distributions_uses_token_length_for_y_axis(monkeypat
     plt.close("all")
 
 
+# def test_plot_length_metric_distributions_draws_3d_bars(monkeypatch):
+#     data = pd.DataFrame(
+#         [
+#             {"dataset": "demo", "model": "model", "split": "HG", "token_length": 2, "perplexity": 2.0},
+#             {"dataset": "demo", "model": "model", "split": "HG", "token_length": 4, "perplexity": 2.5},
+#         ]
+#     )
+#     plt.close("all")
+#     monkeypatch.setattr(plt, "show", lambda: None)
+
+#     plot_length_metric_distributions(data, "perplexity", bins=2)
+
+#     axis = plt.figure(plt.get_fignums()[0]).axes[0]
+#     assert axis.collections
+#     plt.close("all")
+
+
 def test_length_distribution_notebook_imports_helpers_before_calls():
     notebook_path = Path(__file__).parents[1] / "notebooks" / "logprob_metric_length_distributions.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))

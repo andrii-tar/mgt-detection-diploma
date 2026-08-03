@@ -277,6 +277,19 @@ def plot_length_metric_distributions(data: pd.DataFrame, metric: str, *, bins: i
                     color=split_palette.get(split, "#7f7f7f"),
                     alpha=0.8,
                 )
+                #                 widths = np.diff(edges)
+                # bar_depth = max(float(token_length) * 0.08, 0.5)
+                # axis.bar3d(
+                #     centers - widths / 2,
+                #     np.full(centers.shape, token_length - bar_depth / 2),
+                #     np.zeros(density.shape),
+                #     widths,
+                #     np.full(centers.shape, bar_depth),
+                #     density,
+                #     color=split_palette.get(split, "#7f7f7f"),
+                #     alpha=0.8,
+                #     shade=True,
+                # )
 
         handles = [
             plt.Line2D([], [], color=color, label=split)
