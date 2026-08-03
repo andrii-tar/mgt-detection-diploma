@@ -142,6 +142,14 @@ def test_length_distribution_notebook_imports_helpers_before_calls():
     ]
 
     assert import_index < min(call_indices)
+    notebook_source = "\n".join("".join(cell.get("source", [])) for cell in cells)
+    assert "default_length_metrics_path" in notebook_source
+    assert "load_length_metric_table" in notebook_source
+    assert "save_length_metric_table" in notebook_source
+    assert "RECOMPUTE = False" in notebook_source
+    assert "LENGTH_METRICS_PATH = default_length_metrics_path(PROCESSED_ROOT)" in notebook_source
+    assert "if RECOMPUTE or not LENGTH_METRICS_PATH.exists():" in notebook_source
+    assert "show_progress=True" in notebook_source
     assert all(
         not any(line.lstrip().startswith(f"def {name}(") for line in cell.get("source", []))
         for cell in cells
