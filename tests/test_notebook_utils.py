@@ -13,8 +13,11 @@ from notebooks.logprob_metrics_distributions_utils import (
     TOKEN_DERIVED_METRICS,
     compute_length_metric_table,
     compute_prefix_metrics,
+    default_length_metrics_path,
+    load_length_metric_table,
     load_logprob_rows,
     plot_length_metric_distributions,
+    save_length_metric_table,
 )
 from notebooks.token_candidate_similarity_heatmaps_utils import (
     build_text_heatmap_matrices,
@@ -76,11 +79,32 @@ def test_compute_length_metric_table_keeps_token_metrics_only(tmp_path):
     data_dir.mkdir(parents=True)
     pd.DataFrame([_prefix_test_row()]).to_parquet(data_dir / "part.parquet")
 
-    result = compute_length_metric_table(tmp_path, step=2)
+    result = compute_length_metric_table(tmp_path, step=2, show_progress=False)
 
     assert list(result["token_length"]) == [2, 4]
     assert {"dataset", "model", "split", "token_length", *TOKEN_DERIVED_METRICS} <= set(result.columns)
     assert not {"text_len_symbols", "text_len_words", "text_len_sentences"} & set(result.columns)
+
+
+def test_default_length_metrics_path_uses_processed_root(tmp_path):
+    assert default_length_metrics_path(tmp_path) == tmp_path / "length_metric_distributions" / "metrics.parquet"
+
+
+def test_length_metric_table_parquet_round_trip(tmp_path):
+    data = pd.DataFrame(
+        {
+            "dataset": ["demo"],
+            "token_length": [50],
+            "perplexity": [1.5],
+        }
+    )
+    output_path = tmp_path / "nested" / "metrics.parquet"
+
+    saved_path = save_length_metric_table(data, output_path)
+
+    assert saved_path == output_path
+    assert output_path.exists()
+    pd.testing.assert_frame_equal(load_length_metric_table(output_path), data)
 
 
 def test_plot_length_metric_distributions_draws_one_3d_figure_per_experiment(monkeypatch):
@@ -118,6 +142,15 @@ def test_length_distribution_notebook_imports_helpers_before_calls():
     ]
 
     assert import_index < min(call_indices)
+    notebook_source = "\n".join("".join(cell.get("source", [])) for cell in cells)
+    assert "default_length_metrics_path" in notebook_source
+    assert "load_length_metric_table" in notebook_source
+    assert "save_length_metric_table" in notebook_source
+    assert "RECOMPUTE = False" in notebook_source
+    assert "LENGTH_METRICS_PATH = default_length_metrics_path(PROCESSED_ROOT)" in notebook_source
+    assert "if RECOMPUTE or not LENGTH_METRICS_PATH.exists():" in notebook_source
+    assert 'print(f"Stored at: {LENGTH_METRICS_PATH}")' in notebook_source
+    assert "show_progress=True" in notebook_source
     assert all(
         not any(line.lstrip().startswith(f"def {name}(") for line in cell.get("source", []))
         for cell in cells

@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from tqdm import tqdm
 
 from scripts.logprob_metrics import compute_logprob_metrics
 
@@ -77,16 +78,33 @@ def load_logprob_rows(
     return rows
 
 
+def default_length_metrics_path(processed_root: Path) -> Path:
+    return processed_root / "length_metric_distributions" / "metrics.parquet"
+
+
+def save_length_metric_table(data: pd.DataFrame, output_path: Path) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    data.to_parquet(output_path, compression="zstd", index=False)
+    return output_path
+
+
+def load_length_metric_table(output_path: Path) -> pd.DataFrame:
+    return pd.read_parquet(output_path)
+
+
 def compute_length_metric_table(
     processed_root: Path,
     *,
     step: int = 50,
     selected_datasets: list[str] | None = None,
     selected_models: list[str] | None = None,
+    show_progress: bool = True,
 ) -> pd.DataFrame:
     columns = ["dataset", "model", "split", "token_length", *TOKEN_DERIVED_METRICS]
     records = []
-    for row in load_logprob_rows(processed_root, selected_datasets, selected_models):
+    rows = load_logprob_rows(processed_root, selected_datasets, selected_models)
+    source_rows = tqdm(rows, desc="Computing prefix metrics", unit="row") if show_progress else rows
+    for row in source_rows:
         for metrics in compute_prefix_metrics(row, step=step):
             records.append(
                 {
