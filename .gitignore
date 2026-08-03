@@ -12,3 +12,4 @@ notebooks/.ipynb_checkpoints/
 .jupyter_ystore.db
 uv.lock
 .opencode/plugins/emdash-notifications.js
+.worktrees/
