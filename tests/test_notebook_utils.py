@@ -4,15 +4,130 @@ import math
 import json
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
 from scripts.logprob_metrics import compute_logprob_metrics
+from notebooks.logprob_metrics_distributions_utils import (
+    TOKEN_DERIVED_METRICS,
+    compute_length_metric_table,
+    compute_prefix_metrics,
+    load_logprob_rows,
+    plot_length_metric_distributions,
+)
 from notebooks.token_candidate_similarity_heatmaps_utils import (
     build_text_heatmap_matrices,
     compute_token_coverage,
     text_d_score_summary,
 )
+
+
+def _prefix_test_row(split="HG"):
+    return {
+        "id": 3,
+        "split": split,
+        "text": "one two three four",
+        "tokens": [
+            {"logprob": math.log(0.5), "top_logprobs": [{"logprob": math.log(0.5)}]},
+            {"logprob": math.log(0.25), "top_logprobs": [{"logprob": math.log(0.25)}]},
+            {"logprob": math.log(0.125), "top_logprobs": [{"logprob": math.log(0.125)}]},
+            {"logprob": math.log(0.0625), "top_logprobs": [{"logprob": math.log(0.0625)}]},
+        ],
+    }
+
+
+def test_compute_prefix_metrics_uses_only_complete_prefix_lengths():
+    result = compute_prefix_metrics(_prefix_test_row(), step=2)
+
+    assert [record["token_length"] for record in result] == [2, 4]
+    assert [record["num_tokens"] for record in result] == [2, 4]
+
+
+def test_compute_prefix_metrics_matches_production_for_each_prefix():
+    row = _prefix_test_row()
+
+    result = compute_prefix_metrics(row, step=2)
+
+    for record, length in zip(result, (2, 4)):
+        expected = compute_logprob_metrics({**row, "tokens": row["tokens"][:length]})
+        assert record["prompt_mu_score"] == pytest.approx(expected["prompt_mu_score"])
+        assert record["d_score_top20"] == pytest.approx(expected["d_score_top20"], nan_ok=True)
+        assert record["d_score_top20_coverage"] == pytest.approx(
+            expected["d_score_top20_coverage"], nan_ok=True
+        )
+
+
+def test_load_logprob_rows_adds_experiment_metadata(tmp_path):
+    data_dir = tmp_path / "demo__model" / "HG" / "data"
+    data_dir.mkdir(parents=True)
+    pd.DataFrame([_prefix_test_row()]).to_parquet(data_dir / "part.parquet")
+
+    rows = list(load_logprob_rows(tmp_path))
+
+    assert len(rows) == 1
+    assert rows[0]["dataset"] == "demo"
+    assert rows[0]["model"] == "model"
+    assert rows[0]["split"] == "HG"
+
+
+def test_compute_length_metric_table_keeps_token_metrics_only(tmp_path):
+    data_dir = tmp_path / "demo__model" / "HG" / "data"
+    data_dir.mkdir(parents=True)
+    pd.DataFrame([_prefix_test_row()]).to_parquet(data_dir / "part.parquet")
+
+    result = compute_length_metric_table(tmp_path, step=2)
+
+    assert list(result["token_length"]) == [2, 4]
+    assert {"dataset", "model", "split", "token_length", *TOKEN_DERIVED_METRICS} <= set(result.columns)
+    assert not {"text_len_symbols", "text_len_words", "text_len_sentences"} & set(result.columns)
+
+
+def test_plot_length_metric_distributions_draws_one_3d_figure_per_experiment(monkeypatch):
+    data = pd.DataFrame(
+        [
+            {"dataset": "demo", "model": "model", "split": "HG", "token_length": 2, "perplexity": 2.0},
+            {"dataset": "demo", "model": "model", "split": "MG", "token_length": 2, "perplexity": 3.0},
+            {"dataset": "demo", "model": "model", "split": "HG", "token_length": 4, "perplexity": 2.5},
+        ]
+    )
+    plt.close("all")
+    monkeypatch.setattr(plt, "show", lambda: None)
+
+    plot_length_metric_distributions(data, "perplexity", bins=2)
+
+    figures = plt.get_fignums()
+    assert len(figures) == 1
+    assert plt.figure(figures[0]).axes[0].name == "3d"
+    plt.close("all")
+
+
+def test_length_distribution_notebook_imports_helpers_before_calls():
+    notebook_path = Path(__file__).parents[1] / "notebooks" / "logprob_metric_length_distributions.ipynb"
+    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+    cells = notebook["cells"]
+    import_index = next(
+        index
+        for index, cell in enumerate(cells)
+        if "from logprob_metrics_distributions_utils import" in "".join(cell.get("source", []))
+    )
+    call_indices = [
+        index
+        for index, cell in enumerate(cells)
+        if "compute_length_metric_table(" in "".join(cell.get("source", []))
+    ]
+
+    assert import_index < min(call_indices)
+    assert all(
+        not any(line.lstrip().startswith(f"def {name}(") for line in cell.get("source", []))
+        for cell in cells
+        for name in ("compute_prefix_metrics", "compute_length_metric_table", "plot_length_metric_distributions")
+    )
+    assert all(
+        cell.get("execution_count") is None and cell.get("outputs") == []
+        for cell in cells
+        if cell["cell_type"] == "code"
+    )
 
 
 def test_text_d_score_summary_matches_production_metrics():
