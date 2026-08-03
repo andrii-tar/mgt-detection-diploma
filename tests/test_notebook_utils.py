@@ -149,6 +149,7 @@ def test_length_distribution_notebook_imports_helpers_before_calls():
     assert "RECOMPUTE = False" in notebook_source
     assert "LENGTH_METRICS_PATH = default_length_metrics_path(PROCESSED_ROOT)" in notebook_source
     assert "if RECOMPUTE or not LENGTH_METRICS_PATH.exists():" in notebook_source
+    assert 'print(f"Stored at: {LENGTH_METRICS_PATH}")' in notebook_source
     assert "show_progress=True" in notebook_source
     assert all(
         not any(line.lstrip().startswith(f"def {name}(") for line in cell.get("source", []))
