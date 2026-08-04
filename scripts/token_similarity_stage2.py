@@ -265,6 +265,8 @@ def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
 
 
 def run_stage_2(dataset: str, model_name: str, model_id: str, count: int, splits: list[str] | None = None) -> None:
+    global DATA_ROOT
+    DATA_ROOT = resolve_data_root()
     dataset_name = resolve_dataset_name(dataset)
     dataset_splits = resolve_dataset_splits(dataset)
     selected_splits = splits if splits is not None else list(dataset_splits)
