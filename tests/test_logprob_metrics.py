@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -98,6 +99,15 @@ def test_compute_logprob_metrics_from_token_logprobs():
     assert "model" not in metrics
     assert "model_id" not in metrics
     assert "experiment_name" not in metrics
+
+
+def test_load_experiment_config_uses_runtime_data_root(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(logprob_metrics, "DATA_ROOT", None)
+    monkeypatch.setenv("TEXT_DETECTION_DATA", str(tmp_path))
+
+    logprob_metrics._load_experiment_config()
+
+    assert logprob_metrics.DATA_ROOT == tmp_path
 
 
 def test_compute_logprob_metrics_accepts_parquet_array_backed_candidates(tmp_path):

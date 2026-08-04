@@ -26,20 +26,23 @@ def _load_experiment_config() -> None:
         return
     try:
         from experiment_config import DATASETS as datasets
-        from experiment_config import DATA_ROOT as data_root
         from experiment_config import MODEL_IDS as model_ids
         from experiment_config import resolve_dataset_name as dataset_name_resolver
         from experiment_config import resolve_dataset_splits as dataset_splits_resolver
         from experiment_config import resolve_model_id as model_id_resolver
     except ModuleNotFoundError:
         from scripts.experiment_config import DATASETS as datasets
-        from scripts.experiment_config import DATA_ROOT as data_root
         from scripts.experiment_config import MODEL_IDS as model_ids
         from scripts.experiment_config import resolve_dataset_name as dataset_name_resolver
         from scripts.experiment_config import resolve_dataset_splits as dataset_splits_resolver
         from scripts.experiment_config import resolve_model_id as model_id_resolver
 
-    DATA_ROOT = data_root
+    try:
+        from data_root import resolve_data_root
+    except ModuleNotFoundError:
+        from scripts.data_root import resolve_data_root
+
+    DATA_ROOT = resolve_data_root()
     DATASETS = datasets
     MODEL_IDS = model_ids
     resolve_dataset_name = dataset_name_resolver
