@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from itertools import islice
 from pathlib import Path
+from typing import Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -60,7 +62,14 @@ def load_logprob_rows(
     selected_datasets: list[str] | None = None,
     selected_models: list[str] | None = None,
 ) -> list[dict]:
-    rows = []
+    return list(iter_logprob_rows(processed_root, selected_datasets, selected_models))
+
+
+def iter_logprob_rows(
+    processed_root: Path,
+    selected_datasets: list[str] | None = None,
+    selected_models: list[str] | None = None,
+) -> Iterator[dict]:
     for path in sorted(processed_root.glob("*/*/data/*.parquet")):
         experiment_name = path.parents[2].name
         split = path.parents[1].name
@@ -74,8 +83,7 @@ def load_logprob_rows(
             row["model"] = model
             if row.get("split") is None or pd.isna(row.get("split")):
                 row["split"] = split
-            rows.append(row)
-    return rows
+            yield row
 
 
 def default_length_metrics_path(processed_root: Path) -> Path:
@@ -98,23 +106,28 @@ def compute_length_metric_table(
     step: int = 50,
     selected_datasets: list[str] | None = None,
     selected_models: list[str] | None = None,
+    batch_size: int = 256,
     show_progress: bool = True,
 ) -> pd.DataFrame:
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
     columns = ["dataset", "model", "split", "token_length", *TOKEN_DERIVED_METRICS]
     records = []
-    rows = load_logprob_rows(processed_root, selected_datasets, selected_models)
-    source_rows = tqdm(rows, desc="Computing prefix metrics", unit="row") if show_progress else rows
-    for row in source_rows:
-        for metrics in compute_prefix_metrics(row, step=step):
-            records.append(
-                {
-                    "dataset": row["dataset"],
-                    "model": row["model"],
-                    "split": row.get("split"),
-                    "token_length": metrics["token_length"],
-                    **{metric: metrics[metric] for metric in TOKEN_DERIVED_METRICS},
-                }
-            )
+    rows = iter_logprob_rows(processed_root, selected_datasets, selected_models)
+    batches = iter(lambda: list(islice(rows, batch_size)), [])
+    source_batches = tqdm(batches, desc="Computing prefix metric batches", unit="batch") if show_progress else batches
+    for batch in source_batches:
+        for row in batch:
+            for metrics in compute_prefix_metrics(row, step=step):
+                records.append(
+                    {
+                        "dataset": row["dataset"],
+                        "model": row["model"],
+                        "split": row.get("split"),
+                        "token_length": metrics["token_length"],
+                        **{metric: metrics[metric] for metric in TOKEN_DERIVED_METRICS},
+                    }
+                )
     return pd.DataFrame(records, columns=columns)
 
 

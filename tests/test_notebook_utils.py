@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
+import notebooks.logprob_metrics_distributions_utils as metric_utils
 from scripts.logprob_metrics import compute_logprob_metrics
 from notebooks.logprob_metrics_distributions_utils import (
     TOKEN_DERIVED_METRICS,
@@ -84,6 +85,38 @@ def test_compute_length_metric_table_keeps_token_metrics_only(tmp_path):
     assert list(result["token_length"]) == [2, 4]
     assert {"dataset", "model", "split", "token_length", *TOKEN_DERIVED_METRICS} <= set(result.columns)
     assert not {"text_len_symbols", "text_len_words", "text_len_sentences"} & set(result.columns)
+
+
+def test_compute_length_metric_table_supports_source_batches(tmp_path):
+    data_dir = tmp_path / "demo__model" / "HG" / "data"
+    data_dir.mkdir(parents=True)
+    pd.DataFrame([_prefix_test_row()]).to_parquet(data_dir / "part.parquet")
+
+    result = compute_length_metric_table(tmp_path, step=2, batch_size=1, show_progress=False)
+
+    assert list(result["token_length"]) == [2, 4]
+
+
+def test_compute_length_metric_table_reports_batch_progress(tmp_path, monkeypatch):
+    data_dir = tmp_path / "demo__model" / "HG" / "data"
+    data_dir.mkdir(parents=True)
+    pd.DataFrame([_prefix_test_row()]).to_parquet(data_dir / "part.parquet")
+    progress = {}
+
+    class Progress:
+        def __init__(self, iterable, **kwargs):
+            self.iterable = iterable
+            progress.update(kwargs)
+
+        def __iter__(self):
+            return iter(self.iterable)
+
+    monkeypatch.setattr(metric_utils, "tqdm", Progress)
+
+    compute_length_metric_table(tmp_path, step=2, batch_size=1, show_progress=True)
+
+    assert progress["desc"] == "Computing prefix metric batches"
+    assert progress["unit"] == "batch"
 
 
 def test_default_length_metrics_path_uses_processed_root(tmp_path):
