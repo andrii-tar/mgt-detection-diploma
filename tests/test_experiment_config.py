@@ -5,7 +5,7 @@ from pathlib import Path
 os.environ.setdefault("TEXT_DETECTION_DATA", str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from experiment_config import resolve_model_id
+from experiment_config import resolve_dataset_splits, resolve_model_id
 
 
 def test_resolve_llama_model_aliases():
@@ -16,3 +16,10 @@ def test_resolve_llama_model_aliases():
 def test_resolve_phi_model_aliases():
     assert resolve_model_id("phi_4_mini_instruct") == "microsoft/Phi-4-mini-instruct"
     assert resolve_model_id("phi_4_mini_reasoning") == "microsoft/Phi-4-mini-reasoning"
+
+
+def test_resolve_custom_2025_dataset_splits(tmp_path: Path):
+    assert resolve_dataset_splits("custom_2025", tmp_path) == {
+        "HG": tmp_path / "raw/custom/samples_2025/custom_2025_HG.csv",
+        "MG": tmp_path / "raw/custom/samples_2025/custom_2025_MG.csv",
+    }

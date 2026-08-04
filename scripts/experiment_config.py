@@ -61,6 +61,13 @@ def build_datasets(data_root: Path) -> dict[str, dict[str, object]]:
             "MG": data_root / "raw/outfox/outfox_chatgpt_all_MG.csv",
         },
     },
+    "custom_2025": {
+        "dataset_name": "custom_2025",
+        "splits": {
+            "HG": data_root / "raw/custom/samples_2025/custom_2025_HG.csv",
+            "MG": data_root / "raw/custom/samples_2025/custom_2025_MG.csv",
+        },
+    },
     "bbc_news_content": {
         "dataset_name": "bbc_news_content",
         "splits": {
