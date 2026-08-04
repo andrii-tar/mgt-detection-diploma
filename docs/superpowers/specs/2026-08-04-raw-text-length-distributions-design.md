@@ -32,6 +32,13 @@ Each dataset produces one Matplotlib figure:
 - The figure title identifies the dataset.
 - Output filenames use the dataset alias with a `.png` suffix.
 
+The script also produces a second figure for each dataset with all available
+split histograms overlaid on one axis. For this combined figure, the 95th
+percentile is calculated independently for each split, and each split is
+filtered to values at or below its own cutoff. The existing 50-bin setting,
+split colors, and a split legend are used. The combined figure is saved as
+`{dataset}_combined_95.png`; the existing `{dataset}.png` figure is retained.
+
 ## CLI
 
 The script supports:
@@ -54,4 +61,7 @@ Tests will verify:
 - configured HG/MG paths are used instead of recursive raw-file discovery;
 - figures use 50 bins and separate split axes;
 - one PNG is written per processed dataset;
+- the combined plot trims HG and MG independently at their 95th percentiles;
+- the combined plot uses a shared axis and split legend;
+- the combined output uses the `{dataset}_combined_95.png` filename;
 - missing files are skipped and invalid CSV schemas fail clearly.
