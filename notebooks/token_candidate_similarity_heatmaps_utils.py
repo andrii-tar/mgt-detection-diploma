@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import NamedTuple
 
@@ -66,11 +67,124 @@ def load_similarity_row(processed_root: Path, dataset: str, model: str, split: s
     raise KeyError(f"No token similarity row for text id {text_id}")
 
 
+def _iter_stage_one_rows(
+    processed_root: Path,
+    dataset: str,
+    model: str,
+    split: str,
+) -> Iterator[pd.Series]:
+    data_paths = sorted((split_dir(processed_root, dataset, model, split) / "data").glob("*.parquet"))
+    if not data_paths:
+        raise FileNotFoundError(f"No stage-1 data parquet files for {dataset=} {model=} {split=}")
+    for path in data_paths:
+        yield from (row for _, row in pd.read_parquet(path).iterrows())
+
+
+def calculate_rolling_statistics(
+    processed_root: Path,
+    dataset: str,
+    model: str,
+    *,
+    splits: tuple[str, ...] = ("HG", "MG"),
+    top_k: int = 20,
+    window: int = 5,
+) -> pd.DataFrame:
+    rows = []
+    columns = ["split", "text_id", "metric", "mean", "std", "variance"]
+    for split in splits:
+        for logprob_row in _iter_stage_one_rows(processed_root, dataset, model, split):
+            text_id = int(logprob_row["id"])
+            similarity_row = load_similarity_row(processed_root, dataset, model, split, text_id)
+            matrices = build_text_heatmap_matrices(logprob_row, similarity_row, top_k=top_k)
+            coverage = compute_token_coverage(logprob_row, top_k=top_k)
+            summary = token_summary_series(matrices, coverage[: len(matrices.token_labels)])
+            for metric, values in summary.items():
+                smoothed = rolling_mean(values, window=window)
+                finite = smoothed[np.isfinite(smoothed)]
+                rows.append(
+                    {
+                        "split": split,
+                        "text_id": text_id,
+                        "metric": metric,
+                        "mean": float(finite.mean()) if finite.size else math.nan,
+                        "std": float(finite.std()) if finite.size else math.nan,
+                        "variance": float(finite.var()) if finite.size else math.nan,
+                    }
+                )
+    return pd.DataFrame(rows, columns=columns)
+
+
 def finite_min_max(matrix: np.ndarray) -> tuple[float, float]:
     finite = matrix[np.isfinite(matrix)]
     if finite.size == 0:
         return 0.0, 0.0
     return float(finite.min()), float(finite.max())
+
+
+def rolling_mean(
+    values: np.ndarray | list[float],
+    *,
+    window: int = 10,
+    min_periods: int = 1,
+) -> np.ndarray:
+    if isinstance(window, bool) or not isinstance(window, (int, np.integer)):
+        raise ValueError("window must be an integer")
+    if isinstance(min_periods, bool) or not isinstance(min_periods, (int, np.integer)):
+        raise ValueError("min_periods must be an integer")
+    if window <= 0:
+        raise ValueError("window must be positive")
+    if min_periods <= 0 or min_periods > window:
+        raise ValueError("min_periods must be between 1 and window")
+    array = np.asarray(values, dtype="float64")
+    if array.ndim != 1:
+        raise ValueError("values must be one-dimensional")
+    result = np.full(array.shape, np.nan, dtype="float64")
+    left_radius = window // 2
+    right_radius = (window - 1) // 2
+    for position in range(len(array)):
+        start = max(0, position - left_radius)
+        stop = min(len(array), position + right_radius + 1)
+        finite = array[start:stop][np.isfinite(array[start:stop])]
+        if finite.size >= min_periods:
+            result[position] = finite.mean()
+    return result
+
+
+def token_summary_series(
+    matrices: TextHeatmapMatrices,
+    coverage: np.ndarray,
+    observed_logprobs: np.ndarray | list[float] | None = None,
+) -> dict[str, np.ndarray]:
+    coverage_array = np.asarray(coverage, dtype="float64")
+    heatmap_width = matrices.logprob_matrix.shape[1]
+    if coverage_array.ndim != 1 or coverage_array.size != heatmap_width:
+        raise ValueError(
+            f"coverage length must match heatmap token width ({heatmap_width}); "
+            f"got {coverage_array.size}"
+        )
+    logprob_candidates = np.where(np.isfinite(matrices.logprob_matrix[1:]), matrices.logprob_matrix[1:], np.nan)
+    similarity_candidates = np.where(np.isfinite(matrices.similarity_matrix[1:]), matrices.similarity_matrix[1:], np.nan)
+    with np.errstate(invalid="ignore"):
+        mean_logprob_delta = np.nanmean(logprob_candidates, axis=0)
+        mean_similarity = np.nanmean(similarity_candidates, axis=0)
+    mean_logprob_delta = np.where(np.isnan(logprob_candidates).all(axis=0), np.nan, mean_logprob_delta)
+    mean_similarity = np.where(np.isnan(similarity_candidates).all(axis=0), np.nan, mean_similarity)
+    if observed_logprobs is None:
+        observed_array = matrices.logprob_matrix[0].copy()
+    else:
+        observed_array = np.asarray(observed_logprobs, dtype="float64")
+        if observed_array.ndim != 1 or observed_array.size != heatmap_width:
+            raise ValueError(
+                f"observed_logprobs length must match heatmap token width ({heatmap_width}); "
+                f"got {observed_array.size}"
+            )
+        observed_array = np.where(np.isfinite(observed_array), observed_array, np.nan)
+    return {
+        "observed_logprob": observed_array,
+        "mean_candidate_logprob_delta": mean_logprob_delta,
+        "mean_candidate_similarity": mean_similarity,
+        "top20_coverage": coverage_array.copy(),
+    }
 
 
 def _finite_candidate_logprobs(token: dict) -> list[float]:
@@ -241,6 +355,96 @@ def draw_token_coverage_scatter(coverage: np.ndarray) -> None:
     plt.show()
 
 
+def plot_smoothed_token_summaries(
+    summary: dict[str, np.ndarray],
+    *,
+    window: int = 10,
+) -> None:
+    figure, axes = plt.subplots(
+        len(summary),
+        1,
+        figsize=(12, 2.8 * len(summary)),
+        sharex=True,
+        squeeze=False,
+        constrained_layout=True,
+    )
+    for axis, (name, values) in zip(axes[:, 0], summary.items()):
+        positions = np.arange(len(values))
+        smoothed = rolling_mean(values, window=window)
+        finite_smoothed = smoothed[np.isfinite(smoothed)]
+        if finite_smoothed.size:
+            mean = float(finite_smoothed.mean())
+            std = float(finite_smoothed.std())
+            variance = float(finite_smoothed.var())
+        else:
+            mean = std = variance = float("nan")
+        axis.plot(positions, values, color="0.65", linewidth=0.8, label="raw")
+        axis.plot(
+            positions,
+            smoothed,
+            color="#d62728",
+            linewidth=1.8,
+            label=f"rolling mean ({window})",
+        )
+        axis.set_title(
+            f"{name} (window={window}): "
+            f"mean={mean:.4f}, std={std:.4f}, variance={variance:.4f}"
+        )
+        axis.set_ylabel(name)
+        axis.grid(axis="y", alpha=0.25)
+        axis.legend(loc="best")
+    axes[-1, 0].set_xlabel("Token position")
+    figure.suptitle(f"Token-level metrics with rolling smoothing (window={window})")
+    plt.show()
+
+
+def plot_rolling_statistics_histograms(
+    statistics: pd.DataFrame,
+    *,
+    bins: int = 30,
+) -> tuple[plt.Figure, plt.Figure, plt.Figure]:
+    metrics = sorted(statistics["metric"].dropna().unique())
+    splits = ("HG", "MG")
+    figures = []
+    statistic_labels = {
+        "mean": "mean",
+        "std": "standard deviation",
+        "variance": "variance",
+    }
+
+    for statistic, label in statistic_labels.items():
+        figure, axes = plt.subplots(
+            len(metrics),
+            len(splits),
+            squeeze=False,
+            sharex="row",
+            constrained_layout=True,
+        )
+        for row_index, metric in enumerate(metrics):
+            for column_index, split in enumerate(splits):
+                axis = axes[row_index, column_index]
+                values = statistics.loc[
+                    (statistics["metric"] == metric) & (statistics["split"] == split),
+                    statistic,
+                ].to_numpy(dtype=float)
+                finite_values = values[np.isfinite(values)]
+                if finite_values.size:
+                    axis.hist(finite_values, bins=bins)
+                else:
+                    axis.text(0.5, 0.5, "No finite values", ha="center", va="center", transform=axis.transAxes)
+                if row_index == 0:
+                    axis.set_title(split)
+                if column_index == 0:
+                    axis.set_ylabel(metric)
+                if row_index == len(metrics) - 1:
+                    axis.set_xlabel(label)
+        figure.suptitle(f"Per-text rolling {label} distributions")
+        plt.show()
+        figures.append(figure)
+
+    return tuple(figures)
+
+
 def visualize_text_similarities(
     processed_root: Path,
     dataset: str,
@@ -250,6 +454,8 @@ def visualize_text_similarities(
     *,
     top_k: int = 20,
     token_range: str | tuple[int | None, int | None] | slice | None = None,
+    smoothing_window: int = 10,
+    show_smoothed: bool = True,
 ) -> None:
     logprob_row = load_text_row(processed_root, dataset, model, split, text_index)
     similarity_row = load_similarity_row(processed_root, dataset, model, split, int(logprob_row["id"]))
@@ -294,3 +500,21 @@ def visualize_text_similarities(
         row_labels=[f"top {rank}" for rank in range(1, top_k + 1)],
     )
     draw_token_coverage_scatter(compute_token_coverage(logprob_row, top_k=top_k, token_range=token_range))
+    if show_smoothed:
+        coverage = compute_token_coverage(logprob_row, top_k=top_k, token_range=token_range)
+        observed_logprobs = np.asarray(
+            [
+                float(token["logprob"])
+                if token.get("logprob") is not None and math.isfinite(float(token["logprob"]))
+                else math.nan
+                for token in list(logprob_row["tokens"])[parse_token_range(token_range)]
+            ],
+            dtype="float64",
+        )
+        matrix_width = len(matrices.token_labels)
+        summary_series = token_summary_series(
+            matrices,
+            coverage[:matrix_width],
+            observed_logprobs=observed_logprobs[:matrix_width],
+        )
+        plot_smoothed_token_summaries(summary_series, window=smoothing_window)
