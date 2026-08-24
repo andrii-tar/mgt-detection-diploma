@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -21,9 +22,14 @@ from notebooks.logprob_metrics_distributions_utils import (
     save_length_metric_table,
 )
 from notebooks.token_candidate_similarity_heatmaps_utils import (
+    TextHeatmapMatrices,
     build_text_heatmap_matrices,
     compute_token_coverage,
+    plot_smoothed_token_summaries,
+    rolling_mean,
+    token_summary_series,
     text_d_score_summary,
+    visualize_text_similarities,
 )
 
 
@@ -380,3 +386,221 @@ def test_heatmap_notebook_imports_updated_orchestration_before_calls():
         for cell in cells
         for name in ("path_slug", "experiment_name", "load_text_row", "load_similarity_row", "build_text_heatmap_matrices")
     )
+    notebook_source = "\n".join("".join(cell.get("source", [])) for cell in cells)
+    assert "SMOOTHING_WINDOW = 10" in notebook_source
+    assert "SHOW_SMOOTHED = True" in notebook_source
+    assert "smoothing_window=SMOOTHING_WINDOW" in notebook_source
+    assert "show_smoothed=SHOW_SMOOTHED" in notebook_source
+    assert all(
+        cell.get("execution_count") is None and cell.get("outputs") == []
+        for cell in cells
+        if cell["cell_type"] == "code"
+    )
+
+
+def test_rolling_mean_is_centered_and_preserves_edges() -> None:
+    result = rolling_mean(np.array([1.0, 2.0, 3.0, 4.0, 5.0]), window=3)
+
+    assert result == pytest.approx([1.5, 2.0, 3.0, 4.0, 4.5])
+
+
+def test_rolling_mean_even_window_uses_exactly_window_positions() -> None:
+    result = rolling_mean(np.arange(1.0, 13.0), window=10)
+
+    assert result[5] == pytest.approx(np.mean(np.arange(1.0, 11.0)))
+
+
+def test_rolling_mean_ignores_nan_values_and_honors_min_periods() -> None:
+    result = rolling_mean(np.array([1.0, np.nan, 3.0, np.nan, 5.0]), window=3, min_periods=2)
+
+    assert result == pytest.approx([np.nan, 2.0, np.nan, 4.0, np.nan], nan_ok=True)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"window": 0},
+        {"window": -1},
+        {"window": 3.0},
+        {"window": np.int64(3), "min_periods": np.float64(1.0)},
+        {"window": 3, "min_periods": 0},
+        {"window": 3, "min_periods": 4},
+    ],
+)
+def test_rolling_mean_rejects_invalid_parameters(kwargs: dict[str, int]) -> None:
+    with pytest.raises(ValueError, match="window|min_periods"):
+        rolling_mean([1.0, 2.0, 3.0], **kwargs)
+
+
+def test_rolling_mean_returns_all_nan_for_empty_or_all_nan_input() -> None:
+    assert rolling_mean([], window=3).size == 0
+    assert np.isnan(rolling_mean([np.nan, np.nan], window=3)).all()
+
+
+def test_token_summary_series_extracts_aligned_raw_signals() -> None:
+    matrices = TextHeatmapMatrices(
+        logprob_matrix=np.array(
+            [
+                [-0.1, -0.2, -0.3],
+                [-0.3, np.nan, -0.5],
+                [-0.5, -0.6, np.nan],
+            ]
+        ),
+        similarity_matrix=np.array(
+            [
+                [1.0, 1.0, 1.0],
+                [0.2, np.nan, 0.4],
+                [0.6, 0.8, np.nan],
+            ]
+        ),
+        token_labels=["a", "b", "c"],
+        logprob_scale=(-0.6, -0.1),
+        similarity_scale=(0.2, 1.0),
+        coverage_matrix=np.array([[0.2, 0.3, 0.4], [0.1, np.nan, 0.2]]),
+        coverage_scale=(0.1, 0.4),
+    )
+
+    summary = token_summary_series(matrices, np.array([0.3, 0.5, np.nan]))
+
+    assert set(summary) == {
+        "observed_logprob",
+        "mean_candidate_logprob_delta",
+        "mean_candidate_similarity",
+        "top20_coverage",
+    }
+    assert summary["observed_logprob"] == pytest.approx([-0.1, -0.2, -0.3])
+    assert summary["mean_candidate_logprob_delta"] == pytest.approx([-0.4, -0.6, -0.5], nan_ok=True)
+    assert summary["mean_candidate_similarity"] == pytest.approx([0.4, 0.8, 0.4], nan_ok=True)
+    assert summary["top20_coverage"] == pytest.approx([0.3, 0.5, np.nan], nan_ok=True)
+
+
+def test_token_summary_series_ignores_non_finite_candidates() -> None:
+    matrices = TextHeatmapMatrices(
+        logprob_matrix=np.array([[0.0], [1.0], [np.inf], [np.nan]]),
+        similarity_matrix=np.array([[1.0], [0.2], [np.inf], [np.nan]]),
+        token_labels=["a"],
+        logprob_scale=(0.0, 1.0),
+        similarity_scale=(0.2, 1.0),
+        coverage_matrix=np.zeros((1, 1)),
+        coverage_scale=(0.0, 0.0),
+    )
+
+    summary = token_summary_series(matrices, np.array([0.3]))
+
+    assert summary["mean_candidate_logprob_delta"] == pytest.approx([1.0])
+    assert summary["mean_candidate_similarity"] == pytest.approx([0.2])
+
+
+def test_token_summary_series_uses_supplied_observed_logprobs() -> None:
+    matrices = TextHeatmapMatrices(
+        logprob_matrix=np.array([[-0.1, -0.2], [-0.3, -0.4]]),
+        similarity_matrix=np.zeros((2, 2)),
+        token_labels=["a", "b"],
+        logprob_scale=(-0.4, -0.1),
+        similarity_scale=(0.0, 0.0),
+        coverage_matrix=np.zeros((1, 2)),
+        coverage_scale=(0.0, 0.0),
+    )
+
+    summary = token_summary_series(
+        matrices,
+        np.array([0.3, 0.4]),
+        observed_logprobs=np.array([-1.5, np.nan]),
+    )
+
+    assert summary["observed_logprob"] == pytest.approx([-1.5, np.nan], nan_ok=True)
+
+
+def test_token_summary_series_rejects_mismatched_coverage_length() -> None:
+    matrices = TextHeatmapMatrices(
+        logprob_matrix=np.zeros((2, 3)),
+        similarity_matrix=np.zeros((2, 3)),
+        token_labels=["a", "b", "c"],
+        logprob_scale=(0.0, 0.0),
+        similarity_scale=(0.0, 0.0),
+        coverage_matrix=np.zeros((1, 3)),
+        coverage_scale=(0.0, 0.0),
+    )
+
+    with pytest.raises(ValueError, match="coverage length.*heatmap token width"):
+        token_summary_series(matrices, np.array([0.1, 0.2]))
+
+
+def test_plot_smoothed_token_summaries_draws_one_panel_per_metric(monkeypatch) -> None:
+    summary = {
+        "observed_logprob": np.array([0.1, 0.2, 0.3]),
+        "mean_candidate_logprob_delta": np.array([-0.1, -0.2, -0.3]),
+        "mean_candidate_similarity": np.array([0.2, 0.4, 0.6]),
+        "top20_coverage": np.array([0.5, 0.6, 0.7]),
+    }
+    monkeypatch.setattr(plt, "show", lambda: None)
+
+    plot_smoothed_token_summaries(summary, window=10)
+
+    assert len(plt.get_fignums()) == 1
+    assert len(plt.figure(plt.get_fignums()[0]).axes) == 4
+    plt.close("all")
+
+
+def test_visualize_text_similarities_can_disable_smoothed_plot(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "notebooks.token_candidate_similarity_heatmaps_utils.load_text_row",
+        lambda *args: pd.Series({"id": 1, "tokens": [], "text": ""}),
+    )
+    monkeypatch.setattr(
+        "notebooks.token_candidate_similarity_heatmaps_utils.load_similarity_row",
+        lambda *args: pd.Series({"token_similarities": []}),
+    )
+    monkeypatch.setattr(
+        "notebooks.token_candidate_similarity_heatmaps_utils.build_text_heatmap_matrices",
+        lambda *args, **kwargs: TextHeatmapMatrices(
+            np.empty((2, 0)), np.empty((2, 0)), [], (0.0, 0.0), (0.0, 0.0), np.empty((1, 0)), (0.0, 0.0)
+        ),
+    )
+    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.draw_square_heatmap", lambda *args, **kwargs: None)
+    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.draw_token_coverage_scatter", lambda *args, **kwargs: None)
+    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.display", lambda *args, **kwargs: None)
+    monkeypatch.setattr(plt, "show", lambda: None)
+
+    visualize_text_similarities(tmp_path, "demo", "model", "HG", 0, show_smoothed=False)
+
+    assert plt.get_fignums() == []
+
+
+def test_visualize_text_similarities_truncates_summary_inputs_to_matrix_width(monkeypatch, tmp_path) -> None:
+    logprob_row = pd.Series(
+        {
+            "id": 1,
+            "tokens": [
+                {"logprob": -1.0, "token": "a"},
+                {"logprob": -2.0, "token": "b"},
+                {"logprob": -3.0, "token": "c"},
+            ],
+            "text": "abc",
+        }
+    )
+    matrices = TextHeatmapMatrices(
+        np.zeros((2, 2)), np.zeros((2, 2)), ["a", "b"], (0.0, 0.0), (0.0, 0.0), np.zeros((1, 2)), (0.0, 0.0)
+    )
+    captured = {}
+    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.load_text_row", lambda *args: logprob_row)
+    monkeypatch.setattr(
+        "notebooks.token_candidate_similarity_heatmaps_utils.load_similarity_row",
+        lambda *args: pd.Series({"token_similarities": []}),
+    )
+    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.build_text_heatmap_matrices", lambda *args, **kwargs: matrices)
+    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.draw_square_heatmap", lambda *args, **kwargs: None)
+    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.draw_token_coverage_scatter", lambda *args, **kwargs: None)
+    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.display", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "notebooks.token_candidate_similarity_heatmaps_utils.token_summary_series",
+        lambda matrices, coverage, observed_logprobs=None: captured.update(
+            coverage=coverage, observed_logprobs=observed_logprobs
+        ) or {},
+    )
+    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.plot_smoothed_token_summaries", lambda *args, **kwargs: None)
+
+    visualize_text_similarities(tmp_path, "demo", "model", "HG", 0)
+
+    assert captured["coverage"].size == len(matrices.token_labels)
+    assert captured["observed_logprobs"] == pytest.approx([-1.0, -2.0])
