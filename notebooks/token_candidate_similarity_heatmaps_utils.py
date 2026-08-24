@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import NamedTuple
 
@@ -64,6 +65,53 @@ def load_similarity_row(processed_root: Path, dataset: str, model: str, split: s
         if not matches.empty:
             return matches.iloc[0]
     raise KeyError(f"No token similarity row for text id {text_id}")
+
+
+def _iter_stage_one_rows(
+    processed_root: Path,
+    dataset: str,
+    model: str,
+    split: str,
+) -> Iterator[pd.Series]:
+    data_paths = sorted((split_dir(processed_root, dataset, model, split) / "data").glob("*.parquet"))
+    if not data_paths:
+        raise FileNotFoundError(f"No stage-1 data parquet files for {dataset=} {model=} {split=}")
+    for path in data_paths:
+        yield from (row for _, row in pd.read_parquet(path).iterrows())
+
+
+def calculate_rolling_statistics(
+    processed_root: Path,
+    dataset: str,
+    model: str,
+    *,
+    splits: tuple[str, ...] = ("HG", "MG"),
+    top_k: int = 20,
+    window: int = 5,
+) -> pd.DataFrame:
+    rows = []
+    columns = ["split", "text_id", "metric", "mean", "std", "variance"]
+    for split in splits:
+        for logprob_row in _iter_stage_one_rows(processed_root, dataset, model, split):
+            text_id = int(logprob_row["id"])
+            similarity_row = load_similarity_row(processed_root, dataset, model, split, text_id)
+            matrices = build_text_heatmap_matrices(logprob_row, similarity_row, top_k=top_k)
+            coverage = compute_token_coverage(logprob_row, top_k=top_k)
+            summary = token_summary_series(matrices, coverage[: len(matrices.token_labels)])
+            for metric, values in summary.items():
+                smoothed = rolling_mean(values, window=window)
+                finite = smoothed[np.isfinite(smoothed)]
+                rows.append(
+                    {
+                        "split": split,
+                        "text_id": text_id,
+                        "metric": metric,
+                        "mean": float(finite.mean()) if finite.size else math.nan,
+                        "std": float(finite.std()) if finite.size else math.nan,
+                        "variance": float(finite.var()) if finite.size else math.nan,
+                    }
+                )
+    return pd.DataFrame(rows, columns=columns)
 
 
 def finite_min_max(matrix: np.ndarray) -> tuple[float, float]:
@@ -348,6 +396,53 @@ def plot_smoothed_token_summaries(
     axes[-1, 0].set_xlabel("Token position")
     figure.suptitle(f"Token-level metrics with rolling smoothing (window={window})")
     plt.show()
+
+
+def plot_rolling_statistics_histograms(
+    statistics: pd.DataFrame,
+    *,
+    bins: int = 30,
+) -> tuple[plt.Figure, plt.Figure, plt.Figure]:
+    metrics = sorted(statistics["metric"].dropna().unique())
+    splits = ("HG", "MG")
+    figures = []
+    statistic_labels = {
+        "mean": "mean",
+        "std": "standard deviation",
+        "variance": "variance",
+    }
+
+    for statistic, label in statistic_labels.items():
+        figure, axes = plt.subplots(
+            len(metrics),
+            len(splits),
+            squeeze=False,
+            sharex="row",
+            constrained_layout=True,
+        )
+        for row_index, metric in enumerate(metrics):
+            for column_index, split in enumerate(splits):
+                axis = axes[row_index, column_index]
+                values = statistics.loc[
+                    (statistics["metric"] == metric) & (statistics["split"] == split),
+                    statistic,
+                ].to_numpy(dtype=float)
+                finite_values = values[np.isfinite(values)]
+                if finite_values.size:
+                    axis.hist(finite_values, bins=bins)
+                else:
+                    axis.text(0.5, 0.5, "No finite values", ha="center", va="center", transform=axis.transAxes)
+                if row_index == 0:
+                    axis.set_title(split)
+                if column_index == 0:
+                    axis.set_ylabel(metric)
+                if row_index == len(metrics) - 1:
+                    axis.set_xlabel(label)
+        figure.suptitle(f"Per-text rolling {label} distributions")
+        plt.show()
+        figures.append(figure)
+
+    return tuple(figures)
 
 
 def visualize_text_similarities(
