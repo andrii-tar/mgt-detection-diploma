@@ -542,6 +542,19 @@ def test_plot_smoothed_token_summaries_draws_one_panel_per_metric(monkeypatch) -
     plt.close("all")
 
 
+def test_plot_smoothed_token_summaries_displays_smoothed_statistics(monkeypatch) -> None:
+    summary = {"metric": np.array([1.0, 2.0, 3.0])}
+    monkeypatch.setattr(plt, "show", lambda: None)
+
+    plot_smoothed_token_summaries(summary, window=5)
+
+    title = plt.figure(plt.get_fignums()[0]).axes[0].get_title()
+    assert "mean=2.0000" in title
+    assert "std=0.0000" in title
+    assert "variance=0.0000" in title
+    plt.close("all")
+
+
 def test_visualize_text_similarities_can_disable_smoothed_plot(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         "notebooks.token_candidate_similarity_heatmaps_utils.load_text_row",

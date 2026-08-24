@@ -322,13 +322,25 @@ def plot_smoothed_token_summaries(
     )
     for axis, (name, values) in zip(axes[:, 0], summary.items()):
         positions = np.arange(len(values))
+        smoothed = rolling_mean(values, window=window)
+        finite_smoothed = smoothed[np.isfinite(smoothed)]
+        if finite_smoothed.size:
+            mean = float(finite_smoothed.mean())
+            std = float(finite_smoothed.std())
+            variance = float(finite_smoothed.var())
+        else:
+            mean = std = variance = float("nan")
         axis.plot(positions, values, color="0.65", linewidth=0.8, label="raw")
         axis.plot(
             positions,
-            rolling_mean(values, window=window),
+            smoothed,
             color="#d62728",
             linewidth=1.8,
             label=f"rolling mean ({window})",
+        )
+        axis.set_title(
+            f"{name} (window={window}): "
+            f"mean={mean:.4f}, std={std:.4f}, variance={variance:.4f}"
         )
         axis.set_ylabel(name)
         axis.grid(axis="y", alpha=0.25)
