@@ -36,6 +36,7 @@ FEATURES = [
     "d_score_top20_coverage",
     "text_len_words",
 ]
+TEST_LOCAL_FEATURES = ("observed_logprob__mean", "top20_coverage__mean")
 
 
 def metric_row(row_id: int, split: str, **overrides: object) -> dict[str, object]:
@@ -252,8 +253,8 @@ def local_evidence_windows(texts_per_label: int = 10) -> pd.DataFrame:
                             "window_length": window_length,
                             "start_token": start_token,
                             "stop_token": start_token + window_length,
-                            "feature_a": float(label * 10 + text_id / 100 + start_token / 1000),
-                            "feature_b": float(label * 5 + window_length / 100 + start_token / 1000),
+                            TEST_LOCAL_FEATURES[0]: float(label * 10 + text_id / 100 + start_token / 1000),
+                            TEST_LOCAL_FEATURES[1]: float(label * 5 + window_length / 100 + start_token / 1000),
                         }
                     )
     return pd.DataFrame(rows)
@@ -351,11 +352,23 @@ def test_plot_local_evidence_timeline_marks_scores_and_suspicious_windows() -> N
 
 def test_run_local_evidence_experiments_returns_text_scores_and_attributions(
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     windows = local_evidence_windows()
     for index, feature in enumerate(local_evidence_utils.LOCAL_FEATURE_COLUMNS):
-        windows[feature] = windows["feature_a"] + index / 1000
+        windows[feature] = windows[TEST_LOCAL_FEATURES[0]] + index / 1000
     partitions = split_local_evidence_texts(windows, seed=42)
+
+    monkeypatch.setattr(local_evidence_utils, "print_local_evidence_model_coefficients", lambda *args: None)
+    expected_summary, expected_predictions, expected_scored_windows = run_local_evidence_experiments(
+        windows,
+        partitions,
+        feature_columns=local_evidence_utils.LOCAL_FEATURE_COLUMNS,
+        seed=42,
+        show_progress=False,
+    )
+    capsys.readouterr()
+    monkeypatch.undo()
 
     summary, text_predictions, scored_windows = run_local_evidence_experiments(
         windows,
@@ -375,9 +388,20 @@ def test_run_local_evidence_experiments_returns_text_scores_and_attributions(
         "top_positive_feature",
         "top_negative_feature",
     } <= set(scored_windows.columns)
+    pd.testing.assert_frame_equal(summary, expected_summary)
+    pd.testing.assert_frame_equal(text_predictions, expected_predictions)
+    pd.testing.assert_frame_equal(scored_windows, expected_scored_windows)
     output = capsys.readouterr().out
-    for window_length in (32, 64):
-        assert f"window_length={window_length}" in output
+    reports = output.split("Local evidence model coefficients (window_length=")[1:]
+    assert len(reports) == 2
+    for window_length, report in zip((32, 64), reports):
+        assert report.startswith(f"{window_length})\n")
+        coefficient_lines = [line for line in report.splitlines() if ": coefficient=" in line]
+        assert len(coefficient_lines) == 36
+        assert all(
+            any(line.startswith(f"{feature}: coefficient=") for line in coefficient_lines)
+            for feature in local_evidence_utils.LOCAL_FEATURE_COLUMNS
+        )
     for metric in local_evidence_utils.LOCAL_METRICS:
         assert f"{metric}: mean_signed=" in output
 
@@ -390,22 +414,22 @@ def test_reusable_local_evidence_model_scores_supplied_windows_with_contribution
         windows,
         partitions,
         window_length=32,
-        feature_columns=("feature_a", "feature_b"),
+        feature_columns=TEST_LOCAL_FEATURES,
         seed=42,
     )
     supplied = windows.loc[windows["window_length"].eq(32)].copy()
     scored = score_local_evidence_windows(model, supplied, feature_columns)
 
-    assert feature_columns == ("feature_a", "feature_b")
+    assert feature_columns == TEST_LOCAL_FEATURES
     assert len(scored) == len(supplied)
     assert scored["mg_score"].between(0.0, 1.0).all()
     assert {
-        "contribution__feature_a",
-        "contribution__feature_b",
+        "contribution__observed_logprob__mean",
+        "contribution__top20_coverage__mean",
         "top_positive_feature",
         "top_negative_feature",
     } <= set(scored.columns)
-    assert scored["contribution__feature_a"].notna().all()
+    assert scored["contribution__observed_logprob__mean"].notna().all()
 
 
 def test_fit_local_evidence_model_ignores_non_training_rows_and_features() -> None:
@@ -414,14 +438,14 @@ def test_fit_local_evidence_model_ignores_non_training_rows_and_features() -> No
     train_parents = set(partitions["train"].set_index(["split", "text_id"]).index)
     non_training = ~pd.MultiIndex.from_frame(windows[["split", "text_id"]]).isin(train_parents)
     mutated_windows = windows.copy()
-    mutated_windows.loc[non_training, "feature_a"] = 1_000_000.0
-    mutated_windows.loc[non_training, "feature_b"] = -1_000_000.0
+    mutated_windows.loc[non_training, TEST_LOCAL_FEATURES[0]] = 1_000_000.0
+    mutated_windows.loc[non_training, TEST_LOCAL_FEATURES[1]] = -1_000_000.0
 
     original_model, feature_columns = fit_local_evidence_model(
         windows,
         partitions,
         window_length=32,
-        feature_columns=("feature_a", "feature_b"),
+        feature_columns=TEST_LOCAL_FEATURES,
         seed=42,
     )
     mutated_model, _ = fit_local_evidence_model(
@@ -448,12 +472,12 @@ def test_score_local_evidence_windows_rejects_missing_features() -> None:
         windows,
         partitions,
         window_length=32,
-        feature_columns=("feature_a", "feature_b"),
+        feature_columns=TEST_LOCAL_FEATURES,
         seed=42,
     )
 
     with pytest.raises(ValueError, match="missing feature columns"):
-        score_local_evidence_windows(model, windows.drop(columns="feature_b"), ("feature_a", "feature_b"))
+        score_local_evidence_windows(model, windows.drop(columns=TEST_LOCAL_FEATURES[1]), TEST_LOCAL_FEATURES)
 
 
 def test_run_local_evidence_experiments_shows_window_length_progress(
@@ -472,7 +496,7 @@ def test_run_local_evidence_experiments_shows_window_length_progress(
     run_local_evidence_experiments(
         windows,
         partitions,
-        feature_columns=("feature_a", "feature_b"),
+        feature_columns=TEST_LOCAL_FEATURES,
         seed=42,
         show_progress=True,
     )
@@ -488,7 +512,7 @@ def test_run_local_evidence_experiments_can_disable_progress(monkeypatch: pytest
     run_local_evidence_experiments(
         windows,
         partitions,
-        feature_columns=("feature_a", "feature_b"),
+        feature_columns=TEST_LOCAL_FEATURES,
         seed=42,
         show_progress=False,
     )
@@ -496,19 +520,19 @@ def test_run_local_evidence_experiments_can_disable_progress(monkeypatch: pytest
 
 def test_local_evidence_preserves_all_nan_training_features() -> None:
     windows = local_evidence_windows()
-    windows["all_nan_feature"] = float("nan")
+    windows["all_nan_feature__mean"] = float("nan")
     partitions = split_local_evidence_texts(windows, seed=42)
 
     _, _, scored_windows = run_local_evidence_experiments(
         windows,
         partitions,
-        feature_columns=("feature_a", "all_nan_feature"),
+        feature_columns=(TEST_LOCAL_FEATURES[0], "all_nan_feature__mean"),
         seed=42,
         show_progress=False,
     )
 
-    assert "contribution__all_nan_feature" in scored_windows
-    assert scored_windows["contribution__all_nan_feature"].eq(0.0).all()
+    assert "contribution__all_nan_feature__mean" in scored_windows
+    assert scored_windows["contribution__all_nan_feature__mean"].eq(0.0).all()
 
 
 def test_local_evidence_summary_reports_current_length_partition_eligibility_and_support() -> None:
@@ -529,7 +553,7 @@ def test_local_evidence_summary_reports_current_length_partition_eligibility_and
     summary, _, _ = run_local_evidence_experiments(
         eligible_windows,
         partitions,
-        feature_columns=("feature_a", "feature_b"),
+        feature_columns=TEST_LOCAL_FEATURES,
         seed=42,
         show_progress=False,
     )
@@ -574,7 +598,7 @@ def test_local_evidence_uses_normalized_scores_for_lower_evidence_directions(mon
     summary, text_predictions, _ = run_local_evidence_experiments(
         windows,
         partitions,
-        feature_columns=("feature_a", "feature_b"),
+        feature_columns=TEST_LOCAL_FEATURES,
         seed=42,
         show_progress=False,
     )
