@@ -726,10 +726,64 @@ def test_local_evidence_classification_notebook_supports_custom_local_inspection
     assert len(custom_cells) == 4
     for cell in custom_cells:
         custom_source = "".join(cell["source"])
-        assert "token_summary_series(" in custom_source
-        assert "plot_normalized_token_metrics_with_local_evidence(" in custom_source
-        assert "custom_windows" in custom_source
-        assert "custom_prediction" in custom_source
+        assert "scored_windows" not in custom_source
+
+        custom_tree = ast.parse(custom_source)
+        custom_calls = [
+            node
+            for node in ast.walk(custom_tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        ]
+
+        overlay_calls = [
+            node
+            for node in custom_calls
+            if node.func.id == "plot_normalized_token_metrics_with_local_evidence"
+        ]
+        assert len(overlay_calls) == 1
+        overlay_call = overlay_calls[0]
+        assert [argument.id for argument in overlay_call.args[:2] if isinstance(argument, ast.Name)] == [
+            "custom_summary",
+            "custom_windows",
+        ]
+        token_count = overlay_call.args[2]
+        assert isinstance(token_count, ast.Call)
+        assert isinstance(token_count.func, ast.Name)
+        assert token_count.func.id == "len"
+        assert isinstance(token_count.args[0], ast.Name)
+        assert token_count.args[0].id == "custom_token_labels"
+        smoothing_window = next(
+            keyword.value for keyword in overlay_call.keywords if keyword.arg == "window"
+        )
+        assert isinstance(smoothing_window, ast.Name)
+        assert smoothing_window.id == "SMOOTHING_WINDOW"
+
+        load_similarity_call = next(node for node in custom_calls if node.func.id == "load_similarity_row")
+        assert [argument.id for argument in load_similarity_call.args if isinstance(argument, ast.Name)] == [
+            "PROCESSED_ROOT",
+            "DATASET",
+            "MODEL",
+            "CUSTOM_SPLIT",
+            "custom_text_id",
+        ]
+
+        summary_call = next(node for node in custom_calls if node.func.id == "validated_text_summary")
+        assert [argument.id for argument in summary_call.args if isinstance(argument, ast.Name)] == [
+            "custom_row",
+            "custom_similarity_row",
+        ]
+
+        build_call = next(node for node in custom_calls if node.func.id == "build_local_evidence_windows")
+        split_keyword = next(keyword for keyword in build_call.keywords if keyword.arg == "splits")
+        assert isinstance(split_keyword.value, ast.Tuple)
+        assert len(split_keyword.value.elts) == 1
+        assert isinstance(split_keyword.value.elts[0], ast.Name)
+        assert split_keyword.value.elts[0].id == "CUSTOM_SPLIT"
+        text_ids_keyword = next(keyword for keyword in build_call.keywords if keyword.arg == "text_ids")
+        assert isinstance(text_ids_keyword.value, ast.Tuple)
+        assert len(text_ids_keyword.value.elts) == 1
+        assert isinstance(text_ids_keyword.value.elts[0], ast.Name)
+        assert text_ids_keyword.value.elts[0].id == "custom_text_id"
 
 
 def test_local_evidence_notebook_does_not_merge_duplicate_evidence_columns() -> None:
