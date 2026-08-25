@@ -669,6 +669,7 @@ def test_plot_normalized_token_metrics_with_local_evidence_uses_one_shared_axis(
     class FakeAxis:
         def __init__(self) -> None:
             self.lines = []
+            self.legend_kwargs = None
 
         def plot(self, _positions, values, **kwargs):
             self.lines.append((np.asarray(values), kwargs))
@@ -689,7 +690,7 @@ def test_plot_normalized_token_metrics_with_local_evidence_uses_one_shared_axis(
             pass
 
         def legend(self, **_kwargs):
-            pass
+            self.legend_kwargs = _kwargs
 
     class FakeFigure:
         def suptitle(self, _title):
@@ -719,6 +720,9 @@ def test_plot_normalized_token_metrics_with_local_evidence_uses_one_shared_axis(
         "metric_b rolling mean (2)",
         "local mg_score",
     ]
+    assert [line[1]["alpha"] for line in axis.lines[:2]] == [0.5, 0.5]
+    assert "alpha" not in axis.lines[2][1]
+    assert axis.legend_kwargs == {"loc": "center left", "bbox_to_anchor": (1.0, 0.5)}
     assert all(
         np.all((values[np.isfinite(values)] >= 0.0) & (values[np.isfinite(values)] <= 1.0))
         for values, _kwargs in axis.lines

@@ -544,14 +544,20 @@ def plot_normalized_token_metrics_with_local_evidence(
     positions = np.arange(token_count)
     figure, axis = plt.subplots(figsize=(12, 4), constrained_layout=True)
     for name, rolling in series:
-        axis.plot(positions, rolling, linewidth=1.8, label=f"{name} rolling mean ({window})")
+        axis.plot(
+            positions,
+            rolling,
+            linewidth=1.8,
+            alpha=0.5,
+            label=f"{name} rolling mean ({window})",
+        )
     axis.plot(positions, _normalize_series(local_scores), linewidth=2.0, label="local mg_score")
     axis.set_title(f"Normalized token metrics with smoothing window={window}")
     axis.set_xlabel("Token position")
     axis.set_ylabel("Normalized value")
     axis.set_ylim(0.0, 1.0)
     axis.grid(axis="y", alpha=0.25)
-    axis.legend(loc="best")
+    axis.legend(loc="center left", bbox_to_anchor=(1.0, 0.5))
     figure.suptitle(f"Normalized token metrics with smoothing window={window}")
     plt.show()
 
