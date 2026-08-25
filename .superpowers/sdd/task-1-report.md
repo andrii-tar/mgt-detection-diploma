@@ -50,3 +50,8 @@ Implemented the reusable alignment and normalization helpers required for the no
 
 - `uv run pytest tests/test_notebook_utils.py -k "expand_window_scores or normalize_series" -q`: 12 passed, 60 deselected in 21.23s.
 - `uv run pytest tests/test_notebook_utils.py -q`: 72 passed in 27.23s.
+
+## Final Verification Rerun
+
+- `uv run pytest tests/test_notebook_utils.py -k "expand_window_scores or normalize_series" -q`: 12 passed, 60 deselected in 4.73s.
+- `uv run pytest tests/test_notebook_utils.py -q`: 1 failed, 71 passed in 8.62s. The existing plotting test failed because the environment's Tk installation could not load `tk.tcl`; the focused helper tests passed.
