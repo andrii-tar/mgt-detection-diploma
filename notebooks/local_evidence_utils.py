@@ -12,6 +12,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
 
 from notebooks.classification_utils import evaluate_scores, fit_single_feature_threshold, split_cohort
 from notebooks.token_candidate_similarity_heatmaps_utils import (
@@ -75,6 +76,7 @@ def build_local_evidence_windows(
     stride: int = 16,
     top_k: int = 20,
     splits: tuple[str, ...] = ("HG", "MG"),
+    show_progress: bool = True,
 ) -> pd.DataFrame:
     if isinstance(stride, bool) or not isinstance(stride, (int, np.integer)) or stride <= 0:
         raise ValueError("stride must be a positive integer")
@@ -99,7 +101,15 @@ def build_local_evidence_windows(
     rows = []
     for split in splits:
         similarity_rows = load_similarity_rows(processed_root, dataset, model, split)
-        for logprob_row in _iter_stage_one_rows(processed_root, dataset, model, split):
+        logprob_rows = _iter_stage_one_rows(processed_root, dataset, model, split)
+        if show_progress:
+            logprob_rows = tqdm(
+                logprob_rows,
+                total=len(similarity_rows),
+                desc=f"{split}: local evidence",
+                unit="text",
+            )
+        for logprob_row in logprob_rows:
             text_id = int(logprob_row["id"])
             try:
                 similarity_row = similarity_rows[text_id]

@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.colors import TwoSlopeNorm
 from IPython.display import display
+from tqdm import tqdm
 
 from scripts.logprob_metrics import compute_top20_coverage, compute_top20_d_score
 
@@ -136,12 +137,21 @@ def calculate_rolling_statistics(
     splits: tuple[str, ...] = ("HG", "MG"),
     top_k: int = 20,
     window: int = 5,
+    show_progress: bool = True,
 ) -> pd.DataFrame:
     rows = []
     columns = ["split", "text_id", "metric", "mean", "std", "variance"]
     for split in splits:
         similarity_rows = load_similarity_rows(processed_root, dataset, model, split)
-        for logprob_row in _iter_stage_one_rows(processed_root, dataset, model, split):
+        logprob_rows = _iter_stage_one_rows(processed_root, dataset, model, split)
+        if show_progress:
+            logprob_rows = tqdm(
+                logprob_rows,
+                total=len(similarity_rows),
+                desc=f"{split}: rolling statistics",
+                unit="text",
+            )
+        for logprob_row in logprob_rows:
             text_id = int(logprob_row["id"])
             try:
                 similarity_row = similarity_rows[text_id]

@@ -11,6 +11,8 @@ import pytest
 import pyarrow.parquet as pq
 
 import notebooks.logprob_metrics_distributions_utils as metric_utils
+import notebooks.local_evidence_utils as local_evidence_utils
+import notebooks.token_candidate_similarity_heatmaps_utils as heatmap_utils
 from scripts.logprob_metrics import compute_logprob_metrics
 from notebooks.logprob_metrics_distributions_utils import (
     TOKEN_DERIVED_METRICS,
@@ -737,6 +739,37 @@ def test_calculate_rolling_statistics_uses_ground_truth_logprobs(tmp_path: Path)
     assert observed["mean"] == pytest.approx(-3.0)
 
 
+def test_calculate_rolling_statistics_reports_progress_per_split(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    progress: list[dict[str, object]] = []
+
+    class Progress:
+        def __init__(self, iterable: object, **kwargs: object) -> None:
+            self.iterable = iterable
+            progress.append(kwargs)
+
+        def __iter__(self):
+            return iter(self.iterable)
+
+    monkeypatch.setattr(heatmap_utils, "tqdm", Progress)
+
+    calculate_rolling_statistics(processed_root, "demo", "model", top_k=1, window=3)
+
+    assert progress == [
+        {"total": 1, "desc": "HG: rolling statistics", "unit": "text"},
+        {"total": 1, "desc": "MG: rolling statistics", "unit": "text"},
+    ]
+
+
+def test_calculate_rolling_statistics_can_disable_progress(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    monkeypatch.setattr(heatmap_utils, "tqdm", lambda *_args, **_kwargs: pytest.fail("progress created"))
+
+    calculate_rolling_statistics(processed_root, "demo", "model", top_k=1, window=3, show_progress=False)
+
+
 def test_calculate_rolling_statistics_reads_both_splits_and_computes_window_five(tmp_path):
     processed_root = tmp_path / "processed"
     for split, text_id in (("HG", 11), ("MG", 22)):
@@ -844,6 +877,39 @@ def test_build_local_evidence_windows_extracts_complete_windows_from_both_splits
     assert windows.loc[0, "observed_logprob__mean"] == pytest.approx(0.0)
     assert windows.loc[0, "observed_logprob__finite_fraction"] == pytest.approx(1.0)
     assert windows.loc[0, "window_text"] == " token-0 token-1 token-2 token-3"
+
+
+def test_build_local_evidence_windows_reports_progress_per_split(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    progress: list[dict[str, object]] = []
+
+    class Progress:
+        def __init__(self, iterable: object, **kwargs: object) -> None:
+            self.iterable = iterable
+            progress.append(kwargs)
+
+        def __iter__(self):
+            return iter(self.iterable)
+
+    monkeypatch.setattr(local_evidence_utils, "tqdm", Progress)
+
+    build_local_evidence_windows(processed_root, "demo", "model", window_lengths=(4,), stride=3, top_k=1)
+
+    assert progress == [
+        {"total": 1, "desc": "HG: local evidence", "unit": "text"},
+        {"total": 1, "desc": "MG: local evidence", "unit": "text"},
+    ]
+
+
+def test_build_local_evidence_windows_can_disable_progress(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    monkeypatch.setattr(local_evidence_utils, "tqdm", lambda *_args, **_kwargs: pytest.fail("progress created"))
+
+    build_local_evidence_windows(
+        processed_root, "demo", "model", window_lengths=(4,), stride=3, top_k=1, show_progress=False
+    )
 
 
 @pytest.mark.parametrize("window_lengths, stride", [((0,), 1), ((4,), 0), ((4,), -1)])
