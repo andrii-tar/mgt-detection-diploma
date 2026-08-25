@@ -29,6 +29,8 @@ from notebooks.token_candidate_similarity_heatmaps_utils import (
     build_text_heatmap_matrices,
     calculate_rolling_statistics,
     compute_token_coverage,
+    _expand_window_scores_to_tokens,
+    _normalize_series,
     plot_rolling_statistics_histograms,
     plot_smoothed_token_summaries,
     rolling_mean,
@@ -565,6 +567,59 @@ def test_plot_smoothed_token_summaries_displays_smoothed_statistics(monkeypatch)
     assert "std=0.0000" in title
     assert "variance=0.0000" in title
     plt.close("all")
+
+
+def test_expand_window_scores_to_tokens_averages_overlapping_windows() -> None:
+    scored_windows = pd.DataFrame(
+        {
+            "start_token": [0, 2],
+            "stop_token": [4, 5],
+            "mg_score": [0.2, 0.8],
+        }
+    )
+
+    scores = _expand_window_scores_to_tokens(scored_windows, token_count=5)
+
+    assert scores == pytest.approx([0.2, 0.2, 0.5, 0.5, 0.8])
+
+
+@pytest.mark.parametrize(
+    "scored_windows, token_count, match",
+    [
+        (pd.DataFrame({"start_token": [0], "stop_token": [1]}), 1, "mg_score"),
+        (pd.DataFrame({"stop_token": [1], "mg_score": [0.2]}), 1, "start_token"),
+        (pd.DataFrame({"start_token": [0], "stop_token": [1], "mg_score": [0.2]}), 0, "token_count"),
+        (pd.DataFrame({"start_token": [2], "stop_token": [2], "mg_score": [0.2]}), 3, "span"),
+        (pd.DataFrame({"start_token": [3], "stop_token": [2], "mg_score": [0.2]}), 3, "span"),
+        (pd.DataFrame({"start_token": [-1], "stop_token": [2], "mg_score": [0.2]}), 3, "range"),
+        (pd.DataFrame({"start_token": [1], "stop_token": [4], "mg_score": [0.2]}), 3, "range"),
+    ],
+)
+def test_expand_window_scores_to_tokens_rejects_invalid_input(
+    scored_windows: pd.DataFrame,
+    token_count: int,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        _expand_window_scores_to_tokens(scored_windows, token_count)
+
+
+def test_normalize_series_scales_finite_values_and_preserves_nan() -> None:
+    values = _normalize_series(np.array([2.0, 4.0, np.nan]))
+
+    assert values == pytest.approx([0.0, 1.0, np.nan], nan_ok=True)
+
+
+def test_normalize_series_maps_constant_finite_values_to_zero() -> None:
+    values = _normalize_series(np.array([3.0, 3.0]))
+
+    assert values == pytest.approx([0.0, 0.0])
+
+
+def test_normalize_series_preserves_all_nan_series() -> None:
+    values = _normalize_series(np.array([np.nan]))
+
+    assert np.isnan(values).all()
 
 
 def test_plot_rolling_statistics_histograms_separates_splits_and_metrics(monkeypatch) -> None:

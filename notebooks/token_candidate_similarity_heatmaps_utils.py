@@ -434,6 +434,51 @@ def draw_token_coverage_scatter(coverage: np.ndarray) -> None:
     plt.show()
 
 
+def _expand_window_scores_to_tokens(scored_windows: pd.DataFrame, token_count: int) -> np.ndarray:
+    required_columns = {"start_token", "stop_token", "mg_score"}
+    missing_columns = required_columns.difference(scored_windows.columns)
+    if missing_columns:
+        raise ValueError(f"missing columns: {', '.join(sorted(missing_columns))}")
+    if not isinstance(token_count, (int, np.integer)) or isinstance(token_count, (bool, np.bool_)) or token_count <= 0:
+        raise ValueError("token_count must be positive")
+
+    sums = np.zeros(token_count, dtype=float)
+    counts = np.zeros(token_count, dtype=int)
+    for start, stop, score in scored_windows[["start_token", "stop_token", "mg_score"]].itertuples(index=False, name=None):
+        if (
+            not isinstance(start, (int, np.integer))
+            or isinstance(start, (bool, np.bool_))
+            or not isinstance(stop, (int, np.integer))
+            or isinstance(stop, (bool, np.bool_))
+            or start >= stop
+        ):
+            raise ValueError("invalid span")
+        if start < 0 or stop > token_count:
+            raise ValueError("span is outside token range")
+        if np.isfinite(score):
+            sums[start:stop] += score
+            counts[start:stop] += 1
+
+    scores = np.full(token_count, np.nan, dtype=float)
+    covered = counts > 0
+    scores[covered] = sums[covered] / counts[covered]
+    return scores
+
+
+def _normalize_series(values: np.ndarray) -> np.ndarray:
+    normalized = np.asarray(values, dtype=float).copy()
+    finite = np.isfinite(normalized)
+    if not finite.any():
+        return normalized
+    minimum = normalized[finite].min()
+    maximum = normalized[finite].max()
+    if minimum == maximum:
+        normalized[finite] = 0.0
+    else:
+        normalized[finite] = (normalized[finite] - minimum) / (maximum - minimum)
+    return normalized
+
+
 def plot_smoothed_token_summaries(
     summary: dict[str, np.ndarray],
     *,
