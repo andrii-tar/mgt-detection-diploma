@@ -665,6 +665,98 @@ def test_normalize_series_preserves_all_nan_series() -> None:
     assert np.isnan(values).all()
 
 
+def test_plot_normalized_token_metrics_with_local_evidence_uses_one_shared_axis(monkeypatch) -> None:
+    class FakeAxis:
+        def __init__(self) -> None:
+            self.lines = []
+
+        def plot(self, _positions, values, **kwargs):
+            self.lines.append((np.asarray(values), kwargs))
+
+        def set_title(self, _title):
+            pass
+
+        def set_xlabel(self, _label):
+            pass
+
+        def set_ylabel(self, _label):
+            pass
+
+        def set_ylim(self, _lower, _upper):
+            pass
+
+        def grid(self, **_kwargs):
+            pass
+
+        def legend(self, **_kwargs):
+            pass
+
+    class FakeFigure:
+        def suptitle(self, _title):
+            pass
+
+    axis = FakeAxis()
+    monkeypatch.setattr(plt, "subplots", lambda **_kwargs: (FakeFigure(), axis))
+    monkeypatch.setattr(plt, "show", lambda: None)
+    scored_windows = pd.DataFrame(
+        {
+            "start_token": [0, 1],
+            "stop_token": [2, 3],
+            "mg_score": [0.2, 0.8],
+        }
+    )
+
+    heatmap_utils.plot_normalized_token_metrics_with_local_evidence(
+        {"metric_a": np.array([1.0, 2.0, 3.0]), "metric_b": np.array([3.0, 2.0, 1.0])},
+        scored_windows,
+        token_count=3,
+        window=2,
+    )
+
+    assert len(axis.lines) == 5
+    assert [line[1]["label"] for line in axis.lines] == [
+        "metric_a raw",
+        "metric_a rolling mean (2)",
+        "metric_b raw",
+        "metric_b rolling mean (2)",
+        "local mg_score",
+    ]
+    assert all(
+        np.all((values[np.isfinite(values)] >= 0.0) & (values[np.isfinite(values)] <= 1.0))
+        for values, _kwargs in axis.lines
+    )
+
+
+def test_plot_normalized_token_metrics_with_local_evidence_rejects_summary_length_mismatch(monkeypatch) -> None:
+    with pytest.raises(ValueError, match="metric length.*token_count"):
+        heatmap_utils.plot_normalized_token_metrics_with_local_evidence(
+            {"metric": np.array([1.0, 2.0])},
+            pd.DataFrame({"start_token": [], "stop_token": [], "mg_score": []}),
+            token_count=3,
+        )
+
+
+def test_plot_normalized_token_metrics_with_local_evidence_propagates_invalid_window() -> None:
+    with pytest.raises(ValueError, match="window must be positive"):
+        heatmap_utils.plot_normalized_token_metrics_with_local_evidence(
+            {"metric": np.array([1.0, 2.0])},
+            pd.DataFrame({"start_token": [], "stop_token": [], "mg_score": []}),
+            token_count=2,
+            window=0,
+        )
+
+
+def test_plot_normalized_token_metrics_with_local_evidence_handles_all_nan_series(monkeypatch) -> None:
+    monkeypatch.setattr(plt, "show", lambda: None)
+
+    heatmap_utils.plot_normalized_token_metrics_with_local_evidence(
+        {"metric": np.array([np.nan, np.nan])},
+        pd.DataFrame({"start_token": [], "stop_token": [], "mg_score": []}),
+        token_count=2,
+    )
+    plt.close("all")
+
+
 def test_plot_rolling_statistics_histograms_separates_splits_and_metrics(monkeypatch) -> None:
     statistics = pd.DataFrame(
         [

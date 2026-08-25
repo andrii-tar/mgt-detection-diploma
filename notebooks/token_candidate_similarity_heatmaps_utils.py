@@ -525,6 +525,38 @@ def plot_smoothed_token_summaries(
     plt.show()
 
 
+def plot_normalized_token_metrics_with_local_evidence(
+    summary: dict[str, np.ndarray],
+    scored_windows: pd.DataFrame,
+    token_count: int,
+    *,
+    window: int = 10,
+) -> None:
+    local_scores = _expand_window_scores_to_tokens(scored_windows, token_count)
+    series: list[tuple[str, np.ndarray, np.ndarray]] = []
+    for name, values in summary.items():
+        array = np.asarray(values, dtype=float)
+        if array.ndim != 1 or array.size != token_count:
+            raise ValueError(f"{name} length must match token_count ({token_count}); got {array.size}")
+        rolling = rolling_mean(array, window=window)
+        series.append((name, _normalize_series(array), _normalize_series(rolling)))
+
+    positions = np.arange(token_count)
+    figure, axis = plt.subplots(figsize=(12, 4), constrained_layout=True)
+    for name, raw, rolling in series:
+        axis.plot(positions, raw, linewidth=0.8, alpha=0.65, label=f"{name} raw")
+        axis.plot(positions, rolling, linewidth=1.8, label=f"{name} rolling mean ({window})")
+    axis.plot(positions, _normalize_series(local_scores), linewidth=2.0, label="local mg_score")
+    axis.set_title(f"Normalized token metrics with smoothing window={window}")
+    axis.set_xlabel("Token position")
+    axis.set_ylabel("Normalized value")
+    axis.set_ylim(0.0, 1.0)
+    axis.grid(axis="y", alpha=0.25)
+    axis.legend(loc="best")
+    figure.suptitle(f"Normalized token metrics with smoothing window={window}")
+    plt.show()
+
+
 def plot_rolling_statistics_histograms(
     statistics: pd.DataFrame,
     *,
