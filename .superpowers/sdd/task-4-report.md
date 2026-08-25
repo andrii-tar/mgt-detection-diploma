@@ -52,7 +52,43 @@ Manual review of `c73301c..e5faada` found no blocking or important issues. The i
 
 The delegated reviewer request could not be started because the available subagent depth was exhausted.
 
+## Final-Review Fix Verification
+
+The notebook import contract was strengthened to require `plot_normalized_token_metrics_with_local_evidence` from `token_candidate_similarity_heatmaps_utils` and forbid it from the `local_evidence_utils` import.
+
+Pytest command:
+
+```powershell
+$env:MPLBACKEND='Agg'; uv run pytest tests/test_classification_utils.py tests/test_notebook_utils.py -q
+```
+
+Exact output:
+
+```text
+........................................................................ [ 64%]
+........................................                                 [100%]
+112 passed in 14.89s
+```
+
+Fresh-kernel notebook command with `TEXT_DETECTION_DATA` set:
+
+```powershell
+$env:TEXT_DETECTION_DATA='D:/Projects/master_diploma/text-detection-data'; uv run jupyter nbconvert --to notebook --execute notebooks/local_evidence_classification.ipynb --output 'C:\Users\Andrii\AppData\Local\Temp\opencode\local_evidence_classification.final.ipynb' --ExecutePreprocessor.timeout=1200 --ExecutePreprocessor.kernel_name=python3
+```
+
+Exact output:
+
+```text
+[NbConvertApp] Converting notebook notebooks/local_evidence_classification.ipynb to notebook
+D:\Projects\master_diploma\text-detection\.venv\Lib\site-packages\zmq\_future.py:718: RuntimeWarning: Proactor event loop does not implement add_reader family of methods required for zmq. Registering an additional selector thread for add_reader support via tornado. Use `asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())` to avoid this warning.
+  self._get_loop()
+[IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
+[NbConvertApp] Writing 5559046 bytes to C:\Users\Andrii\AppData\Local\Temp\opencode\local_evidence_classification.final.ipynb
+```
+
+The source notebook remains output-free; execution was written to the temporary output path.
+
 ## Concerns
 
-- The exact focused command is not headless and fails in this environment due to the missing Tk Tcl runtime. The headless rerun passes all 112 focused tests.
-- The first full-suite invocation exceeded the shell's 120-second timeout without reporting a test failure; the complete rerun with a 300-second timeout passed all 181 tests.
+- The exact focused command is headless and passes; notebook execution emits existing Windows/ZeroMQ warnings but exits successfully.
+- The fresh execution output is intentionally outside the repository at the requested temporary path.

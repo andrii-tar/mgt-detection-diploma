@@ -602,12 +602,29 @@ def test_classification_notebook_is_thin_and_output_free() -> None:
 
 
 def test_local_evidence_classification_notebook_is_thin_and_output_free() -> None:
+    import ast
     import json
 
     notebook_path = Path(__file__).parents[1] / "notebooks" / "local_evidence_classification.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
     cells = notebook["cells"]
     source = "\n".join("".join(cell.get("source", [])) for cell in cells)
+
+    import_tree = ast.parse("".join(cells[1]["source"]))
+    imports = {
+        alias.name
+        for node in ast.walk(import_tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module in {"local_evidence_utils", "token_candidate_similarity_heatmaps_utils"}
+        for alias in node.names
+    }
+    assert "plot_normalized_token_metrics_with_local_evidence" in imports
+    local_import = next(
+        node
+        for node in ast.walk(import_tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "local_evidence_utils"
+    )
+    assert all(alias.name != "plot_normalized_token_metrics_with_local_evidence" for alias in local_import.names)
 
     for required_source in (
         "WINDOW_LENGTHS = (32, 256)",
