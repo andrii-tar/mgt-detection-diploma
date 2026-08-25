@@ -44,3 +44,37 @@ Initial output: collection failed with `ImportError: cannot import name 'fit_loc
 
 - The full repository test suite was not run; verification was limited to the requested local-evidence tests.
 - The working tree contains unrelated pre-existing changes that were intentionally left unstaged.
+
+## Review Fix
+
+### Files
+
+- `notebooks/local_evidence_utils.py`
+- `tests/test_classification_utils.py`
+- `.superpowers/sdd/task-1-report.md`
+
+### Changes
+
+- Added a regression test that mutates features for every non-training parent text and verifies the fitted model's training-window probabilities remain unchanged.
+- Added explicit `ValueError("missing feature columns: ...")` validation to `score_local_evidence_windows`.
+- Added a test for the scoring helper's missing-feature contract.
+
+### Tests
+
+RED command: `uv run pytest tests/test_classification_utils.py -q -k 'reusable_local_evidence_model or score_local_evidence_windows or fit_local_evidence_model'`
+
+Initial output: `1 failed, 2 passed, 30 deselected`; the missing-feature test received the previous `KeyError` instead of the required `ValueError`.
+
+Required command: `uv run pytest tests/test_classification_utils.py -q`
+
+Output:
+
+```text
+.................................                                        [100%]
+33 passed in 16.68s
+```
+
+### Concerns
+
+- The full repository test suite was not run.
+- Unrelated timeline, progress, notebook, and specification changes remain in the worktree and were preserved.

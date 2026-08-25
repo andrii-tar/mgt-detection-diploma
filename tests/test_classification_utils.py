@@ -370,6 +370,54 @@ def test_reusable_local_evidence_model_scores_supplied_windows_with_contribution
     assert scored["contribution__feature_a"].notna().all()
 
 
+def test_fit_local_evidence_model_ignores_non_training_rows_and_features() -> None:
+    windows = local_evidence_windows()
+    partitions = split_local_evidence_texts(windows, seed=42)
+    train_parents = set(partitions["train"].set_index(["split", "text_id"]).index)
+    non_training = ~pd.MultiIndex.from_frame(windows[["split", "text_id"]]).isin(train_parents)
+    mutated_windows = windows.copy()
+    mutated_windows.loc[non_training, "feature_a"] = 1_000_000.0
+    mutated_windows.loc[non_training, "feature_b"] = -1_000_000.0
+
+    original_model, feature_columns = fit_local_evidence_model(
+        windows,
+        partitions,
+        window_length=32,
+        feature_columns=("feature_a", "feature_b"),
+        seed=42,
+    )
+    mutated_model, _ = fit_local_evidence_model(
+        mutated_windows,
+        partitions,
+        window_length=32,
+        feature_columns=feature_columns,
+        seed=42,
+    )
+    train_windows = windows.loc[
+        windows["window_length"].eq(32) & pd.MultiIndex.from_frame(windows[["split", "text_id"]]).isin(train_parents)
+    ]
+
+    pd.testing.assert_frame_equal(
+        pd.DataFrame(original_model.predict_proba(train_windows[list(feature_columns)])),
+        pd.DataFrame(mutated_model.predict_proba(train_windows[list(feature_columns)])),
+    )
+
+
+def test_score_local_evidence_windows_rejects_missing_features() -> None:
+    windows = local_evidence_windows()
+    partitions = split_local_evidence_texts(windows, seed=42)
+    model, _ = fit_local_evidence_model(
+        windows,
+        partitions,
+        window_length=32,
+        feature_columns=("feature_a", "feature_b"),
+        seed=42,
+    )
+
+    with pytest.raises(ValueError, match="missing feature columns"):
+        score_local_evidence_windows(model, windows.drop(columns="feature_b"), ("feature_a", "feature_b"))
+
+
 def test_run_local_evidence_experiments_shows_window_length_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

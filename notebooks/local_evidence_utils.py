@@ -424,7 +424,11 @@ def score_local_evidence_windows(
     windows: pd.DataFrame,
     feature_columns: tuple[str, ...],
 ) -> pd.DataFrame:
-    return _window_contributions(model, windows, tuple(feature_columns))
+    feature_columns = tuple(feature_columns)
+    missing_features = [feature for feature in feature_columns if feature not in windows.columns]
+    if missing_features:
+        raise ValueError(f"missing feature columns: {missing_features}")
+    return _window_contributions(model, windows, feature_columns)
 
 
 def run_local_evidence_experiments(
