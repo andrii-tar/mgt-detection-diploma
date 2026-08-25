@@ -32,6 +32,16 @@ class _FittedClassifier:
     estimator: Any
 
 
+def _load_pymc() -> Any:
+    try:
+        import pymc
+    except ModuleNotFoundError as error:
+        if error.name != "pymc":
+            raise
+        raise ImportError("PyMC is optional; install text-detection[bayesian] to use the Bayesian adapter") from error
+    return pymc
+
+
 def _validate_features(frame: pd.DataFrame, feature_columns: tuple[str, ...]) -> None:
     missing_features = [feature for feature in feature_columns if feature not in frame.columns]
     if missing_features:
@@ -66,7 +76,8 @@ def fit_local_evidence_classifier(
     if model_name not in MODEL_NAMES:
         raise ValueError(f"unknown model name: {model_name!r}")
     if model_name == "pymc_bayesian_logistic":
-        raise NotImplementedError("PyMC Bayesian logistic regression is not implemented in Task 1")
+        _load_pymc()
+        raise NotImplementedError("PyMC Bayesian logistic regression is deferred to Task 2")
 
     normalized_features = tuple(feature_columns)
     _validate_features(train_windows, normalized_features)

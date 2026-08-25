@@ -100,3 +100,30 @@ The new test initially failed during collection with `ModuleNotFoundError` becau
 
 - The repository ignores `uv.lock`; it was force-added because the brief explicitly requires the lockfile update to be committed.
 - Bayesian fitting and posterior uncertainty are intentionally not implemented in Task 1.
+
+## Task 1 Review Fix Addendum
+
+### Fixes
+
+- Re-ran `uv lock`; it resolves the committed project metadata and keeps the `bayesian` extra mapped to `pymc>=5.0`.
+- Added GaussianNB common-schema and probability-bound assertions.
+- Added lazy-PyMC coverage proving deterministic fitting does not import PyMC, missing PyMC produces an actionable optional-dependency error only on the Bayesian path, and available PyMC still reports the planned Task 2 deferral through the existing public fit API.
+- Added `_load_pymc()` so the optional import remains lazy and the deferred limitation is explicit without changing the public adapter signatures.
+
+### Review-Fix TDD Evidence
+
+- Red: the new lazy-PyMC tests failed because the implementation raised immediately and had no `_load_pymc()` hook.
+- Green: the adapter test file passed after adding the lazy loader and explicit deferred error.
+
+### Review-Fix Verification
+
+- `uv lock`: `Resolved 178 packages in 1ms`.
+- `uv sync --extra bayesian`: succeeded on retry and installed `pymc==6.3.1` plus its optional dependencies. The first attempt was blocked by a Windows file lock on `.venv`'s `DejaVuSans.ttf`.
+- `uv sync --extra notebook --extra bayesian`: completed successfully to restore the notebook test extra.
+- `uv run pytest tests/test_local_evidence_models_utils.py -q`: `7 passed`.
+- `PYTHONPATH=C:\Users\Andrii\AppData\Local\Temp\opencode\matplotlib-review uv run pytest tests/test_local_evidence_models_utils.py tests/test_classification_utils.py -q`: `42 passed in 38.37s`.
+
+### Review-Fix Concerns
+
+- The project `.venv` had a transient Windows file lock and an incomplete matplotlib installation after the first optional-extra sync; the retry succeeded, and the specified tests passed using a clean temporary matplotlib target while project kernels held the locked file.
+- Bayesian model fitting and posterior uncertainty remain intentionally deferred to Task 2.
