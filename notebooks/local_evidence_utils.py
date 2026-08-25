@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -304,6 +305,35 @@ def aggregate_evidence_fraction(scored_windows: pd.DataFrame, window_threshold: 
     return maximum.drop(columns="mg_score").merge(fractions, on=group_columns, validate="one_to_one")
 
 
+def plot_local_evidence_timeline(scored_windows: pd.DataFrame, prediction: pd.Series) -> plt.Figure:
+    windows = scored_windows.loc[
+        scored_windows["split"].eq(prediction["split"])
+        & scored_windows["text_id"].eq(prediction["text_id"])
+        & scored_windows["window_length"].eq(prediction["window_length"])
+    ]
+    midpoints = (windows["start_token"] + windows["stop_token"]) / 2
+    figure, axis = plt.subplots()
+    axis.plot(midpoints, windows["mg_score"], marker="o")
+
+    for window in windows.itertuples():
+        score = float(window.mg_score)
+        window_threshold = float(window.window_threshold)
+        if np.isfinite(score) and np.isfinite(window_threshold) and score >= window_threshold:
+            axis.axvspan(window.start_token, window.stop_token, alpha=0.2, color="tab:red")
+
+    document_threshold = float(prediction["document_threshold"])
+    if np.isfinite(document_threshold):
+        axis.axhline(document_threshold, color="tab:gray", linestyle="--")
+    axis.set_xlabel("Token position")
+    axis.set_ylabel("MG score")
+    axis.set_title(
+        f"{prediction['split']} text {prediction['text_id']} | "
+        f"label={prediction['label']}, prediction={prediction['prediction']} | "
+        f"score={prediction['mg_score']:.3f}, threshold={document_threshold:.3f}"
+    )
+    return figure
+
+
 def _partition_windows(windows: pd.DataFrame, parents: pd.DataFrame, partition: str) -> pd.DataFrame:
     parent_labels = parents[["split", "text_id", "label"]].rename(columns={"label": "parent_label"})
     filtered = windows.merge(parent_labels, on=["split", "text_id"], how="inner", validate="many_to_one")
@@ -363,12 +393,47 @@ def _select_evidence_parameters(candidates: list[dict[str, float | str]]) -> dic
     )
 
 
+def fit_local_evidence_model(
+    windows: pd.DataFrame,
+    partitions: dict[str, pd.DataFrame],
+    window_length: int,
+    feature_columns: tuple[str, ...],
+    seed: int,
+) -> tuple[Pipeline, tuple[str, ...]]:
+    feature_columns = tuple(feature_columns)
+    missing_features = [feature for feature in feature_columns if feature not in windows.columns]
+    if missing_features:
+        raise ValueError(f"missing feature columns: {missing_features}")
+    train = _partition_windows(windows, partitions["train"], "train")
+    train = train.loc[train["window_length"] == window_length]
+    if set(train["label"]) != {0, 1}:
+        raise ValueError(f"window_length={window_length} must have rows for both labels in the train partition")
+    model = Pipeline(
+        [
+            ("impute", SimpleImputer(strategy="median", keep_empty_features=True)),
+            ("scale", StandardScaler()),
+            ("model", LogisticRegression(class_weight="balanced", max_iter=1000, random_state=seed)),
+        ]
+    )
+    model.fit(train[list(feature_columns)], train["label"])
+    return model, feature_columns
+
+
+def score_local_evidence_windows(
+    model: Pipeline,
+    windows: pd.DataFrame,
+    feature_columns: tuple[str, ...],
+) -> pd.DataFrame:
+    return _window_contributions(model, windows, tuple(feature_columns))
+
+
 def run_local_evidence_experiments(
     windows: pd.DataFrame,
     partitions: dict[str, pd.DataFrame],
     *,
     feature_columns: tuple[str, ...] = LOCAL_FEATURE_COLUMNS,
     seed: int = 42,
+    show_progress: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     missing_features = [feature for feature in feature_columns if feature not in windows.columns]
     if missing_features:
@@ -381,7 +446,10 @@ def run_local_evidence_experiments(
     prediction_frames: list[pd.DataFrame] = []
     scored_frames: list[pd.DataFrame] = []
 
-    for window_length in sorted(windows["window_length"].unique()):
+    window_lengths = sorted(windows["window_length"].unique())
+    if show_progress:
+        window_lengths = tqdm(window_lengths, desc="Local evidence window length", unit="length")
+    for window_length in window_lengths:
         train = partitioned["train"].loc[partitioned["train"]["window_length"] == window_length]
         validation = partitioned["validation"].loc[partitioned["validation"]["window_length"] == window_length]
         test = partitioned["test"].loc[partitioned["test"]["window_length"] == window_length]
@@ -394,16 +462,15 @@ def run_local_evidence_experiments(
             eligibility[f"{partition}_hg_support"] = int(parents["label"].eq(0).sum())
             eligibility[f"{partition}_mg_support"] = int(parents["label"].eq(1).sum())
 
-        model = Pipeline(
-            [
-                ("impute", SimpleImputer(strategy="median", keep_empty_features=True)),
-                ("scale", StandardScaler()),
-                ("model", LogisticRegression(class_weight="balanced", max_iter=1000, random_state=seed)),
-            ]
+        model, normalized_features = fit_local_evidence_model(
+            windows,
+            partitions,
+            window_length,
+            feature_columns,
+            seed,
         )
-        model.fit(train[list(feature_columns)], train["label"])
-        validation_scored = _window_contributions(model, validation, feature_columns)
-        test_scored = _window_contributions(model, test, feature_columns)
+        validation_scored = score_local_evidence_windows(model, validation, normalized_features)
+        test_scored = score_local_evidence_windows(model, test, normalized_features)
         scored_frames.extend([validation_scored, test_scored])
 
         validation_maximum = aggregate_maximum_window(validation_scored)

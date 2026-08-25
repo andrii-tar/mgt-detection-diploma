@@ -18,7 +18,10 @@ from notebooks.classification_utils import (
 from notebooks.local_evidence_utils import (
     aggregate_evidence_fraction,
     aggregate_maximum_window,
+    fit_local_evidence_model,
+    plot_local_evidence_timeline,
     run_local_evidence_experiments,
+    score_local_evidence_windows,
     split_local_evidence_texts,
 )
 
@@ -286,6 +289,37 @@ def test_local_evidence_aggregation_uses_maximum_and_evidence_fraction() -> None
     assert fraction.iloc[0]["selected_stop_token"] == 64
 
 
+def test_plot_local_evidence_timeline_marks_scores_and_suspicious_windows() -> None:
+    windows = pd.DataFrame(
+        {
+            "split": ["MG", "MG"],
+            "text_id": [7, 7],
+            "window_length": [32, 32],
+            "start_token": [0, 16],
+            "stop_token": [32, 48],
+            "mg_score": [0.2, 0.9],
+            "window_threshold": [0.8, 0.8],
+        }
+    )
+    prediction = pd.Series(
+        {
+            "split": "MG",
+            "text_id": 7,
+            "label": 1,
+            "prediction": 1,
+            "window_length": 32,
+            "document_threshold": 0.5,
+            "mg_score": 0.9,
+        }
+    )
+
+    figure = plot_local_evidence_timeline(windows, prediction)
+
+    axis = figure.axes[0]
+    assert axis.lines[0].get_xdata().tolist() == [16.0, 32.0]
+    assert len(axis.patches) == 1
+
+
 def test_run_local_evidence_experiments_returns_text_scores_and_attributions() -> None:
     windows = local_evidence_windows()
     partitions = split_local_evidence_texts(windows, seed=42)
@@ -295,6 +329,7 @@ def test_run_local_evidence_experiments_returns_text_scores_and_attributions() -
         partitions,
         feature_columns=("feature_a", "feature_b"),
         seed=42,
+        show_progress=False,
     )
 
     assert set(summary["aggregation"]) == {"maximum_window", "evidence_fraction"}
@@ -309,6 +344,70 @@ def test_run_local_evidence_experiments_returns_text_scores_and_attributions() -
     } <= set(scored_windows.columns)
 
 
+def test_reusable_local_evidence_model_scores_supplied_windows_with_contributions() -> None:
+    windows = local_evidence_windows()
+    partitions = split_local_evidence_texts(windows, seed=42)
+
+    model, feature_columns = fit_local_evidence_model(
+        windows,
+        partitions,
+        window_length=32,
+        feature_columns=("feature_a", "feature_b"),
+        seed=42,
+    )
+    supplied = windows.loc[windows["window_length"].eq(32)].copy()
+    scored = score_local_evidence_windows(model, supplied, feature_columns)
+
+    assert feature_columns == ("feature_a", "feature_b")
+    assert len(scored) == len(supplied)
+    assert scored["mg_score"].between(0.0, 1.0).all()
+    assert {
+        "contribution__feature_a",
+        "contribution__feature_b",
+        "top_positive_feature",
+        "top_negative_feature",
+    } <= set(scored.columns)
+    assert scored["contribution__feature_a"].notna().all()
+
+
+def test_run_local_evidence_experiments_shows_window_length_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    progress_calls: list[dict[str, object]] = []
+
+    def record_progress(iterator: object, **kwargs: object) -> object:
+        progress_calls.append(kwargs)
+        return iterator
+
+    windows = local_evidence_windows()
+    partitions = split_local_evidence_texts(windows, seed=42)
+    monkeypatch.setattr(local_evidence_utils, "tqdm", record_progress)
+
+    run_local_evidence_experiments(
+        windows,
+        partitions,
+        feature_columns=("feature_a", "feature_b"),
+        seed=42,
+        show_progress=True,
+    )
+
+    assert progress_calls == [{"desc": "Local evidence window length", "unit": "length"}]
+
+
+def test_run_local_evidence_experiments_can_disable_progress(monkeypatch: pytest.MonkeyPatch) -> None:
+    windows = local_evidence_windows()
+    partitions = split_local_evidence_texts(windows, seed=42)
+    monkeypatch.setattr(local_evidence_utils, "tqdm", pytest.fail)
+
+    run_local_evidence_experiments(
+        windows,
+        partitions,
+        feature_columns=("feature_a", "feature_b"),
+        seed=42,
+        show_progress=False,
+    )
+
+
 def test_local_evidence_preserves_all_nan_training_features() -> None:
     windows = local_evidence_windows()
     windows["all_nan_feature"] = float("nan")
@@ -319,6 +418,7 @@ def test_local_evidence_preserves_all_nan_training_features() -> None:
         partitions,
         feature_columns=("feature_a", "all_nan_feature"),
         seed=42,
+        show_progress=False,
     )
 
     assert "contribution__all_nan_feature" in scored_windows
@@ -345,6 +445,7 @@ def test_local_evidence_summary_reports_current_length_partition_eligibility_and
         partitions,
         feature_columns=("feature_a", "feature_b"),
         seed=42,
+        show_progress=False,
     )
 
     eligible_parent_index = eligible_windows.loc[
@@ -389,6 +490,7 @@ def test_local_evidence_uses_normalized_scores_for_lower_evidence_directions(mon
         partitions,
         feature_columns=("feature_a", "feature_b"),
         seed=42,
+        show_progress=False,
     )
 
     evidence_predictions = text_predictions[text_predictions["aggregation"] == "evidence_fraction"]
@@ -460,18 +562,22 @@ def test_local_evidence_classification_notebook_is_thin_and_output_free() -> Non
     source = "\n".join("".join(cell.get("source", [])) for cell in cells)
 
     for required_source in (
-        "WINDOW_LENGTHS = (32, 64, 96, 128, 192, 256)",
+        "WINDOW_LENGTHS = (32, 256)",
         "STRIDE = 16",
         "RECOMPUTE_WINDOWS = False",
         "default_local_evidence_path(",
         "load_or_build_local_evidence_windows(",
         "split_local_evidence_texts(",
         "run_local_evidence_experiments(",
+        "plot_local_evidence_timeline,",
+        "MOST_SUSPICIOUS",
+        "MOST_CONFIDENT_ERROR",
+        "INSPECT_TEXT = None",
     ):
         assert required_source in source
 
     code_cells = [cell for cell in cells if cell["cell_type"] == "code"]
-    assert len(code_cells) == 5
+    assert len(code_cells) == 6
     for required_source in (
         "path=WINDOWS_PATH,",
         "recompute=RECOMPUTE_WINDOWS,",
@@ -481,14 +587,14 @@ def test_local_evidence_classification_notebook_is_thin_and_output_free() -> Non
         'frame["score_direction"].eq("higher_is_mg")',
         'frame["window_length"].astype(str) + " tokens: " + frame["aggregation"]',
         "plot_score_curves(curve_predictions)",
-        "selected_predictions = test_predictions.assign(",
+        "prediction_scores = test_predictions.assign(",
         "decision_score=lambda frame: frame[\"mg_score\"].where(",
         ").sort_values(\"decision_score\", ascending=False).reset_index(drop=True)",
-        "selected_evidence = selected_predictions.loc[",
-        'left_on=["split", "text_id", "window_length", "selected_start_token", "selected_stop_token"]',
-        '"score_direction",\n            "mg_score",\n            "decision_score",',
-        "INSPECT_TEXT = None",
-        "token_range=(INSPECT_START_TOKEN, INSPECT_STOP_TOKEN)",
+        "MOST_SUSPICIOUS = prediction_scores.head(1)",
+        "MOST_CONFIDENT_ERROR = prediction_scores.loc[",
+        "if INSPECT_TEXT is not None",
+        "plot_local_evidence_timeline(test_windows, prediction)",
+        'token_range=(prediction["selected_start_token"], prediction["selected_stop_token"])',
     ):
         assert required_source in source
 
@@ -502,14 +608,38 @@ def test_local_evidence_classification_notebook_is_thin_and_output_free() -> Non
     )
 
 
+def test_local_evidence_classification_notebook_supports_custom_local_inspection() -> None:
+    import json
+
+    notebook_path = Path(__file__).parents[1] / "notebooks" / "local_evidence_classification.ipynb"
+    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+    source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+
+    for required_source in (
+        "CUSTOM_TEXT_INDEX = 0",
+        'CUSTOM_SPLIT = "MG"',
+        "CUSTOM_WINDOW_LENGTH = 32",
+        "load_text_row,",
+        "load_text_row(PROCESSED_ROOT, DATASET, MODEL, CUSTOM_SPLIT, CUSTOM_TEXT_INDEX)",
+        'custom_text_id = int(custom_row["id"])',
+        'scored_windows["text_id"].eq(custom_text_id)',
+        'scored_windows["window_length"].eq(CUSTOM_WINDOW_LENGTH)',
+        "No scored windows available for custom text",
+        'custom_windows.loc[custom_windows["mg_score"].idxmax()]',
+        "plot_local_evidence_timeline(custom_windows, custom_prediction)",
+        "CUSTOM_SPLIT,",
+        "CUSTOM_TEXT_INDEX,",
+    ):
+        assert required_source in source
+
+
 def test_local_evidence_notebook_does_not_merge_duplicate_evidence_columns() -> None:
     import json
 
     notebook_path = Path(__file__).parents[1] / "notebooks" / "local_evidence_classification.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
     source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
-    merge_source = source.split("selected_evidence = selected_predictions.loc[", maxsplit=1)[1].split("].merge(", maxsplit=1)[0]
-
-    assert '"window_text"' not in merge_source
-    assert '"top_positive_feature"' not in merge_source
-    assert '"top_negative_feature"' not in merge_source
+    assert "].merge(" not in source
+    assert '"window_text"' not in source
+    assert '"top_positive_feature"' not in source
+    assert '"top_negative_feature"' not in source
