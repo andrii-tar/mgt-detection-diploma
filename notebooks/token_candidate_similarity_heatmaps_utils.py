@@ -557,7 +557,7 @@ def plot_normalized_token_metrics_with_local_evidence(
     axis.set_ylabel("Normalized value")
     axis.set_ylim(0.0, 1.0)
     axis.grid(axis="y", alpha=0.25)
-    axis.legend(loc="center left", bbox_to_anchor=(1.0, 0.5))
+    axis.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=2)
     figure.suptitle(f"Normalized token metrics with smoothing window={window}")
     plt.show()
 

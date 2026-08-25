@@ -722,7 +722,7 @@ def test_plot_normalized_token_metrics_with_local_evidence_uses_one_shared_axis(
     ]
     assert [line[1]["alpha"] for line in axis.lines[:2]] == [0.5, 0.5]
     assert "alpha" not in axis.lines[2][1]
-    assert axis.legend_kwargs == {"loc": "center left", "bbox_to_anchor": (1.0, 0.5)}
+    assert axis.legend_kwargs == {"loc": "upper center", "bbox_to_anchor": (0.5, -0.15), "ncol": 2}
     assert all(
         np.all((values[np.isfinite(values)] >= 0.0) & (values[np.isfinite(values)] <= 1.0))
         for values, _kwargs in axis.lines
