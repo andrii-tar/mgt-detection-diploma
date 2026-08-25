@@ -14,6 +14,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+bayesian = [
+    "pymc>=5.0",
+]
 notebook = [
     "jupyter>=1.1.1",
     "jupyter-collaboration>=3.1.2",
