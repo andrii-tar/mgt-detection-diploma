@@ -320,6 +320,19 @@ def test_coefficient_reporting_prints_features_and_grouped_summaries(capsys: pyt
     assert "top20_coverage: mean_signed=0.500000 mean_abs=1.500000 l1=3.000000 max_abs=2.000000 (mean)" in output
 
 
+def test_coefficient_reporting_prints_custom_feature_names(capsys: pytest.CaptureFixture[str]) -> None:
+    feature_columns = ("feature_a", "feature_b")
+    model = Pipeline([("model", LogisticRegression())])
+    model.fit([[0, 0], [1, 1]], [0, 1])
+    model.named_steps["model"].coef_ = [[1.0, -2.0]]
+
+    local_evidence_utils.print_local_evidence_model_coefficients(model, feature_columns, window_length=32)
+
+    output = capsys.readouterr().out
+    assert "feature_a: mean_signed=1.000000 mean_abs=1.000000 l1=1.000000 max_abs=1.000000 (no statistic)" in output
+    assert "feature_b: mean_signed=-2.000000 mean_abs=2.000000 l1=2.000000 max_abs=2.000000 (no statistic)" in output
+
+
 def test_plot_local_evidence_timeline_marks_scores_and_suspicious_windows() -> None:
     windows = pd.DataFrame(
         {

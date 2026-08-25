@@ -444,7 +444,10 @@ def print_local_evidence_model_coefficients(
 
     grouped: dict[str, list[tuple[str, float]]] = {}
     for feature, coefficient in zip(feature_columns, coefficients):
-        metric, statistic = feature.split("__", 1)
+        if "__" in feature:
+            metric, statistic = feature.split("__", 1)
+        else:
+            metric, statistic = feature, "no statistic"
         grouped.setdefault(metric, []).append((statistic, float(coefficient)))
     for metric, entries in grouped.items():
         values = np.asarray([coefficient for _, coefficient in entries], dtype="float64")
