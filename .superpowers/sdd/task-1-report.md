@@ -127,3 +127,32 @@ The new test initially failed during collection with `ModuleNotFoundError` becau
 
 - The project `.venv` had a transient Windows file lock and an incomplete matplotlib installation after the first optional-extra sync; the retry succeeded, and the specified tests passed using a clean temporary matplotlib target while project kernels held the locked file.
 - Bayesian model fitting and posterior uncertainty remain intentionally deferred to Task 2.
+
+## Task 2 Addendum: GaussianNB and PyMC ADVI
+
+### Scope
+
+- Completed the GaussianNB adapter contract and added explicit signed continuous-feature coverage.
+- Implemented the lazy PyMC Bayesian logistic adapter using training-only median imputation and standardization.
+- Added ADVI fitting with configurable iterations, fixed seeds, configurable posterior draws, latent-probability intervals, and posterior coefficient summaries.
+
+### Implementation
+
+- GaussianNB continues to use only median imputation and `GaussianNB`; signed values are not transformed or standardized.
+- PyMC uses `Normal(0, prior_scale)` feature coefficients, `Normal(0, intercept_scale)` intercept, sigmoid latent MG probability, and Bernoulli labels.
+- Bayesian scores use posterior mean latent probabilities and configured credible-interval quantiles; deterministic uncertainty columns remain missing.
+- Missing PyMC raises an actionable error naming `uv sync --extra bayesian`, while deterministic models retain lazy-import independence.
+
+### TDD Evidence
+
+- Red: the new suite failed during collection because `summarize_pymc_coefficients` was not yet available.
+- Green: after implementation and updating the optional-dependency expectation, the specified adapter suite passed.
+
+### Verification
+
+- `uv run pytest tests/test_local_evidence_models_utils.py -q`: `8 passed in 14.34s`.
+- PyMC smoke tests ran, not skipped, using `advi_iterations=50` and `posterior_draws=40`.
+
+### Concerns
+
+- None identified for Task 2. Shared comparison evaluation and notebook work remain intentionally deferred to Task 3.
