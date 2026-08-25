@@ -206,3 +206,36 @@ The new test initially failed during collection with `ModuleNotFoundError` becau
 ### Concerns
 
 - None identified. Shared comparison evaluation and notebook work remain intentionally deferred to Task 3.
+
+## Task 3 Addendum: Shared Multi-Model Evaluation
+
+### Scope
+
+- Added `run_local_evidence_model_comparison` to `notebooks/local_evidence_models_utils.py`.
+- Added focused LR/GaussianNB comparison, training-boundary, and validation-threshold regression tests.
+- No visualization utilities or comparison notebook were added.
+
+### Implementation
+
+- The comparison loop validates requested model names, partitions windows by parent text, iterates sorted window lengths, and fits each adapter only on training rows.
+- Validation and test windows are scored independently with model identity and bounded probability columns preserved.
+- Maximum-window and evidence-fraction document aggregations use thresholds and score directions selected from validation predictions only.
+- Summary rows include model, window length, aggregation, thresholds, score direction, validation macro F1, support counts, accuracy, macro F1, and the remaining evaluation metrics.
+- Prediction rows include model identity, raw document score, prediction, document threshold, and window threshold.
+- Logistic-regression coefficient rows and PyMC posterior coefficient rows share a coefficient-summary schema; GaussianNB contributes no coefficient rows.
+- The adapter module keeps its import path independent of Matplotlib because the existing local-evidence module imports plotting dependencies at module import time.
+
+### TDD Evidence
+
+- Red: comparison tests initially failed during collection because `run_local_evidence_model_comparison` did not exist.
+- Green: comparison tests passed after the minimal shared loop and output contract were implemented.
+
+### Verification
+
+- `$env:MPLBACKEND='Agg'; uv run pytest tests/test_local_evidence_models_utils.py -k comparison -q`: `3 passed, 10 deselected`.
+- `$env:MPLBACKEND='Agg'; uv run pytest tests/test_local_evidence_models_utils.py -q`: `13 passed`.
+- `$env:MPLBACKEND='Agg'; uv run pytest tests/test_local_evidence_models_utils.py tests/test_classification_utils.py -q`: blocked during test collection by the existing environment error `ImportError: cannot import name '_docstring' from 'matplotlib'` while importing `local_evidence_utils.py`.
+
+### Concerns
+
+- The required combined command cannot complete until the installed Matplotlib package is repaired; the Task 3 adapter/comparison suite passes independently.

@@ -12,12 +12,44 @@ from notebooks.local_evidence_models_utils import (
     MODEL_NAMES,
     BayesianConfig,
     fit_local_evidence_classifier,
+    run_local_evidence_model_comparison,
     score_local_evidence_classifier,
     summarize_pymc_coefficients,
 )
 
 
 FEATURES = ("feature_a", "feature_b")
+
+
+def comparison_fixture() -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+    parent_rows = []
+    window_rows = []
+    text_id = 0
+    for partition in ("train", "validation", "test"):
+        for label in (0, 1):
+            parent_rows.append({"split": "HG" if label == 0 else "MG", "text_id": text_id, "label": label})
+            for window_length in (2, 4):
+                for start_token in (0, 1):
+                    signal = float(label * 3 + window_length / 10 + start_token / 100)
+                    window_rows.append(
+                        {
+                            "split": "HG" if label == 0 else "MG",
+                            "text_id": text_id,
+                            "label": label,
+                            "window_length": window_length,
+                            "start_token": start_token,
+                            "stop_token": start_token + window_length,
+                            "feature_a": signal,
+                            "feature_b": -signal,
+                        }
+                    )
+            text_id += 1
+    windows = pd.DataFrame(window_rows)
+    parents = pd.DataFrame(parent_rows)
+    return windows, {
+        partition: parents.iloc[index * 2 : (index + 1) * 2].reset_index(drop=True)
+        for index, partition in enumerate(("train", "validation", "test"))
+    }
 
 
 def training_windows() -> pd.DataFrame:
@@ -212,3 +244,78 @@ def test_pymc_adapter_scores_intervals_and_summarizes_coefficients() -> None:
     ).all()
     assert (summary["lower"] <= summary["posterior_mean"]).all()
     assert (summary["posterior_mean"] <= summary["upper"]).all()
+
+
+def test_comparison_evaluates_each_model_window_and_aggregation() -> None:
+    windows, partitions = comparison_fixture()
+
+    summaries, predictions, scored_windows, coefficient_summaries = run_local_evidence_model_comparison(
+        windows,
+        partitions,
+        ("logistic_regression", "gaussian_nb"),
+        feature_columns=FEATURES,
+        show_progress=False,
+    )
+
+    assert len(summaries) == 8
+    assert summaries.groupby(["model", "window_length", "aggregation"]).size().eq(1).all()
+    assert {"model", "window_length", "aggregation", "accuracy", "macro_f1", "document_threshold", "window_threshold", "hg_support", "mg_support"} <= set(summaries.columns)
+    assert {"model", "mg_score", "prediction", "document_threshold", "window_threshold"} <= set(predictions.columns)
+    assert {"partition", "model", "mg_score"} <= set(scored_windows.columns)
+    assert np.isfinite(scored_windows["mg_score"]).all()
+    assert scored_windows["mg_score"].between(0.0, 1.0).all()
+    assert {"model", "window_length", "feature", "coefficient"} <= set(coefficient_summaries.columns)
+
+
+def test_comparison_fits_only_training_parent_windows() -> None:
+    windows, partitions = comparison_fixture()
+    original = run_local_evidence_model_comparison(
+        windows,
+        partitions,
+        ("logistic_regression", "gaussian_nb"),
+        feature_columns=FEATURES,
+        show_progress=False,
+    )
+    mutated = windows.copy()
+    non_training = ~mutated["text_id"].isin(partitions["train"]["text_id"])
+    mutated.loc[non_training, list(FEATURES)] = 10_000.0
+    changed = run_local_evidence_model_comparison(
+        mutated,
+        partitions,
+        ("logistic_regression", "gaussian_nb"),
+        feature_columns=FEATURES,
+        show_progress=False,
+    )
+
+    pd.testing.assert_frame_equal(original[3], changed[3])
+
+
+def test_comparison_threshold_selection_ignores_test_labels() -> None:
+    windows, partitions = comparison_fixture()
+    original = run_local_evidence_model_comparison(
+        windows,
+        partitions,
+        ("logistic_regression",),
+        feature_columns=FEATURES,
+        show_progress=False,
+    )
+    changed_partitions = {key: value.copy() for key, value in partitions.items()}
+    changed_partitions["test"]["label"] = 1 - changed_partitions["test"]["label"]
+    changed_windows = windows.copy()
+    test_ids = changed_partitions["test"]["text_id"]
+    changed_windows.loc[changed_windows["text_id"].isin(test_ids), "label"] = 1 - changed_windows.loc[
+        changed_windows["text_id"].isin(test_ids), "label"
+    ]
+    changed = run_local_evidence_model_comparison(
+        changed_windows,
+        changed_partitions,
+        ("logistic_regression",),
+        feature_columns=FEATURES,
+        show_progress=False,
+    )
+
+    threshold_columns = ["model", "window_length", "aggregation", "document_threshold", "window_threshold", "score_direction", "validation_macro_f1"]
+    pd.testing.assert_frame_equal(
+        original[0][threshold_columns].reset_index(drop=True),
+        changed[0][threshold_columns].reset_index(drop=True),
+    )
