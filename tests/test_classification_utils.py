@@ -352,23 +352,11 @@ def test_plot_local_evidence_timeline_marks_scores_and_suspicious_windows() -> N
 
 def test_run_local_evidence_experiments_returns_text_scores_and_attributions(
     capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     windows = local_evidence_windows()
     for index, feature in enumerate(local_evidence_utils.LOCAL_FEATURE_COLUMNS):
         windows[feature] = windows[TEST_LOCAL_FEATURES[0]] + index / 1000
     partitions = split_local_evidence_texts(windows, seed=42)
-
-    monkeypatch.setattr(local_evidence_utils, "print_local_evidence_model_coefficients", lambda *args: None)
-    expected_summary, expected_predictions, expected_scored_windows = run_local_evidence_experiments(
-        windows,
-        partitions,
-        feature_columns=local_evidence_utils.LOCAL_FEATURE_COLUMNS,
-        seed=42,
-        show_progress=False,
-    )
-    capsys.readouterr()
-    monkeypatch.undo()
 
     summary, text_predictions, scored_windows = run_local_evidence_experiments(
         windows,
@@ -388,9 +376,75 @@ def test_run_local_evidence_experiments_returns_text_scores_and_attributions(
         "top_positive_feature",
         "top_negative_feature",
     } <= set(scored_windows.columns)
-    pd.testing.assert_frame_equal(summary, expected_summary)
-    pd.testing.assert_frame_equal(text_predictions, expected_predictions)
-    pd.testing.assert_frame_equal(scored_windows, expected_scored_windows)
+    expected_summary = pd.DataFrame(
+        [
+            [32, "maximum_window", 0.75, 1.0, 1.0, 0.7333333333333334, 0.9959130155591355, 2, 0, 1, 1],
+            [32, "evidence_fraction", 0.75, 0.75, 0.75, 0.7333333333333334, 0.3333333333333333, 2, 0, 1, 1],
+            [64, "maximum_window", 0.75, 1.0, 1.0, 0.7333333333333334, 0.9959130155591355, 2, 0, 1, 1],
+            [64, "evidence_fraction", 0.75, 0.75, 0.75, 0.7333333333333334, 0.3333333333333333, 2, 0, 1, 1],
+        ],
+        columns=[
+            "window_length",
+            "aggregation",
+            "accuracy",
+            "roc_auc",
+            "pr_auc",
+            "macro_f1",
+            "document_threshold",
+            "tn",
+            "fp",
+            "fn",
+            "tp",
+        ],
+    )
+    pd.testing.assert_frame_equal(
+        summary[expected_summary.columns].reset_index(drop=True),
+        expected_summary,
+        check_exact=False,
+        atol=1e-12,
+    )
+    expected_prediction_scores = [
+        0.004148479255124898,
+        0.00428662760806591,
+        0.9958227703477759,
+        0.9960013189343522,
+        0.0,
+        0.0,
+        0.0,
+        0.6666666666666666,
+    ]
+    actual_prediction_scores = text_predictions["mg_score"].tolist()
+    assert actual_prediction_scores == pytest.approx(expected_prediction_scores * 2)
+    assert text_predictions["prediction"].tolist() == [0, 0, 0, 1, 0, 0, 0, 1] * 2
+    expected_scored_scores = [
+        0.003919444445780661,
+        0.003988541949585705,
+        0.004058852638063911,
+        0.0042308269314928725,
+        0.0043053901982591,
+        0.004381261771635264,
+        0.9957676735649855,
+        0.9958409767561681,
+        0.9959130155591355,
+        0.9959040791121612,
+        0.9959750293314094,
+        0.996044755420255,
+        0.004006005066606809,
+        0.004076622337865493,
+        0.004148479255124898,
+        0.004139428613357596,
+        0.004212387908117312,
+        0.00428662760806591,
+        0.9956742329787093,
+        0.9957491476366175,
+        0.9958227703477759,
+        0.995859104142103,
+        0.995930830242042,
+        0.9960013189343522,
+    ]
+    for window_length in (32, 64):
+        actual_scores = scored_windows.loc[scored_windows["window_length"].eq(window_length), "mg_score"].tolist()
+        assert actual_scores == pytest.approx(expected_scored_scores)
     output = capsys.readouterr().out
     reports = output.split("Local evidence model coefficients (window_length=")[1:]
     assert len(reports) == 2
@@ -402,8 +456,8 @@ def test_run_local_evidence_experiments_returns_text_scores_and_attributions(
             any(line.startswith(f"{feature}: coefficient=") for line in coefficient_lines)
             for feature in local_evidence_utils.LOCAL_FEATURE_COLUMNS
         )
-    for metric in local_evidence_utils.LOCAL_METRICS:
-        assert f"{metric}: mean_signed=" in output
+        for metric in local_evidence_utils.LOCAL_METRICS:
+            assert f"{metric}: mean_signed=" in report
 
 
 def test_reusable_local_evidence_model_scores_supplied_windows_with_contributions() -> None:
