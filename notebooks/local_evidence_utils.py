@@ -18,6 +18,7 @@ from tqdm import tqdm
 from notebooks.classification_utils import evaluate_scores, fit_single_feature_threshold, split_cohort
 from notebooks.token_candidate_similarity_heatmaps_utils import (
     _iter_stage_one_rows,
+    load_similarity_row,
     load_similarity_rows,
     split_dir,
     validated_text_summary,
@@ -78,6 +79,7 @@ def build_local_evidence_windows(
     top_k: int = 20,
     splits: tuple[str, ...] = ("HG", "MG"),
     show_progress: bool = True,
+    text_ids: tuple[int, ...] | None = None,
 ) -> pd.DataFrame:
     if isinstance(stride, bool) or not isinstance(stride, (int, np.integer)) or stride <= 0:
         raise ValueError("stride must be a positive integer")
@@ -101,8 +103,15 @@ def build_local_evidence_windows(
     ]
     rows = []
     for split in splits:
-        similarity_rows = load_similarity_rows(processed_root, dataset, model, split)
-        logprob_rows = _iter_stage_one_rows(processed_root, dataset, model, split)
+        if text_ids is None:
+            similarity_rows = load_similarity_rows(processed_root, dataset, model, split)
+            logprob_rows = _iter_stage_one_rows(processed_root, dataset, model, split)
+        else:
+            similarity_rows = {
+                text_id: load_similarity_row(processed_root, dataset, model, split, text_id)
+                for text_id in text_ids
+            }
+            logprob_rows = _iter_stage_one_rows(processed_root, dataset, model, split, text_ids)
         if show_progress:
             logprob_rows = tqdm(
                 logprob_rows,

@@ -657,6 +657,7 @@ def test_local_evidence_classification_notebook_is_thin_and_output_free() -> Non
 
 
 def test_local_evidence_classification_notebook_supports_custom_local_inspection() -> None:
+    import ast
     import json
 
     notebook_path = Path(__file__).parents[1] / "notebooks" / "local_evidence_classification.ipynb"
@@ -670,6 +671,7 @@ def test_local_evidence_classification_notebook_supports_custom_local_inspection
         "CUSTOM_WINDOW_LENGTH = 32",
         "load_text_row(PROCESSED_ROOT, DATASET, MODEL, CUSTOM_SPLIT, CUSTOM_TEXT_INDEX)",
         "build_local_evidence_windows(",
+        "text_ids=(custom_text_id,)",
         "show_progress=False",
         "fit_local_evidence_model(",
         "score_local_evidence_windows(",
@@ -681,6 +683,25 @@ def test_local_evidence_classification_notebook_supports_custom_local_inspection
         assert required_source in source
 
     assert "scored_windows" not in source
+
+    tree = ast.parse(source)
+    calls = {
+        node.func.id: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert set(calls) >= {
+        "build_local_evidence_windows",
+        "fit_local_evidence_model",
+        "score_local_evidence_windows",
+    }
+    build_call = calls["build_local_evidence_windows"]
+    text_ids = next(keyword.value for keyword in build_call.keywords if keyword.arg == "text_ids")
+    assert isinstance(text_ids, ast.Tuple)
+    assert len(text_ids.elts) == 1
+    assert isinstance(text_ids.elts[0], ast.Name)
+    assert text_ids.elts[0].id == "custom_text_id"
+    assert any(keyword.arg == "show_progress" for keyword in build_call.keywords)
 
 
 def test_local_evidence_notebook_does_not_merge_duplicate_evidence_columns() -> None:

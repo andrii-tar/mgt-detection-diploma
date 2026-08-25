@@ -48,3 +48,32 @@ The updated contract was run before implementation and failed because the custom
 ## Concerns
 
 - The custom window builder still reads all rows in the requested split before filtering to the selected raw row because its public interface does not accept a single text ID.
+
+## Review Fix
+
+- Added optional `text_ids` filtering to `_iter_stage_one_rows` and `build_local_evidence_windows`.
+- When `text_ids` is supplied, the builder loads only the matching similarity rows and generates windows only for matching stage-one rows.
+- Updated the custom cell to pass `text_ids=(custom_text_id,)`, preventing full-split custom window construction.
+- Strengthened the contract with AST assertions for the build, fit, and score calls, the selected text ID argument, progress disabling, and the absence of `scored_windows` in the custom cell.
+- The prior concern is resolved for window generation; parquet files are still read to locate the selected row because the current storage layout is file-based.
+
+## Review Fix Commands And Outputs
+
+```text
+$env:MPLBACKEND='Agg'; uv run pytest -q tests/test_classification_utils.py::test_local_evidence_classification_notebook_supports_custom_local_inspection
+1 passed in 3.91s
+```
+
+```text
+uv run jupyter nbconvert --clear-output --inplace notebooks/local_evidence_classification.ipynb
+[NbConvertApp] Converting notebook notebooks/local_evidence_classification.ipynb to notebook
+[NbConvertApp] Writing 9199 bytes to notebooks\local_evidence_classification.ipynb
+```
+
+```text
+$env:MPLBACKEND='Agg'; uv run pytest -q
+........................................................................ [ 44%]
+........................................................................ [ 88%]
+..................                                                       [100%]
+162 passed in 52.67s
+```
