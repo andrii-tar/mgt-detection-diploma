@@ -173,3 +173,19 @@ The new test initially failed during collection with `ModuleNotFoundError` becau
 ### Concerns
 
 - None identified. Shared comparison evaluation and notebook work remain intentionally deferred to Task 3.
+
+## Task 2 Review-Fix Follow-Up
+
+### Changes
+
+- Reworked the GaussianNB preprocessing regression test to mutate validation/test rows in a combined dataframe before passing its selected training rows into separate original and mutated fits.
+- The test now compares learned imputer statistics and training-row predictions between both fits, while production code remains unchanged.
+
+### Verification
+
+- `uv run pytest tests/test_local_evidence_models_utils.py -q`: `9 passed in 7.96s`.
+- PyMC smoke tests ran, not skipped.
+
+### Concerns
+
+- None identified. Shared comparison evaluation and notebook work remain intentionally deferred to Task 3.

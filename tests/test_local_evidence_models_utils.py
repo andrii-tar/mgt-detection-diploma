@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 
+import numpy as np
 import pandas as pd
 import pytest
 from sklearn.naive_bayes import GaussianNB
@@ -82,29 +83,49 @@ def test_gaussian_nb_preserves_signed_continuous_features() -> None:
 
 
 def test_gaussian_nb_preprocessing_ignores_mutated_non_training_rows() -> None:
-    train = training_windows()
-    non_training = pd.DataFrame(
-        {
-            "feature_a": [10.0, 20.0],
-            "feature_b": [-10.0, -20.0],
-        }
+    all_windows = pd.concat(
+        [
+            training_windows().assign(partition="train"),
+            pd.DataFrame(
+                {
+                    "split": ["HG", "MG"],
+                    "text_id": [4, 5],
+                    "label": [0, 1],
+                    "feature_a": [10.0, 20.0],
+                    "feature_b": [-10.0, -20.0],
+                    "partition": ["validation", "test"],
+                }
+            ),
+        ],
+        ignore_index=True,
     )
-    fitted = fit_local_evidence_classifier("gaussian_nb", train, FEATURES, seed=42)
-    imputer = fitted.estimator.named_steps["impute"]
-    transformed_before = imputer.transform(train[list(FEATURES)])
-    statistics_before = imputer.statistics_.copy()
+    training_rows = all_windows["partition"].eq("train")
+    original_train = all_windows.loc[training_rows]
+    original_fitted = fit_local_evidence_classifier(
+        "gaussian_nb", original_train, FEATURES, seed=42
+    )
 
-    non_training.loc[:, "feature_a"] = [-1_000.0, 1_000.0]
-    non_training.loc[:, "feature_b"] = [2_000.0, -2_000.0]
+    mutated = all_windows.copy()
+    mutated.loc[~training_rows, FEATURES] = [
+        [-1_000.0, 2_000.0],
+        [1_000.0, -2_000.0],
+    ]
+    mutated_fitted = fit_local_evidence_classifier(
+        "gaussian_nb", mutated.loc[training_rows], FEATURES, seed=42
+    )
 
-    transformed_after = imputer.transform(train[list(FEATURES)])
-    pd.testing.assert_frame_equal(
-        pd.DataFrame(transformed_before, columns=FEATURES),
-        pd.DataFrame(transformed_after, columns=FEATURES),
+    original_imputer = original_fitted.estimator.named_steps["impute"]
+    mutated_imputer = mutated_fitted.estimator.named_steps["impute"]
+    np.testing.assert_array_equal(original_imputer.statistics_, mutated_imputer.statistics_)
+    original_scores = score_local_evidence_classifier(
+        original_fitted, original_train, FEATURES
+    )
+    mutated_scores = score_local_evidence_classifier(
+        mutated_fitted, mutated.loc[training_rows], FEATURES
     )
     pd.testing.assert_series_equal(
-        pd.Series(statistics_before, index=FEATURES),
-        train[list(FEATURES)].median(),
+        original_scores["mg_score"].reset_index(drop=True),
+        mutated_scores["mg_score"].reset_index(drop=True),
         check_names=False,
     )
 
