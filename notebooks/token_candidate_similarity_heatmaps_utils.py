@@ -56,6 +56,20 @@ def load_text_row(processed_root: Path, dataset: str, model: str, split: str, te
     raise IndexError(f"text_index {text_index} is outside {offset} available rows")
 
 
+def text_index_for_id(processed_root: Path, dataset: str, model: str, split: str, text_id: int) -> int:
+    data_paths = sorted((split_dir(processed_root, dataset, model, split) / "data").glob("*.parquet"))
+    if not data_paths:
+        raise FileNotFoundError(f"No stage-1 data parquet files for {dataset=} {model=} {split=}")
+    offset = 0
+    for path in data_paths:
+        frame = pd.read_parquet(path)
+        matches = frame.index[frame["id"].eq(text_id)]
+        if len(matches):
+            return offset + int(frame.index.get_loc(matches[0]))
+        offset += len(frame)
+    raise KeyError(f"No stage-1 data row for text id {text_id}")
+
+
 def load_similarity_row(processed_root: Path, dataset: str, model: str, split: str, text_id: int) -> pd.Series:
     similarity_paths = sorted((split_dir(processed_root, dataset, model, split) / "token_similarities").glob("*.parquet"))
     if not similarity_paths:
@@ -87,12 +101,17 @@ def _iter_stage_one_rows(
     dataset: str,
     model: str,
     split: str,
+    text_ids: tuple[int, ...] | None = None,
 ) -> Iterator[pd.Series]:
     data_paths = sorted((split_dir(processed_root, dataset, model, split) / "data").glob("*.parquet"))
     if not data_paths:
         raise FileNotFoundError(f"No stage-1 data parquet files for {dataset=} {model=} {split=}")
+    selected_ids = set(text_ids) if text_ids is not None else None
     for path in data_paths:
-        yield from (row for _, row in pd.read_parquet(path).iterrows())
+        rows = pd.read_parquet(path)
+        if selected_ids is not None:
+            rows = rows.loc[rows["id"].isin(selected_ids)]
+        yield from (row for _, row in rows.iterrows())
 
 
 def validated_text_summary(
