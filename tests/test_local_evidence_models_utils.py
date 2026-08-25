@@ -100,9 +100,8 @@ def test_gaussian_nb_preprocessing_ignores_mutated_non_training_rows() -> None:
         ignore_index=True,
     )
     training_rows = all_windows["partition"].eq("train")
-    original_train = all_windows.loc[training_rows]
     original_fitted = fit_local_evidence_classifier(
-        "gaussian_nb", original_train, FEATURES, seed=42
+        "gaussian_nb", all_windows, FEATURES, seed=42
     )
 
     mutated = all_windows.copy()
@@ -111,14 +110,14 @@ def test_gaussian_nb_preprocessing_ignores_mutated_non_training_rows() -> None:
         [1_000.0, -2_000.0],
     ]
     mutated_fitted = fit_local_evidence_classifier(
-        "gaussian_nb", mutated.loc[training_rows], FEATURES, seed=42
+        "gaussian_nb", mutated, FEATURES, seed=42
     )
 
     original_imputer = original_fitted.estimator.named_steps["impute"]
     mutated_imputer = mutated_fitted.estimator.named_steps["impute"]
     np.testing.assert_array_equal(original_imputer.statistics_, mutated_imputer.statistics_)
     original_scores = score_local_evidence_classifier(
-        original_fitted, original_train, FEATURES
+        original_fitted, all_windows.loc[training_rows], FEATURES
     )
     mutated_scores = score_local_evidence_classifier(
         mutated_fitted, mutated.loc[training_rows], FEATURES
@@ -128,6 +127,16 @@ def test_gaussian_nb_preprocessing_ignores_mutated_non_training_rows() -> None:
         mutated_scores["mg_score"].reset_index(drop=True),
         check_names=False,
     )
+
+
+def test_partitioned_fit_requires_train_rows() -> None:
+    with pytest.raises(ValueError, match="partitioned train_windows must contain train rows"):
+        fit_local_evidence_classifier(
+            "gaussian_nb",
+            training_windows().assign(partition="validation"),
+            FEATURES,
+            seed=42,
+        )
 
 
 def test_deterministic_scores_have_missing_uncertainty_columns() -> None:
@@ -162,10 +171,21 @@ def test_pymc_is_imported_only_when_bayesian_path_is_requested(monkeypatch: pyte
 def test_pymc_adapter_scores_intervals_and_summarizes_coefficients() -> None:
     pytest.importorskip("pymc")
     config = BayesianConfig(advi_iterations=50, posterior_draws=40, random_seed=42)
+    partitioned_windows = pd.concat(
+        [
+            training_windows().assign(partition="train"),
+            training_windows().assign(
+                partition="validation",
+                feature_a=[100.0, 200.0, 300.0, 400.0],
+                feature_b=[-100.0, -200.0, -300.0, -400.0],
+            ),
+        ],
+        ignore_index=True,
+    )
 
     fitted = fit_local_evidence_classifier(
         "pymc_bayesian_logistic",
-        training_windows(),
+        partitioned_windows,
         FEATURES,
         seed=42,
         bayesian_config=config,

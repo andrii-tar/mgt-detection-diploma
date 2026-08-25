@@ -174,6 +174,23 @@ The new test initially failed during collection with `ModuleNotFoundError` becau
 
 - None identified. Shared comparison evaluation and notebook work remain intentionally deferred to Task 3.
 
+## Task 2 Partition-Boundary Fix
+
+### Changes
+
+- Added an optional `partition` boundary to `fit_local_evidence_classifier`; partitioned frames now fit only rows where `partition == "train"` and reject frames without train rows.
+- Applied the same filtering to deterministic and PyMC preprocessing/model fitting while preserving existing behavior for train-only frames without a partition column.
+- Rewrote GaussianNB leakage coverage to pass full partitioned fixtures and mutate non-training feature values; PyMC coverage also fits a full partitioned fixture.
+
+### Verification
+
+- `uv run pytest tests/test_local_evidence_models_utils.py -q`: `10 passed in 5.43s`.
+- PyMC smoke tests ran, not skipped.
+
+### Concerns
+
+- None identified. Shared comparison evaluation and notebook work remain intentionally deferred to Task 3.
+
 ## Task 2 Review-Fix Follow-Up
 
 ### Changes

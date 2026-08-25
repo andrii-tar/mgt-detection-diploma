@@ -87,7 +87,13 @@ def fit_local_evidence_classifier(
 
     normalized_features = tuple(feature_columns)
     _validate_features(train_windows, normalized_features)
-    if "label" not in train_windows.columns:
+    fit_windows = train_windows
+    if "partition" in train_windows.columns:
+        train_rows = train_windows["partition"].eq("train")
+        if not train_rows.any():
+            raise ValueError("partitioned train_windows must contain train rows")
+        fit_windows = train_windows.loc[train_rows]
+    if "label" not in fit_windows.columns:
         raise ValueError("train_windows must contain a label column")
     if model_name == "pymc_bayesian_logistic":
         pymc = _load_pymc()
@@ -98,7 +104,7 @@ def fit_local_evidence_classifier(
                 ("scale", StandardScaler()),
             ]
         )
-        features = preprocessing.fit_transform(train_windows[list(normalized_features)])
+        features = preprocessing.fit_transform(fit_windows[list(normalized_features)])
         bayesian_seed = config.random_seed
         model = pymc.Model()
         with model:
@@ -113,7 +119,7 @@ def fit_local_evidence_classifier(
                 "mg_probability",
                 pymc.math.sigmoid(intercept + pymc.math.dot(features, coefficients)),
             )
-            pymc.Bernoulli("label", p=probability, observed=train_windows["label"].to_numpy())
+            pymc.Bernoulli("label", p=probability, observed=fit_windows["label"].to_numpy())
             approximation = pymc.fit(
                 n=config.advi_iterations,
                 random_seed=bayesian_seed,
@@ -128,7 +134,7 @@ def fit_local_evidence_classifier(
         return _FittedClassifier(model_name, normalized_features, estimator)
 
     estimator = _deterministic_estimator(model_name, seed)
-    estimator.fit(train_windows[list(normalized_features)], train_windows["label"])
+    estimator.fit(fit_windows[list(normalized_features)], fit_windows["label"])
     return _FittedClassifier(model_name, normalized_features, estimator)
 
 
