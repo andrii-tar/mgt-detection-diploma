@@ -55,3 +55,18 @@ Implemented the reusable alignment and normalization helpers required for the no
 
 - `uv run pytest tests/test_notebook_utils.py -k "expand_window_scores or normalize_series" -q`: 12 passed, 60 deselected in 4.73s.
 - `uv run pytest tests/test_notebook_utils.py -q`: 1 failed, 71 passed in 8.62s. The existing plotting test failed because the environment's Tk installation could not load `tk.tcl`; the focused helper tests passed.
+
+## Review Gap Tests
+
+- Added explicit coverage for negative `token_count`.
+- Added explicit coverage for uncovered token positions returning `NaN`.
+- Added explicit coverage for all-invalid window scores returning all `NaN`.
+
+## Review Gap Verification
+
+Exact output from `uv run pytest tests/test_notebook_utils.py -k "expand_window_scores or normalize_series" -q`:
+
+```text
+...............                                                          [100%]
+15 passed, 60 deselected in 6.03s
+```

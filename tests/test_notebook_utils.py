@@ -597,12 +597,41 @@ def test_expand_window_scores_to_tokens_ignores_missing_and_non_numeric_scores()
     assert scores == pytest.approx([0.2, 0.2])
 
 
+def test_expand_window_scores_to_tokens_returns_nan_for_uncovered_positions() -> None:
+    scored_windows = pd.DataFrame(
+        {
+            "start_token": [1],
+            "stop_token": [3],
+            "mg_score": [0.4],
+        }
+    )
+
+    scores = _expand_window_scores_to_tokens(scored_windows, token_count=4)
+
+    assert scores == pytest.approx([np.nan, 0.4, 0.4, np.nan], nan_ok=True)
+
+
+def test_expand_window_scores_to_tokens_returns_all_nan_for_all_invalid_scores() -> None:
+    scored_windows = pd.DataFrame(
+        {
+            "start_token": [0, 1],
+            "stop_token": [2, 4],
+            "mg_score": [np.nan, "invalid"],
+        }
+    )
+
+    scores = _expand_window_scores_to_tokens(scored_windows, token_count=4)
+
+    assert np.isnan(scores).all()
+
+
 @pytest.mark.parametrize(
     "scored_windows, token_count, match",
     [
         (pd.DataFrame({"start_token": [0], "stop_token": [1]}), 1, "mg_score"),
         (pd.DataFrame({"stop_token": [1], "mg_score": [0.2]}), 1, "start_token"),
         (pd.DataFrame({"start_token": [0], "stop_token": [1], "mg_score": [0.2]}), 0, "token_count"),
+        (pd.DataFrame({"start_token": [0], "stop_token": [1], "mg_score": [0.2]}), -1, "token_count"),
         (pd.DataFrame({"start_token": [2], "stop_token": [2], "mg_score": [0.2]}), 3, "span"),
         (pd.DataFrame({"start_token": [3], "stop_token": [2], "mg_score": [0.2]}), 3, "span"),
         (pd.DataFrame({"start_token": [-1], "stop_token": [2], "mg_score": [0.2]}), 3, "range"),
