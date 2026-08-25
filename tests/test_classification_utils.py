@@ -661,24 +661,26 @@ def test_local_evidence_classification_notebook_supports_custom_local_inspection
 
     notebook_path = Path(__file__).parents[1] / "notebooks" / "local_evidence_classification.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
-    source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+    custom_cell = next(cell for cell in notebook["cells"] if cell["id"] == "local-evidence-custom-inspect")
+    source = "".join(custom_cell["source"])
 
     for required_source in (
         "CUSTOM_TEXT_INDEX = 0",
         'CUSTOM_SPLIT = "MG"',
         "CUSTOM_WINDOW_LENGTH = 32",
-        "load_text_row,",
         "load_text_row(PROCESSED_ROOT, DATASET, MODEL, CUSTOM_SPLIT, CUSTOM_TEXT_INDEX)",
-        'custom_text_id = int(custom_row["id"])',
-        'scored_windows["text_id"].eq(custom_text_id)',
-        'scored_windows["window_length"].eq(CUSTOM_WINDOW_LENGTH)',
-        "No scored windows available for custom text",
+        "build_local_evidence_windows(",
+        "show_progress=False",
+        "fit_local_evidence_model(",
+        "score_local_evidence_windows(",
+        "No windows available for custom text",
         'custom_windows.loc[custom_windows["mg_score"].idxmax()]',
+        "Independent custom inspection evidence",
         "plot_local_evidence_timeline(custom_windows, custom_prediction)",
-        "CUSTOM_SPLIT,",
-        "CUSTOM_TEXT_INDEX,",
     ):
         assert required_source in source
+
+    assert "scored_windows" not in source
 
 
 def test_local_evidence_notebook_does_not_merge_duplicate_evidence_columns() -> None:
