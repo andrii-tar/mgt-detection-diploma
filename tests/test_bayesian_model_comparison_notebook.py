@@ -59,6 +59,8 @@ def test_notebook_contains_comparison_contract(source: str):
         "SELECTED_TEXTS",
         "PYMC_AVAILABLE",
         "uv sync --extra bayesian",
+        "groupby([\"model\", \"window_length\", \"aggregation\"])",
+        "np.isfinite",
     )
     for fragment in required_fragments:
         assert fragment in source
@@ -71,14 +73,43 @@ def test_notebook_inspection_uses_test_partition(source: str):
 
 def test_notebook_does_not_import_pymc_unconditionally(source: str):
     tree = ast.parse(source)
-    unconditional_imports = [
+    pymc_imports = [
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.Import)
         and any(alias.name == "pymc" for alias in node.names)
-    ] + [
+    ]
+    assert len(pymc_imports) == 1
+    guarded_try = next(
+        parent
+        for parent in ast.walk(tree)
+        if isinstance(parent, ast.Try) and pymc_imports[0] in parent.body
+    )
+    assert any(
+        isinstance(handler.type, ast.Name) and handler.type.id == "ModuleNotFoundError"
+        for handler in guarded_try.handlers
+    )
+
+
+def test_notebook_runs_one_comparison_with_mandatory_deterministic_models(source: str):
+    tree = ast.parse(source)
+    comparison_calls = [
         node
         for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module == "pymc"
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "run_local_evidence_model_comparison"
     ]
-    assert not unconditional_imports
+    assert len(comparison_calls) == 1
+    assert 'MODEL_NAMES = ("logistic_regression", "gaussian_nb", "pymc_bayesian_logistic")' in source
+    assert "AVAILABLE_MODELS" in source
+
+
+def test_notebook_groups_overall_metrics_and_covers_configured_lengths(source: str):
+    assert 'groupby(["model", "window_length", "aggregation"])' in source
+    assert "for window_length in WINDOW_LENGTHS" in source
+    assert "drop_duplicates([\"split\", \"text_id\"])" in source
+
+
+def test_notebook_uses_only_multi_model_plot_for_model_scores(source: str):
+    assert "plot_normalized_token_metrics_with_local_evidence(" not in source
