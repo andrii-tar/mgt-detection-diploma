@@ -443,7 +443,7 @@ def print_local_evidence_model_coefficients(
 
     grouped: dict[str, list[tuple[str, float]]] = {}
     for feature, coefficient in zip(feature_columns, coefficients):
-        metric, statistic = feature.split("__", 1)
+        metric, statistic = feature.split("__", 1) if "__" in feature else (feature, "")
         grouped.setdefault(metric, []).append((statistic, float(coefficient)))
     for metric, entries in grouped.items():
         values = np.asarray([coefficient for _, coefficient in entries], dtype="float64")
@@ -509,6 +509,7 @@ def run_local_evidence_experiments(
             feature_columns,
             seed,
         )
+        print_local_evidence_model_coefficients(model, normalized_features, window_length)
         validation_scored = score_local_evidence_windows(model, validation, normalized_features)
         test_scored = score_local_evidence_windows(model, test, normalized_features)
         scored_frames.extend([validation_scored, test_scored])

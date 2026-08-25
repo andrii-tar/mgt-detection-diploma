@@ -349,14 +349,18 @@ def test_plot_local_evidence_timeline_marks_scores_and_suspicious_windows() -> N
     assert len(axis.patches) == 1
 
 
-def test_run_local_evidence_experiments_returns_text_scores_and_attributions() -> None:
+def test_run_local_evidence_experiments_returns_text_scores_and_attributions(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     windows = local_evidence_windows()
+    for index, feature in enumerate(local_evidence_utils.LOCAL_FEATURE_COLUMNS):
+        windows[feature] = windows["feature_a"] + index / 1000
     partitions = split_local_evidence_texts(windows, seed=42)
 
     summary, text_predictions, scored_windows = run_local_evidence_experiments(
         windows,
         partitions,
-        feature_columns=("feature_a", "feature_b"),
+        feature_columns=local_evidence_utils.LOCAL_FEATURE_COLUMNS,
         seed=42,
         show_progress=False,
     )
@@ -366,11 +370,16 @@ def test_run_local_evidence_experiments_returns_text_scores_and_attributions() -
     assert text_predictions.groupby(["window_length", "aggregation"]).size().eq(len(partitions["test"])).all()
     assert {"mg_score", "prediction", "selected_start_token", "selected_stop_token"} <= set(text_predictions.columns)
     assert {
-        "contribution__feature_a",
-        "contribution__feature_b",
+        "contribution__observed_logprob__mean",
+        "contribution__top20_coverage__finite_fraction",
         "top_positive_feature",
         "top_negative_feature",
     } <= set(scored_windows.columns)
+    output = capsys.readouterr().out
+    for window_length in (32, 64):
+        assert f"window_length={window_length}" in output
+    for metric in local_evidence_utils.LOCAL_METRICS:
+        assert f"{metric}: mean_signed=" in output
 
 
 def test_reusable_local_evidence_model_scores_supplied_windows_with_contributions() -> None:
