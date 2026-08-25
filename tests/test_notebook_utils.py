@@ -713,11 +713,9 @@ def test_plot_normalized_token_metrics_with_local_evidence_uses_one_shared_axis(
         window=2,
     )
 
-    assert len(axis.lines) == 5
+    assert len(axis.lines) == 3
     assert [line[1]["label"] for line in axis.lines] == [
-        "metric_a raw",
         "metric_a rolling mean (2)",
-        "metric_b raw",
         "metric_b rolling mean (2)",
         "local mg_score",
     ]
