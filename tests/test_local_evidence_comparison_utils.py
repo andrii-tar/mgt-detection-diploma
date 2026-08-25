@@ -71,14 +71,31 @@ def test_combined_plot_contains_metrics_model_lines_and_finite_interval_band() -
     assert any("local evidence (lr)" in label for label in labels)
     assert any("local evidence (nb)" in label for label in labels)
     assert len(axis.collections) == 2
+    assert all("credible interval" in collection.get_label() for collection in axis.collections)
     assert axis.get_legend().get_bbox_to_anchor() is not None
     plt.close(figure)
 
 
-def test_select_comparison_texts_is_deterministic_and_uses_test_rows_only() -> None:
+def test_interval_band_uses_central_score_normalization() -> None:
+    summary = {"observed_logprob": np.arange(5, dtype=float)}
+    scored = _scored_windows().iloc[:2].assign(
+        mg_score_lower=lambda frame: frame["mg_score"] - 0.1,
+        mg_score_upper=lambda frame: frame["mg_score"] + 0.1,
+    )
+
+    figure = plot_normalized_token_metrics_with_model_evidence(summary, scored, token_count=5)
+
+    vertices = figure.axes[0].collections[0].get_paths()[0].vertices
+    assert np.isclose(vertices[:, 1], -1 / 6).any()
+    assert np.isclose(vertices[:, 1], 1 / 6).any()
+    plt.close(figure)
+
+
+def test_select_comparison_texts_is_deterministic_and_uses_test_partition() -> None:
     predictions = pd.DataFrame(
         {
-            "split": ["train", "validation", "test", "test", "test"],
+            "partition": ["train", "validation", "test", "test", "test"],
+            "split": ["HG", "MG", "HG", "MG", "HG"],
             "text_id": [1, 2, 3, 4, 5],
             "model": ["lr"] * 5,
         }
@@ -87,7 +104,8 @@ def test_select_comparison_texts_is_deterministic_and_uses_test_rows_only() -> N
     selected = select_comparison_texts(predictions, count=2, seed=17)
 
     pd.testing.assert_frame_equal(selected, select_comparison_texts(predictions, count=2, seed=17))
-    assert selected["split"].eq("test").all()
+    assert selected["partition"].eq("test").all()
     assert set(selected["text_id"]).issubset({3, 4, 5})
     assert len(selected) == 2
-    assert list(predictions["split"]) == ["train", "validation", "test", "test", "test"]
+    assert list(predictions["partition"]) == ["train", "validation", "test", "test", "test"]
+    assert set(selected["split"]).issubset({"HG", "MG"})

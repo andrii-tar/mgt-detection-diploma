@@ -12,6 +12,16 @@ def _validate_token_count(token_count: int) -> None:
         raise ValueError("token_count must be positive")
 
 
+def _normalize_with_bounds(values: np.ndarray, minimum: float, maximum: float) -> np.ndarray:
+    normalized = np.asarray(values, dtype="float64").copy()
+    finite = np.isfinite(normalized)
+    if minimum == maximum:
+        normalized[finite] = 0.0
+    else:
+        normalized[finite] = (normalized[finite] - minimum) / (maximum - minimum)
+    return normalized
+
+
 def expand_model_scores_to_tokens(
     scored_windows: pd.DataFrame,
     token_count: int,
@@ -119,14 +129,17 @@ def plot_normalized_token_metrics_with_model_evidence(
             lower = model_rows["mg_score_lower"].to_numpy(dtype="float64")
             upper = model_rows["mg_score_upper"].to_numpy(dtype="float64")
             finite = np.isfinite(lower) & np.isfinite(upper)
-            if finite.any():
+            score_finite = np.isfinite(scores)
+            if finite.any() and score_finite.any():
+                score_minimum = scores[score_finite].min()
+                score_maximum = scores[score_finite].max()
                 axis.fill_between(
                     positions,
-                    _normalize_series(lower),
-                    _normalize_series(upper),
+                    _normalize_with_bounds(lower, score_minimum, score_maximum),
+                    _normalize_with_bounds(upper, score_minimum, score_maximum),
                     where=finite,
                     alpha=0.15,
-                    label=f"{model} 95% interval",
+                    label=f"{model} credible interval",
                 )
 
     axis.set_title(f"Normalized token metrics with model evidence (window={window})")
@@ -141,7 +154,7 @@ def plot_normalized_token_metrics_with_model_evidence(
 def select_comparison_texts(predictions: pd.DataFrame, count: int, seed: int) -> pd.DataFrame:
     if isinstance(count, (bool, np.bool_)) or not isinstance(count, (int, np.integer)) or count < 0:
         raise ValueError("count must be a non-negative integer")
-    if "split" not in predictions.columns:
-        raise ValueError("predictions must contain a split column")
-    test_rows = predictions.loc[predictions["split"].eq("test")]
+    if "partition" not in predictions.columns:
+        raise ValueError("predictions must contain a partition column")
+    test_rows = predictions.loc[predictions["partition"].eq("test")]
     return test_rows.sample(n=min(int(count), len(test_rows)), random_state=seed).reset_index(drop=True)

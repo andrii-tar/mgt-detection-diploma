@@ -293,3 +293,22 @@ The new test initially failed during collection with `ModuleNotFoundError` becau
 ### Concerns
 
 - The requested visualization tests cannot collect until the environment's installed Matplotlib package is repaired. No dependency version or existing plotting behavior was changed as a workaround.
+
+## Task 4 Review-Fix Addendum
+
+### Fixes
+
+- Updated `select_comparison_texts` to filter the comparison output's `partition == "test"` field while retaining all split and text identity columns unchanged.
+- Added shared-bound normalization for PyMC interval bounds using each model's finite central `mg_score` minimum and maximum, preventing independently scaled or inverted bands.
+- Replaced the hard-coded `95%` interval legend text with the neutral `credible interval` label, which remains correct for configurable credible bounds.
+- Added regression tests for the comparison prediction partition schema, shared interval normalization, and neutral interval labels.
+
+### Verification
+
+- `$env:MPLBACKEND='Agg'; uv run pytest tests/test_local_evidence_comparison_utils.py tests/test_notebook_utils.py -q`: blocked during collection by the exact existing error `ImportError: cannot import name '_docstring' from 'matplotlib'` from `matplotlib.mlab` while importing both test modules.
+- `uv run python -m py_compile notebooks/local_evidence_comparison_utils.py tests/test_local_evidence_comparison_utils.py`: passed.
+- `git diff --check`: passed.
+
+### Concerns
+
+- Focused runtime tests remain unavailable until the installed Matplotlib package is repaired; no dependency versions or existing plotting behavior were changed as a workaround.
