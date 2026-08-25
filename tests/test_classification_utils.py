@@ -311,6 +311,7 @@ def test_coefficient_reporting_prints_features_and_grouped_summaries(capsys: pyt
 
     output = capsys.readouterr().out
     assert "window_length=32" in output
+    assert "Positive coefficients increase the MG logit and negative coefficients decrease it." in output
     assert "observed_logprob__mean: coefficient=1.000000" in output
     assert "top20_coverage__slope: coefficient=-1.000000" in output
     assert "observed_logprob: mean_signed=-0.500000 mean_abs=1.500000 l1=3.000000 max_abs=2.000000 (std)" in output

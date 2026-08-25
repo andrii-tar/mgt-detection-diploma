@@ -438,6 +438,7 @@ def print_local_evidence_model_coefficients(
         raise ValueError("coefficient vector length does not match feature columns")
 
     print(f"Local evidence model coefficients (window_length={window_length})")
+    print("Positive coefficients increase the MG logit and negative coefficients decrease it.")
     for feature, coefficient in zip(feature_columns, coefficients):
         print(f"{feature}: coefficient={coefficient:.6f}")
 
