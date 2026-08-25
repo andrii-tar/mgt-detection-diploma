@@ -428,6 +428,33 @@ def fit_local_evidence_model(
     return model, feature_columns
 
 
+def print_local_evidence_model_coefficients(
+    model: Pipeline,
+    feature_columns: tuple[str, ...],
+    window_length: int,
+) -> None:
+    coefficients = np.asarray(model.named_steps["model"].coef_[0], dtype="float64")
+    if len(coefficients) != len(feature_columns):
+        raise ValueError("coefficient vector length does not match feature columns")
+
+    print(f"Local evidence model coefficients (window_length={window_length})")
+    for feature, coefficient in zip(feature_columns, coefficients):
+        print(f"{feature}: coefficient={coefficient:.6f}")
+
+    grouped: dict[str, list[tuple[str, float]]] = {}
+    for feature, coefficient in zip(feature_columns, coefficients):
+        metric, statistic = feature.split("__", 1)
+        grouped.setdefault(metric, []).append((statistic, float(coefficient)))
+    for metric, entries in grouped.items():
+        values = np.asarray([coefficient for _, coefficient in entries], dtype="float64")
+        maximum_index = int(np.argmax(np.abs(values)))
+        print(
+            f"{metric}: mean_signed={values.mean():.6f} mean_abs={np.abs(values).mean():.6f} "
+            f"l1={np.abs(values).sum():.6f} max_abs={np.abs(values[maximum_index]):.6f} "
+            f"({entries[maximum_index][0]})"
+        )
+
+
 def score_local_evidence_windows(
     model: Pipeline,
     windows: pd.DataFrame,

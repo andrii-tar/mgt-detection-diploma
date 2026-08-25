@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
 
 import notebooks.local_evidence_utils as local_evidence_utils
 from notebooks.classification_utils import (
@@ -287,6 +289,33 @@ def test_local_evidence_aggregation_uses_maximum_and_evidence_fraction() -> None
     assert maximum.iloc[0]["selected_start_token"] == 32
     assert fraction.iloc[0]["mg_score"] == pytest.approx(1 / 3)
     assert fraction.iloc[0]["selected_stop_token"] == 64
+
+
+def test_coefficient_reporting_prints_features_and_grouped_summaries(capsys: pytest.CaptureFixture[str]) -> None:
+    feature_columns = (
+        "observed_logprob__mean",
+        "observed_logprob__std",
+        "mean_candidate_logprob_delta__mean",
+        "mean_candidate_logprob_delta__slope",
+        "mean_candidate_similarity__mean",
+        "mean_candidate_similarity__slope",
+        "top20_coverage__mean",
+        "top20_coverage__slope",
+    )
+    model = Pipeline([("model", LogisticRegression())])
+    model.fit([[0] * len(feature_columns), [1] * len(feature_columns)], [0, 1])
+    model.named_steps["model"].coef_ = [[1.0, -2.0, 0.5, -0.5, 0.25, -0.75, 2.0, -1.0]]
+
+    local_evidence_utils.print_local_evidence_model_coefficients(model, feature_columns, window_length=32)
+
+    output = capsys.readouterr().out
+    assert "window_length=32" in output
+    assert "observed_logprob__mean: coefficient=1.000000" in output
+    assert "top20_coverage__slope: coefficient=-1.000000" in output
+    assert "observed_logprob: mean_signed=-0.500000 mean_abs=1.500000 l1=3.000000 max_abs=2.000000 (std)" in output
+    assert "mean_candidate_logprob_delta: mean_signed=0.000000 mean_abs=0.500000 l1=1.000000 max_abs=0.500000 (mean)" in output
+    assert "mean_candidate_similarity: mean_signed=-0.250000 mean_abs=0.500000 l1=1.000000 max_abs=0.750000 (slope)" in output
+    assert "top20_coverage: mean_signed=0.500000 mean_abs=1.500000 l1=3.000000 max_abs=2.000000 (mean)" in output
 
 
 def test_plot_local_evidence_timeline_marks_scores_and_suspicious_windows() -> None:
