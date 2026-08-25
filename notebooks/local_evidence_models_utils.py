@@ -5,15 +5,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import (
-    accuracy_score,
-    average_precision_score,
-    balanced_accuracy_score,
-    confusion_matrix,
-    f1_score,
-    precision_recall_fscore_support,
-    roc_auc_score,
-)
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
@@ -231,108 +222,6 @@ def _summarize_deterministic_coefficients(
     )
 
 
-def _partition_comparison_windows(
-    windows: pd.DataFrame,
-    parents: pd.DataFrame,
-    partition: str,
-) -> pd.DataFrame:
-    parent_labels = parents[["split", "text_id", "label"]].rename(columns={"label": "parent_label"})
-    filtered = windows.merge(parent_labels, on=["split", "text_id"], how="inner", validate="many_to_one")
-    if not filtered["label"].eq(filtered["parent_label"]).all():
-        raise ValueError(f"{partition} partition has parent labels inconsistent with its windows")
-    filtered = filtered.drop(columns="parent_label")
-    if set(filtered["label"]) != {0, 1}:
-        raise ValueError(f"{partition} partition must have window rows for both labels")
-    return filtered.assign(partition=partition)
-
-
-def _aggregate_maximum_window(scored_windows: pd.DataFrame) -> pd.DataFrame:
-    group_columns = ["split", "text_id", "label", "window_length"]
-    selected = (
-        scored_windows.sort_values(
-            [*group_columns, "mg_score", "start_token"],
-            ascending=[True, True, True, True, False, True],
-        )
-        .groupby(group_columns, as_index=False, sort=False)
-        .head(1)
-        .copy()
-    )
-    return selected.rename(columns={"start_token": "selected_start_token", "stop_token": "selected_stop_token"})
-
-
-def _aggregate_evidence_fraction(scored_windows: pd.DataFrame, window_threshold: float) -> pd.DataFrame:
-    group_columns = ["split", "text_id", "label", "window_length"]
-    maximum = _aggregate_maximum_window(scored_windows)
-    fractions = (
-        scored_windows.assign(is_evidence=scored_windows["mg_score"] >= window_threshold)
-        .groupby(group_columns, as_index=False)["is_evidence"]
-        .mean()
-        .rename(columns={"is_evidence": "mg_score"})
-    )
-    return maximum.drop(columns="mg_score").merge(fractions, on=group_columns, validate="one_to_one")
-
-
-def _fit_comparison_threshold(y_true: pd.Series, mg_score: pd.Series) -> dict[str, float | str]:
-    values = pd.to_numeric(mg_score, errors="raise").to_numpy(dtype="float64")
-    labels = pd.Series(y_true).to_numpy(dtype="int64")
-    candidates = []
-    for direction, decision_scores in (("higher_is_mg", values), ("lower_is_mg", -values)):
-        for threshold in np.unique(decision_scores):
-            candidates.append(
-                {
-                    "direction": direction,
-                    "threshold": float(threshold),
-                    "macro_f1": float(f1_score(labels, decision_scores >= threshold, average="macro", zero_division=0)),
-                }
-            )
-    return max(candidates, key=lambda candidate: (float(candidate["macro_f1"]), -float(candidate["threshold"])))
-
-
-def _select_comparison_parameters(candidates: list[dict[str, float | str]]) -> dict[str, float | str]:
-    return max(
-        candidates,
-        key=lambda candidate: (
-            float(candidate["macro_f1"]),
-            float(candidate["window_threshold"]),
-            float(candidate["threshold"]),
-        ),
-    )
-
-
-def _evaluate_comparison_scores(
-    y_true: pd.Series,
-    decision_scores: pd.Series,
-    threshold: float,
-) -> dict[str, float | int]:
-    labels = pd.Series(y_true).to_numpy(dtype="int64")
-    scores = pd.Series(decision_scores).to_numpy(dtype="float64")
-    predictions = scores >= threshold
-    precision, recall, f1, support = precision_recall_fscore_support(
-        labels, predictions, labels=[0, 1], zero_division=0
-    )
-    tn, fp, fn, tp = confusion_matrix(labels, predictions, labels=[0, 1]).ravel()
-    return {
-        "roc_auc": float(roc_auc_score(labels, scores)),
-        "pr_auc": float(average_precision_score(labels, scores)),
-        "accuracy": float(accuracy_score(labels, predictions)),
-        "balanced_accuracy": float(balanced_accuracy_score(labels, predictions)),
-        "macro_f1": float(f1_score(labels, predictions, average="macro", zero_division=0)),
-        "weighted_f1": float(f1_score(labels, predictions, average="weighted", zero_division=0)),
-        "hg_precision": float(precision[0]),
-        "hg_recall": float(recall[0]),
-        "hg_f1": float(f1[0]),
-        "hg_support": int(support[0]),
-        "mg_precision": float(precision[1]),
-        "mg_recall": float(recall[1]),
-        "mg_f1": float(f1[1]),
-        "mg_support": int(support[1]),
-        "tn": int(tn),
-        "fp": int(fp),
-        "fn": int(fn),
-        "tp": int(tp),
-    }
-
-
 def run_local_evidence_model_comparison(
     windows: pd.DataFrame,
     partitions: dict[str, pd.DataFrame],
@@ -343,6 +232,15 @@ def run_local_evidence_model_comparison(
     show_progress: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     from tqdm import tqdm
+    from notebooks.local_evidence_utils import (
+        _decision_scores,
+        _fit_document_threshold,
+        _partition_windows,
+        _select_evidence_parameters,
+        aggregate_evidence_fraction,
+        aggregate_maximum_window,
+        evaluate_scores,
+    )
 
     normalized_features = tuple(feature_columns)
     _validate_features(windows, normalized_features)
@@ -353,7 +251,7 @@ def run_local_evidence_model_comparison(
     if unknown_models:
         raise ValueError(f"unknown model name: {unknown_models[0]!r}")
     partitioned = {
-        partition: _partition_comparison_windows(windows, partitions[partition], partition)
+        partition: _partition_windows(windows, partitions[partition], partition)
         for partition in ("train", "validation", "test")
     }
     lengths = sorted(windows["window_length"].unique())
@@ -404,18 +302,18 @@ def run_local_evidence_model_comparison(
             test_scored = score_local_evidence_classifier(fitted, test, normalized_features)
             scored_frames.extend((validation_scored, test_scored))
 
-            validation_maximum = _aggregate_maximum_window(validation_scored)
-            maximum_parameters = _fit_comparison_threshold(validation_maximum["label"], validation_maximum["mg_score"])
-            test_maximum = _aggregate_maximum_window(test_scored)
+            validation_maximum = aggregate_maximum_window(validation_scored)
+            maximum_parameters = _fit_document_threshold(validation_maximum["label"], validation_maximum["mg_score"])
+            test_maximum = aggregate_maximum_window(test_scored)
             candidates: list[dict[str, float | str]] = []
             for window_threshold in np.percentile(validation_scored["mg_score"], np.arange(5, 100, 5)):
-                validation_fraction = _aggregate_evidence_fraction(validation_scored, float(window_threshold))
-                document_parameters = _fit_comparison_threshold(
+                validation_fraction = aggregate_evidence_fraction(validation_scored, float(window_threshold))
+                document_parameters = _fit_document_threshold(
                     validation_fraction["label"], validation_fraction["mg_score"]
                 )
                 candidates.append({"window_threshold": float(window_threshold), **document_parameters})
-            evidence_parameters = _select_comparison_parameters(candidates)
-            test_fraction = _aggregate_evidence_fraction(
+            evidence_parameters = _select_evidence_parameters(candidates)
+            test_fraction = aggregate_evidence_fraction(
                 test_scored, float(evidence_parameters["window_threshold"])
             )
 
@@ -429,9 +327,9 @@ def run_local_evidence_model_comparison(
                 predictions["window_threshold"] = parameters["window_threshold"]
                 predictions["document_threshold"] = threshold
                 predictions["score_direction"] = parameters["direction"]
-                decision_scores = predictions["mg_score"] if parameters["direction"] == "higher_is_mg" else -predictions["mg_score"]
+                decision_scores = _decision_scores(predictions["mg_score"], str(parameters["direction"]))
                 predictions["prediction"] = (decision_scores >= threshold).astype("int64")
-                metrics = _evaluate_comparison_scores(predictions["label"], decision_scores, threshold)
+                metrics = evaluate_scores(predictions["label"], decision_scores, threshold)
                 summaries.append(
                     {
                         "model": model_name,

@@ -239,3 +239,22 @@ The new test initially failed during collection with `ModuleNotFoundError` becau
 ### Concerns
 
 - The required combined command cannot complete until the installed Matplotlib package is repaired; the Task 3 adapter/comparison suite passes independently.
+
+## Task 3 Review-Fix Addendum
+
+### Changes
+
+- Strengthened `test_comparison_fits_only_training_parent_windows` to mutate non-training labels and compare the resulting scored-window model probabilities, proving the fitted outputs remain unchanged without relying only on coefficient summaries.
+- Added a PyMC comparison-level interval test with low ADVI and posterior-draw settings. It checks that `mg_score_lower` and `mg_score_upper` propagate through both `maximum_window` and `evidence_fraction` document predictions with valid ordering, and skips only when PyMC is unavailable.
+- Removed duplicated comparison threshold, score-direction, aggregation, partition, and metric logic. The comparison loop now reuses `_partition_windows`, `aggregate_maximum_window`, `aggregate_evidence_fraction`, `_fit_document_threshold`, `_select_evidence_parameters`, `_decision_scores`, and `evaluate_scores` from `notebooks.local_evidence_utils`.
+- Existing Matplotlib import behavior was not changed.
+
+### Verification
+
+- `$env:MPLBACKEND='Agg'; uv run pytest tests/test_local_evidence_models_utils.py -k "not comparison" -q`: `10 passed, 4 deselected`.
+- `$env:MPLBACKEND='Agg'; uv run pytest tests/test_local_evidence_models_utils.py tests/test_classification_utils.py -q`: blocked during collection with the exact existing error `ImportError: cannot import name '_docstring' from 'matplotlib'` from `matplotlib.mlab` while importing `notebooks.local_evidence_utils`.
+- `uv run python -m py_compile notebooks/local_evidence_models_utils.py tests/test_local_evidence_models_utils.py`: passed.
+
+### Concerns
+
+- The four comparison tests and the combined classification suite remain blocked by the pre-existing broken Matplotlib installation; no code workaround was introduced.

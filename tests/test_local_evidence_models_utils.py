@@ -278,16 +278,47 @@ def test_comparison_fits_only_training_parent_windows() -> None:
     )
     mutated = windows.copy()
     non_training = ~mutated["text_id"].isin(partitions["train"]["text_id"])
-    mutated.loc[non_training, list(FEATURES)] = 10_000.0
+    mutated.loc[non_training, "label"] = 1 - mutated.loc[non_training, "label"]
+    mutated_partitions = {key: value.copy() for key, value in partitions.items()}
+    for partition in ("validation", "test"):
+        mutated_partitions[partition]["label"] = 1 - mutated_partitions[partition]["label"]
     changed = run_local_evidence_model_comparison(
         mutated,
-        partitions,
+        mutated_partitions,
         ("logistic_regression", "gaussian_nb"),
         feature_columns=FEATURES,
         show_progress=False,
     )
 
-    pd.testing.assert_frame_equal(original[3], changed[3])
+    pd.testing.assert_frame_equal(
+        original[2].loc[:, ["model", "mg_score"]].reset_index(drop=True),
+        changed[2].loc[:, ["model", "mg_score"]].reset_index(drop=True),
+    )
+
+
+def test_comparison_propagates_pymc_intervals_to_both_aggregations() -> None:
+    pytest.importorskip("pymc")
+    windows, partitions = comparison_fixture()
+    config = BayesianConfig(advi_iterations=20, posterior_draws=20, random_seed=42)
+
+    _, predictions, scored_windows, _ = run_local_evidence_model_comparison(
+        windows,
+        partitions,
+        ("pymc_bayesian_logistic",),
+        feature_columns=FEATURES,
+        bayesian_config=config,
+        show_progress=False,
+    )
+
+    interval_columns = {"mg_score_lower", "mg_score_upper"}
+    assert interval_columns <= set(scored_windows.columns)
+    assert interval_columns <= set(predictions.columns)
+    assert predictions["aggregation"].isin({"maximum_window", "evidence_fraction"}).all()
+    for aggregation in ("maximum_window", "evidence_fraction"):
+        aggregated = predictions.loc[predictions["aggregation"].eq(aggregation)]
+        assert aggregated["mg_score_lower"].notna().all()
+        assert aggregated["mg_score_upper"].notna().all()
+        assert (aggregated["mg_score_lower"] <= aggregated["mg_score_upper"]).all()
 
 
 def test_comparison_threshold_selection_ignores_test_labels() -> None:
