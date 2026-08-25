@@ -312,3 +312,38 @@ The new test initially failed during collection with `ModuleNotFoundError` becau
 ### Concerns
 
 - Focused runtime tests remain unavailable until the installed Matplotlib package is repaired; no dependency versions or existing plotting behavior were changed as a workaround.
+
+## Task 5 Addendum: Comparison Notebook
+
+### Scope
+
+- Added the output-free `notebooks/bayesian_model_comparison.ipynb` comparison workflow.
+- Added structural contract tests in `tests/test_bayesian_model_comparison_notebook.py`.
+- Did not modify `notebooks/local_evidence_classification.ipynb`.
+
+### Notebook Contract
+
+- Exposes dataset, model, cache, window, stride, top-k, smoothing, seed, selected-text, ADVI, posterior-draw, model-list, and recomputation settings.
+- Loads the existing local-evidence cache and creates one parent-text partition before calling `run_local_evidence_model_comparison` once.
+- Always enables logistic regression and GaussianNB; PyMC is included only when `importlib.util.find_spec` reports availability, otherwise the notebook displays the `uv sync --extra bayesian` hint.
+- Displays accuracy and macro F1 grouped by model, window length, and aggregation, plus selected test-text prediction/error tables.
+- Reuses token logprob, candidate-similarity, coverage, model-score heatmap, and combined normalized model-evidence visualizations.
+- Displays a posterior predictive-band availability message when finite interval columns are present.
+- Keeps reusable logic in imported modules and leaves every code cell output-free with `execution_count=None`.
+
+### TDD Evidence
+
+- Red: the new notebook contract tests errored during fixture setup because `notebooks/bayesian_model_comparison.ipynb` did not exist.
+- Green: after adding the notebook and correcting the test fixture's nbformat source-list handling, all structural tests passed.
+
+### Verification
+
+- `uv run jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace notebooks/bayesian_model_comparison.ipynb`: passed.
+- `$env:MPLBACKEND='Agg'; uv run pytest tests/test_bayesian_model_comparison_notebook.py -q`: `5 passed`.
+- `git diff --check`: passed.
+- Confirmed the existing local-evidence notebook is not among the changed files.
+
+### Concerns
+
+- The notebook's full data/model execution was not run; the brief requires structural validation only and the default configuration deliberately does not force cache recomputation.
+- Existing Matplotlib `_docstring` collection failures described in prior task reports remain an environment concern for broader runtime suites.
