@@ -258,3 +258,38 @@ The new test initially failed during collection with `ModuleNotFoundError` becau
 ### Concerns
 
 - The four comparison tests and the combined classification suite remain blocked by the pre-existing broken Matplotlib installation; no code workaround was introduced.
+
+## Task 4 Addendum: Multi-Model Visualization Utilities
+
+### Scope
+
+- Added `notebooks/local_evidence_comparison_utils.py` with reusable multi-model token expansion, score heatmap, combined normalized plot, and deterministic test-text selection helpers.
+- Added focused tests in `tests/test_local_evidence_comparison_utils.py`.
+- No existing plotting helper or notebook was modified; the comparison notebook remains intentionally deferred.
+
+### Implementation
+
+- `expand_model_scores_to_tokens` expands overlapping half-open windows independently for each model, averages finite overlapping scores deterministically, and returns one row per model/token position. Bayesian lower and upper interval columns are preserved when present.
+- `plot_model_score_heatmap` uses model rows, token-position columns, and a shared `[0, 1]` color scale.
+- `plot_normalized_token_metrics_with_model_evidence` reuses the established rolling and normalization helpers, retains semi-transparent normalized metric lines, adds one normalized local-evidence line per model, places the legend below the plot, and draws interval bands only where finite bounds are available.
+- `select_comparison_texts` samples only `split == "test"` rows with a fixed random seed without mutating the source frame.
+
+### TDD Evidence
+
+- Red: the focused test collection failed because `notebooks.local_evidence_comparison_utils` did not exist.
+- Green implementation validation was limited by the pre-existing Matplotlib installation error described below; the new module and tests compile successfully.
+
+### Verification
+
+- `$env:MPLBACKEND='Agg'; uv run pytest tests/test_local_evidence_comparison_utils.py tests/test_notebook_utils.py -q`: blocked during collection with the exact existing error `ImportError: cannot import name '_docstring' from 'matplotlib'` from `matplotlib.mlab` while importing both test modules.
+- `$env:MPLBACKEND='Agg'; uv run pytest tests/test_local_evidence_models_utils.py -q`: `10 passed, 4 failed`; all four failures were existing comparison tests blocked when they lazily imported `notebooks.local_evidence_utils`, which raises the same Matplotlib `_docstring` error.
+- `uv run python -m py_compile notebooks/local_evidence_comparison_utils.py tests/test_local_evidence_comparison_utils.py`: passed.
+- `git diff --check`: passed.
+
+### Commit
+
+- Task 4 implementation commit is the commit containing this report append and the two new files.
+
+### Concerns
+
+- The requested visualization tests cannot collect until the environment's installed Matplotlib package is repaired. No dependency version or existing plotting behavior was changed as a workaround.
