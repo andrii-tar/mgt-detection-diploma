@@ -22,7 +22,7 @@ similarity heatmap for the highest-scoring highlighted window.
 
 ## Related Corrections
 
-- Represent a single selected window length as `(32,)`, not `(32)`.
+- Use the selected window lengths `(32, 256)`.
 - Add default-enabled, opt-out `tqdm` progress reporting to
   `run_local_evidence_experiments(...)`, with one bar per window length.
 
