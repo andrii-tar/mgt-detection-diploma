@@ -727,6 +727,8 @@ def test_local_evidence_classification_notebook_supports_custom_local_inspection
     for cell in custom_cells:
         custom_source = "".join(cell["source"])
         assert "scored_windows" not in custom_source
+        assert "custom_prediction" in custom_source
+        assert "token_summary_series(" in custom_source
 
         custom_tree = ast.parse(custom_source)
         custom_calls = [
@@ -758,6 +760,10 @@ def test_local_evidence_classification_notebook_supports_custom_local_inspection
         assert isinstance(smoothing_window, ast.Name)
         assert smoothing_window.id == "SMOOTHING_WINDOW"
 
+        score_calls = [node for node in custom_calls if node.func.id == "score_local_evidence_windows"]
+        assert len(score_calls) == 1
+        assert score_calls[0].lineno < overlay_call.lineno
+
         load_similarity_call = next(node for node in custom_calls if node.func.id == "load_similarity_row")
         assert [argument.id for argument in load_similarity_call.args if isinstance(argument, ast.Name)] == [
             "PROCESSED_ROOT",
@@ -772,6 +778,16 @@ def test_local_evidence_classification_notebook_supports_custom_local_inspection
             "custom_row",
             "custom_similarity_row",
         ]
+        top_k = next(keyword.value for keyword in summary_call.keywords if keyword.arg == "top_k")
+        assert isinstance(top_k, ast.Name)
+        assert top_k.id == "TOP_K"
+
+        assert any(
+            isinstance(node, ast.Name)
+            and node.id == "custom_prediction"
+            and isinstance(node.ctx, ast.Load)
+            for node in ast.walk(custom_tree)
+        )
 
         build_call = next(node for node in custom_calls if node.func.id == "build_local_evidence_windows")
         split_keyword = next(keyword for keyword in build_call.keywords if keyword.arg == "splits")

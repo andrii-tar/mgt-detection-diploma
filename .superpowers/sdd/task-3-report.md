@@ -67,3 +67,29 @@ $env:MPLBACKEND="Agg"; uv run pytest tests/test_notebook_utils.py -q
 .......                                                                  [100%]
 79 passed in 4.94s
 ```
+
+## Task 3 Review Follow-Up 2
+
+Extended the per-cell contract to additionally require:
+
+- `custom_prediction` is present and used in each custom cell;
+- `token_summary_series(` is present in each custom cell;
+- `validated_text_summary` receives `top_k=TOP_K`;
+- `score_local_evidence_windows` lexically precedes the normalized overlay call.
+
+The notebook implementation remains unchanged.
+
+Exact verification commands and output:
+
+```text
+uv run pytest tests/test_classification_utils.py -k "notebook" -q
+....                                                                     [100%]
+4 passed, 29 deselected in 9.21s
+```
+
+```text
+$env:MPLBACKEND='Agg'; uv run pytest tests/test_notebook_utils.py -q
+........................................................................ [ 91%]
+.......                                                                  [100%]
+79 passed in 9.16s
+```
