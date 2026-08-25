@@ -60,6 +60,14 @@ processed/{dataset}__{model}/{split}/token_similarities/*.parquet
 processed/{dataset}__{model}/{split}/similarity_state.json
 ```
 
+Local-evidence notebook experiment outputs:
+
+```text
+processed/{dataset}__{model}/local_evidence/windows.parquet
+```
+
+This is a notebook experiment artifact derived from paired stage 1 and stage 2 outputs. Its Parquet schema metadata records the cache schema version, window lengths, stride, top-k setting, and local feature-column definition; the notebook rebuilds the artifact when those settings do not match. It has no stage state file and is not included in monitoring.
+
 ## State Files
 
 `state.json` tracks stage 1 progress. `similarity_state.json` tracks stage 2 progress.

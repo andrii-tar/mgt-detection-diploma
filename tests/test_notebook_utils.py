@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+import pyarrow.parquet as pq
 
 import notebooks.logprob_metrics_distributions_utils as metric_utils
 from scripts.logprob_metrics import compute_logprob_metrics
@@ -31,7 +32,14 @@ from notebooks.token_candidate_similarity_heatmaps_utils import (
     rolling_mean,
     token_summary_series,
     text_d_score_summary,
+    validated_text_summary,
     visualize_text_similarities,
+)
+from notebooks.local_evidence_utils import (
+    LOCAL_FEATURE_COLUMNS,
+    build_local_evidence_windows,
+    load_local_evidence_windows,
+    save_local_evidence_windows,
 )
 
 
@@ -680,6 +688,55 @@ def _rolling_statistics_rows(text_id: int) -> tuple[dict, dict]:
     )
 
 
+def test_validated_text_summary_rejects_misaligned_positions() -> None:
+    logprob_row, similarity_row = _rolling_statistics_rows(11)
+    similarity_row["token_similarities"][1]["position"] = 9
+
+    with pytest.raises(ValueError, match="position 1"):
+        validated_text_summary(pd.Series(logprob_row), pd.Series(similarity_row), top_k=1)
+
+
+def test_validated_text_summary_rejects_mismatched_token_counts() -> None:
+    logprob_row, similarity_row = _rolling_statistics_rows(11)
+    similarity_row["token_similarities"].pop()
+
+    with pytest.raises(ValueError, match="token count mismatch"):
+        validated_text_summary(pd.Series(logprob_row), pd.Series(similarity_row), top_k=1)
+
+
+def test_validated_text_summary_rejects_mismatched_token_ids() -> None:
+    logprob_row, similarity_row = _rolling_statistics_rows(11)
+    logprob_row["tokens"][2]["token_id"] = 10
+    similarity_row["token_similarities"][2]["token_id"] = 20
+
+    with pytest.raises(ValueError, match="token id mismatch at position 2"):
+        validated_text_summary(pd.Series(logprob_row), pd.Series(similarity_row), top_k=1)
+
+
+def test_validated_text_summary_rejects_mismatched_parent_row_ids() -> None:
+    logprob_row, similarity_row = _rolling_statistics_rows(11)
+    similarity_row["id"] = 99
+
+    with pytest.raises(ValueError, match="parent row id mismatch: stage-1=11, stage-2=99"):
+        validated_text_summary(pd.Series(logprob_row), pd.Series(similarity_row), top_k=1)
+
+
+def test_calculate_rolling_statistics_uses_ground_truth_logprobs(tmp_path: Path) -> None:
+    logprob_row, similarity_row = _rolling_statistics_rows(11)
+    for index, token in enumerate(logprob_row["tokens"]):
+        token["logprob"] = float(index - 5)
+    data_dir = tmp_path / "processed" / "demo__model" / "HG" / "data"
+    similarity_dir = tmp_path / "processed" / "demo__model" / "HG" / "token_similarities"
+    data_dir.mkdir(parents=True)
+    similarity_dir.mkdir(parents=True)
+    pd.DataFrame([logprob_row]).to_parquet(data_dir / "part.parquet")
+    pd.DataFrame([similarity_row]).to_parquet(similarity_dir / "part.parquet")
+    result = calculate_rolling_statistics(tmp_path / "processed", "demo", "model", splits=("HG",), top_k=1, window=5)
+
+    observed = result.loc[result["metric"] == "observed_logprob"].iloc[0]
+    assert observed["mean"] == pytest.approx(-3.0)
+
+
 def test_calculate_rolling_statistics_reads_both_splits_and_computes_window_five(tmp_path):
     processed_root = tmp_path / "processed"
     for split, text_id in (("HG", 11), ("MG", 22)):
@@ -720,3 +777,272 @@ def test_calculate_rolling_statistics_raises_for_missing_similarity_row(tmp_path
 
     with pytest.raises(KeyError, match="No token similarity row for text id 11"):
         calculate_rolling_statistics(tmp_path / "processed", "demo", "model", splits=("HG",))
+
+
+def _local_evidence_rows(text_id: int) -> tuple[dict, dict]:
+    tokens = [
+        {
+            "token": f" token-{index}",
+            "token_id": index,
+            "logprob": float(index) - 1.5,
+            "top_logprobs": [{"logprob": -2.0}],
+        }
+        for index in range(6)
+    ]
+    similarities = [
+        {
+            "position": index,
+            "token_id": index,
+            "top_logprobs": [{"similarity_to_gt": 0.1 * (index + 1)}],
+        }
+        for index in range(6)
+    ]
+    return (
+        {"id": text_id, "tokens": tokens},
+        {"id": text_id, "token_similarities": similarities},
+    )
+
+
+def _write_local_evidence_artifacts(processed_root: Path, dataset: str = "demo", model: str = "model") -> None:
+    for split, text_id in (("HG", 11), ("MG", 22)):
+        data_dir = processed_root / f"{dataset}__{model}" / split / "data"
+        similarity_dir = processed_root / f"{dataset}__{model}" / split / "token_similarities"
+        data_dir.mkdir(parents=True)
+        similarity_dir.mkdir(parents=True)
+        logprob_row, similarity_row = _local_evidence_rows(text_id)
+        pd.DataFrame([logprob_row]).to_parquet(data_dir / "part.parquet")
+        pd.DataFrame([similarity_row]).to_parquet(similarity_dir / "part.parquet")
+
+
+def test_build_local_evidence_windows_extracts_complete_windows_from_both_splits(tmp_path: Path) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+
+    windows = build_local_evidence_windows(
+        processed_root, "demo", "model", window_lengths=(4,), stride=3, top_k=1
+    )
+
+    assert windows[["split", "text_id", "label", "window_length", "start_token", "stop_token"]].to_dict("records") == [
+        {"split": "HG", "text_id": 11, "label": 0, "window_length": 4, "start_token": 0, "stop_token": 4},
+        {"split": "HG", "text_id": 11, "label": 0, "window_length": 4, "start_token": 2, "stop_token": 6},
+        {"split": "MG", "text_id": 22, "label": 1, "window_length": 4, "start_token": 0, "stop_token": 4},
+        {"split": "MG", "text_id": 22, "label": 1, "window_length": 4, "start_token": 2, "stop_token": 6},
+    ]
+    assert list(windows.columns) == [
+        "dataset",
+        "model",
+        "split",
+        "label",
+        "text_id",
+        "window_length",
+        "start_token",
+        "stop_token",
+        "num_tokens",
+        "window_text",
+        *LOCAL_FEATURE_COLUMNS,
+    ]
+    assert windows.loc[0, "observed_logprob__mean"] == pytest.approx(0.0)
+    assert windows.loc[0, "observed_logprob__finite_fraction"] == pytest.approx(1.0)
+    assert windows.loc[0, "window_text"] == " token-0 token-1 token-2 token-3"
+
+
+@pytest.mark.parametrize("window_lengths, stride", [((0,), 1), ((4,), 0), ((4,), -1)])
+def test_build_local_evidence_windows_rejects_invalid_window_parameters(
+    tmp_path: Path, window_lengths: tuple[int, ...], stride: int
+) -> None:
+    with pytest.raises(ValueError):
+        build_local_evidence_windows(tmp_path, "demo", "model", window_lengths=window_lengths, stride=stride)
+
+
+def test_build_local_evidence_windows_skips_lengths_longer_than_text(tmp_path: Path) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+
+    windows = build_local_evidence_windows(processed_root, "demo", "model", window_lengths=(7,), stride=3, top_k=1)
+
+    assert windows.empty
+
+
+def test_build_local_evidence_windows_raises_for_missing_similarity_row(tmp_path: Path) -> None:
+    processed_root = tmp_path / "processed"
+    data_dir = processed_root / "demo__model" / "HG" / "data"
+    similarity_dir = processed_root / "demo__model" / "HG" / "token_similarities"
+    data_dir.mkdir(parents=True)
+    similarity_dir.mkdir(parents=True)
+    logprob_row, similarity_row = _local_evidence_rows(11)
+    pd.DataFrame([logprob_row]).to_parquet(data_dir / "part.parquet")
+    pd.DataFrame([{**similarity_row, "id": 99}]).to_parquet(similarity_dir / "part.parquet")
+
+    with pytest.raises(KeyError, match="No token similarity row for text id 11"):
+        build_local_evidence_windows(processed_root, "demo", "model", window_lengths=(4,), stride=3, splits=("HG",))
+
+
+def test_build_local_evidence_windows_raises_for_token_id_mismatch(tmp_path: Path) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    similarity_path = processed_root / "demo__model" / "HG" / "token_similarities" / "part.parquet"
+    similarity_row = pd.read_parquet(similarity_path).iloc[0].to_dict()
+    similarity_row["token_similarities"][2]["token_id"] = 99
+    pd.DataFrame([similarity_row]).to_parquet(similarity_path)
+
+    with pytest.raises(ValueError, match="token id mismatch at position 2"):
+        build_local_evidence_windows(processed_root, "demo", "model", window_lengths=(4,), stride=3, splits=("HG",))
+
+
+def test_build_local_evidence_windows_indexes_multi_shard_similarity_rows_once_per_split(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    processed_root = tmp_path / "processed"
+    data_dir = processed_root / "demo__model" / "HG" / "data"
+    similarity_dir = processed_root / "demo__model" / "HG" / "token_similarities"
+    data_dir.mkdir(parents=True)
+    similarity_dir.mkdir(parents=True)
+    first_logprob_row, first_similarity_row = _local_evidence_rows(11)
+    second_logprob_row, second_similarity_row = _local_evidence_rows(12)
+    pd.DataFrame([first_logprob_row]).to_parquet(data_dir / "one.parquet")
+    pd.DataFrame([second_logprob_row]).to_parquet(data_dir / "two.parquet")
+    pd.DataFrame([first_similarity_row]).to_parquet(similarity_dir / "one.parquet")
+    pd.DataFrame([second_similarity_row]).to_parquet(similarity_dir / "two.parquet")
+    original_read_parquet = pd.read_parquet
+    similarity_reads: list[Path] = []
+
+    def read_parquet(path: str | Path, *args: object, **kwargs: object) -> pd.DataFrame:
+        path = Path(path)
+        if path.parent == similarity_dir:
+            similarity_reads.append(path)
+        return original_read_parquet(path, *args, **kwargs)
+
+    monkeypatch.setattr(pd, "read_parquet", read_parquet)
+
+    windows = build_local_evidence_windows(
+        processed_root, "demo", "model", window_lengths=(4,), stride=3, top_k=1, splits=("HG",)
+    )
+
+    assert set(windows["text_id"]) == {11, 12}
+    assert similarity_reads == [similarity_dir / "one.parquet", similarity_dir / "two.parquet"]
+
+
+def test_local_evidence_windows_parquet_round_trip(tmp_path: Path) -> None:
+    windows = pd.DataFrame({"dataset": ["demo"], "observed_logprob__mean": [0.0]})
+    path = tmp_path / "nested" / "windows.parquet"
+
+    saved_path = save_local_evidence_windows(
+        windows,
+        path,
+        dataset="demo",
+        model="model",
+        splits=("HG", "MG"),
+    )
+
+    assert saved_path == path
+    pd.testing.assert_frame_equal(
+        load_local_evidence_windows(path, dataset="demo", model="model", splits=("HG", "MG")), windows
+    )
+
+
+def test_local_evidence_cache_persists_and_validates_schema_configuration(tmp_path: Path) -> None:
+    windows = pd.DataFrame({"dataset": ["demo"], "window_length": [4], "observed_logprob__mean": [0.0]})
+    path = tmp_path / "windows.parquet"
+
+    save_local_evidence_windows(
+        windows,
+        path,
+        dataset="demo",
+        model="model",
+        splits=("MG", "HG"),
+        window_lengths=(4,),
+        stride=2,
+        top_k=1,
+    )
+
+    metadata = json.loads(pq.read_schema(path).metadata[b"local_evidence_cache"].decode("utf-8"))
+    assert metadata["dataset"] == "demo"
+    assert metadata["model"] == "model"
+    assert metadata["splits"] == ["HG", "MG"]
+    assert metadata["window_lengths"] == [4]
+    assert metadata["stride"] == 2
+    assert metadata["top_k"] == 1
+    assert metadata["feature_columns"] == list(LOCAL_FEATURE_COLUMNS)
+    pd.testing.assert_frame_equal(
+        load_local_evidence_windows(
+            path,
+            dataset="demo",
+            model="model",
+            splits=("HG", "MG"),
+            window_lengths=(4,),
+            stride=2,
+            top_k=1,
+        ),
+        windows,
+    )
+    with pytest.raises(ValueError, match="local-evidence cache configuration is incompatible"):
+        load_local_evidence_windows(
+            path,
+            dataset="demo",
+            model="model",
+            splits=("HG", "MG"),
+            window_lengths=(5,),
+            stride=2,
+            top_k=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("dataset", "model", "splits"),
+    [
+        ("other", "model", ("HG", "MG")),
+        ("demo", "other", ("HG", "MG")),
+        ("demo", "model", ("HG",)),
+    ],
+    ids=("dataset", "model", "splits"),
+)
+def test_local_evidence_cache_rebuilds_when_identity_configuration_is_incompatible(
+    tmp_path: Path, dataset: str, model: str, splits: tuple[str, ...]
+) -> None:
+    from notebooks.local_evidence_utils import load_or_build_local_evidence_windows
+
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    path = tmp_path / "windows.parquet"
+    stale_windows = build_local_evidence_windows(
+        processed_root, "demo", "model", window_lengths=(4,), stride=3, top_k=1
+    )
+    save_local_evidence_windows(
+        stale_windows,
+        path,
+        dataset="demo",
+        model="model",
+        splits=("HG", "MG"),
+        window_lengths=(4,),
+        stride=3,
+        top_k=1,
+    )
+    if (dataset, model) != ("demo", "model"):
+        _write_local_evidence_artifacts(processed_root, dataset=dataset, model=model)
+
+    rebuilt = load_or_build_local_evidence_windows(
+        processed_root,
+        dataset,
+        model,
+        path=path,
+        window_lengths=(4,),
+        stride=3,
+        top_k=1,
+        splits=splits,
+    )
+
+    assert set(rebuilt["dataset"]) == {dataset}
+    assert set(rebuilt["model"]) == {model}
+    assert set(rebuilt["split"]) == set(splits)
+    pd.testing.assert_frame_equal(
+        load_local_evidence_windows(
+            path,
+            dataset=dataset,
+            model=model,
+            splits=splits,
+            window_lengths=(4,),
+            stride=3,
+            top_k=1,
+        ),
+        rebuilt,
+    )

@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import notebooks.local_evidence_utils as local_evidence_utils
 from notebooks.classification_utils import (
     build_canonical_cohort,
     evaluate_scores,
@@ -13,6 +14,12 @@ from notebooks.classification_utils import (
     run_baseline_experiments,
     select_model_by_coverage,
     split_cohort,
+)
+from notebooks.local_evidence_utils import (
+    aggregate_evidence_fraction,
+    aggregate_maximum_window,
+    run_local_evidence_experiments,
+    split_local_evidence_texts,
 )
 
 
@@ -226,6 +233,198 @@ def test_run_baseline_experiments_returns_single_and_multi_feature_test_results(
     assert set(predictions["label"]) == {0, 1}
 
 
+def local_evidence_windows(texts_per_label: int = 10) -> pd.DataFrame:
+    rows = []
+    for label, split in ((0, "HG"), (1, "MG")):
+        for text_id in range(texts_per_label):
+            for window_length in (32, 64):
+                for start_token in (0, 16, 32):
+                    rows.append(
+                        {
+                            "split": split,
+                            "text_id": text_id,
+                            "label": label,
+                            "window_length": window_length,
+                            "start_token": start_token,
+                            "stop_token": start_token + window_length,
+                            "feature_a": float(label * 10 + text_id / 100 + start_token / 1000),
+                            "feature_b": float(label * 5 + window_length / 100 + start_token / 1000),
+                        }
+                    )
+    return pd.DataFrame(rows)
+
+
+def test_split_local_evidence_texts_keeps_parent_texts_disjoint() -> None:
+    windows = local_evidence_windows()
+
+    partitions = split_local_evidence_texts(windows, seed=42)
+
+    parent_sets = [{(row.split, row.text_id) for row in partition.itertuples()} for partition in partitions.values()]
+    assert not (parent_sets[0] & parent_sets[1] or parent_sets[0] & parent_sets[2] or parent_sets[1] & parent_sets[2])
+    assert all(set(partition["label"]) == {0, 1} for partition in partitions.values())
+
+
+def test_local_evidence_aggregation_uses_maximum_and_evidence_fraction() -> None:
+    scored_windows = pd.DataFrame(
+        {
+            "split": ["MG"] * 3,
+            "text_id": [7] * 3,
+            "label": [1] * 3,
+            "window_length": [32] * 3,
+            "start_token": [0, 32, 64],
+            "stop_token": [32, 64, 96],
+            "mg_score": [0.1, 0.9, 0.4],
+        }
+    )
+
+    maximum = aggregate_maximum_window(scored_windows)
+    fraction = aggregate_evidence_fraction(scored_windows, window_threshold=0.8)
+
+    assert maximum.iloc[0]["mg_score"] == pytest.approx(0.9)
+    assert maximum.iloc[0]["selected_start_token"] == 32
+    assert fraction.iloc[0]["mg_score"] == pytest.approx(1 / 3)
+    assert fraction.iloc[0]["selected_stop_token"] == 64
+
+
+def test_run_local_evidence_experiments_returns_text_scores_and_attributions() -> None:
+    windows = local_evidence_windows()
+    partitions = split_local_evidence_texts(windows, seed=42)
+
+    summary, text_predictions, scored_windows = run_local_evidence_experiments(
+        windows,
+        partitions,
+        feature_columns=("feature_a", "feature_b"),
+        seed=42,
+    )
+
+    assert set(summary["aggregation"]) == {"maximum_window", "evidence_fraction"}
+    assert set(text_predictions["aggregation"]) == {"maximum_window", "evidence_fraction"}
+    assert text_predictions.groupby(["window_length", "aggregation"]).size().eq(len(partitions["test"])).all()
+    assert {"mg_score", "prediction", "selected_start_token", "selected_stop_token"} <= set(text_predictions.columns)
+    assert {
+        "contribution__feature_a",
+        "contribution__feature_b",
+        "top_positive_feature",
+        "top_negative_feature",
+    } <= set(scored_windows.columns)
+
+
+def test_local_evidence_preserves_all_nan_training_features() -> None:
+    windows = local_evidence_windows()
+    windows["all_nan_feature"] = float("nan")
+    partitions = split_local_evidence_texts(windows, seed=42)
+
+    _, _, scored_windows = run_local_evidence_experiments(
+        windows,
+        partitions,
+        feature_columns=("feature_a", "all_nan_feature"),
+        seed=42,
+    )
+
+    assert "contribution__all_nan_feature" in scored_windows
+    assert scored_windows["contribution__all_nan_feature"].eq(0.0).all()
+
+
+def test_local_evidence_summary_reports_current_length_partition_eligibility_and_support() -> None:
+    windows = local_evidence_windows()
+    partitions = split_local_evidence_texts(windows, seed=42)
+    ineligible_parents = pd.concat(
+        [partition.groupby("label", group_keys=False).head(1) for partition in partitions.values()],
+        ignore_index=True,
+    )
+    ineligible_index = ineligible_parents.set_index(["split", "text_id"]).index
+    eligible_windows = windows.loc[
+        ~(
+            windows["window_length"].eq(64)
+            & windows.set_index(["split", "text_id"]).index.isin(ineligible_index)
+        )
+    ].reset_index(drop=True)
+
+    summary, _, _ = run_local_evidence_experiments(
+        eligible_windows,
+        partitions,
+        feature_columns=("feature_a", "feature_b"),
+        seed=42,
+    )
+
+    eligible_parent_index = eligible_windows.loc[
+        eligible_windows["window_length"].eq(64), ["split", "text_id"]
+    ].drop_duplicates().set_index(["split", "text_id"]).index
+    expected = {
+        partition: frame.loc[frame.set_index(["split", "text_id"]).index.isin(eligible_parent_index)]
+        for partition, frame in partitions.items()
+    }
+    length_summary = summary.loc[summary["window_length"].eq(64)]
+    assert length_summary["available_parent_texts"].eq(sum(len(frame) for frame in expected.values())).all()
+    for partition, frame in expected.items():
+        assert length_summary[f"{partition}_eligible_parent_texts"].eq(len(frame)).all()
+        assert length_summary[f"{partition}_hg_support"].eq(frame["label"].eq(0).sum()).all()
+        assert length_summary[f"{partition}_mg_support"].eq(frame["label"].eq(1).sum()).all()
+    assert length_summary["hg_support"].eq(expected["test"]["label"].eq(0).sum()).all()
+    assert length_summary["mg_support"].eq(expected["test"]["label"].eq(1).sum()).all()
+
+
+def test_local_evidence_uses_normalized_scores_for_lower_evidence_directions(monkeypatch: pytest.MonkeyPatch) -> None:
+    windows = local_evidence_windows()
+    partitions = split_local_evidence_texts(windows, seed=42)
+    calls = 0
+
+    def fit_forced_direction(y_true: pd.Series, values: pd.Series) -> dict[str, float | str]:
+        nonlocal calls
+        calls += 1
+        if (calls - 1) % 20 == 0:
+            return {"direction": "higher_is_mg", "threshold": 0.5, "macro_f1": 0.5}
+        return {"direction": "lower_is_mg", "threshold": -0.5, "macro_f1": 0.5}
+
+    def aggregate_mixed_fractions(scored_windows: pd.DataFrame, window_threshold: float) -> pd.DataFrame:
+        aggregated = aggregate_maximum_window(scored_windows)
+        aggregated["mg_score"] = [0.25 if index % 2 == 0 else 0.75 for index in range(len(aggregated))]
+        return aggregated
+
+    monkeypatch.setattr(local_evidence_utils, "fit_single_feature_threshold", fit_forced_direction)
+    monkeypatch.setattr(local_evidence_utils, "aggregate_evidence_fraction", aggregate_mixed_fractions)
+
+    summary, text_predictions, _ = run_local_evidence_experiments(
+        windows,
+        partitions,
+        feature_columns=("feature_a", "feature_b"),
+        seed=42,
+    )
+
+    evidence_predictions = text_predictions[text_predictions["aggregation"] == "evidence_fraction"]
+    decision_scores = -evidence_predictions["mg_score"]
+    assert set(evidence_predictions["score_direction"]) == {"lower_is_mg"}
+    assert evidence_predictions["mg_score"].between(0.0, 1.0).all()
+    assert evidence_predictions["prediction"].tolist() == (
+        decision_scores >= evidence_predictions["document_threshold"]
+    ).astype("int64").tolist()
+    expected_metrics = evaluate_scores(
+        evidence_predictions["label"],
+        decision_scores,
+        float(evidence_predictions["document_threshold"].iloc[0]),
+    )
+    evidence_summary = summary[summary["aggregation"] == "evidence_fraction"]
+    assert evidence_summary["macro_f1"].tolist() == pytest.approx([expected_metrics["macro_f1"]] * len(evidence_summary))
+
+
+def test_local_evidence_threshold_ties_prefer_higher_window_then_document_threshold() -> None:
+    document_parameters = local_evidence_utils._fit_document_threshold(
+        pd.Series([0, 0, 1, 1]),
+        pd.Series([0.0, 0.5, 0.5, 1.0]),
+    )
+    selected = local_evidence_utils._select_evidence_parameters(
+        [
+            {"window_threshold": 0.3, "threshold": 0.95, "macro_f1": 0.5, "direction": "higher_is_mg"},
+            {"window_threshold": 0.8, "threshold": 0.2, "macro_f1": 0.5, "direction": "higher_is_mg"},
+            {"window_threshold": 0.8, "threshold": 0.75, "macro_f1": 0.5, "direction": "higher_is_mg"},
+        ]
+    )
+
+    assert document_parameters["threshold"] == pytest.approx(1.0)
+    assert selected["window_threshold"] == pytest.approx(0.8)
+    assert selected["threshold"] == pytest.approx(0.75)
+
+
 def test_classification_notebook_is_thin_and_output_free() -> None:
     import json
 
@@ -249,4 +448,55 @@ def test_classification_notebook_is_thin_and_output_free() -> None:
         "def " not in "".join(cell.get("source", []))
         for cell in cells
         if cell["cell_type"] == "code"
+    )
+
+
+def test_local_evidence_classification_notebook_is_thin_and_output_free() -> None:
+    import json
+
+    notebook_path = Path(__file__).parents[1] / "notebooks" / "local_evidence_classification.ipynb"
+    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+    cells = notebook["cells"]
+    source = "\n".join("".join(cell.get("source", [])) for cell in cells)
+
+    for required_source in (
+        "WINDOW_LENGTHS = (32, 64, 96, 128, 192, 256)",
+        "STRIDE = 16",
+        "RECOMPUTE_WINDOWS = False",
+        "default_local_evidence_path(",
+        "load_or_build_local_evidence_windows(",
+        "split_local_evidence_texts(",
+        "run_local_evidence_experiments(",
+    ):
+        assert required_source in source
+
+    code_cells = [cell for cell in cells if cell["cell_type"] == "code"]
+    assert len(code_cells) == 5
+    for required_source in (
+        "path=WINDOWS_PATH,",
+        "recompute=RECOMPUTE_WINDOWS,",
+        "partitions = split_local_evidence_texts(windows, seed=SEED)",
+        "test_summary, test_predictions, scored_windows = run_local_evidence_experiments(",
+        "curve_predictions = test_predictions.assign(",
+        'frame["score_direction"].eq("higher_is_mg")',
+        'frame["window_length"].astype(str) + " tokens: " + frame["aggregation"]',
+        "plot_score_curves(curve_predictions)",
+        "selected_predictions = test_predictions.assign(",
+        "decision_score=lambda frame: frame[\"mg_score\"].where(",
+        ").sort_values(\"decision_score\", ascending=False).reset_index(drop=True)",
+        "selected_evidence = selected_predictions.merge(",
+        'left_on=["split", "text_id", "window_length", "selected_start_token", "selected_stop_token"]',
+        '"score_direction",\n            "mg_score",\n            "decision_score",',
+        "INSPECT_TEXT = None",
+        "token_range=(INSPECT_START_TOKEN, INSPECT_STOP_TOKEN)",
+    ):
+        assert required_source in source
+
+    assert all(
+        cell.get("execution_count") is None and cell.get("outputs") == []
+        for cell in code_cells
+    )
+    assert all(
+        "def " not in "".join(cell.get("source", []))
+        for cell in code_cells
     )

@@ -59,12 +59,12 @@ explicitly rather than be silently truncated.
 
 ## Recommended Sequence
 
-1. Correct the rolling observed-logprob summary so it uses the saved
-   ground-truth token log-probabilities rather than the heatmap baseline row.
-2. Add validated rolling-window extraction and a versioned window-level feature
-   table with parent text IDs and token boundaries.
-3. Establish leakage-safe logistic-regression baselines for strongest-region
-   and evidence-count aggregation across a predefined range of window lengths.
+- [x] Correct the rolling observed-logprob summary so it uses the saved
+  ground-truth token log-probabilities rather than the heatmap baseline row.
+- [x] Add validated rolling-window extraction and a versioned window-level feature
+  table with parent text IDs and token boundaries.
+- [x] Establish leakage-safe logistic-regression baselines for strongest-region
+  and evidence-count aggregation across a predefined range of window lengths.
 4. Add per-window and per-text contribution reports and connect selected ranges
    to the heatmap notebook.
 5. Compare class-conditional Gaussian mixtures, then consider

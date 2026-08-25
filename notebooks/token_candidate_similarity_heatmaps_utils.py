@@ -67,6 +67,20 @@ def load_similarity_row(processed_root: Path, dataset: str, model: str, split: s
     raise KeyError(f"No token similarity row for text id {text_id}")
 
 
+def load_similarity_rows(processed_root: Path, dataset: str, model: str, split: str) -> dict[int, pd.Series]:
+    similarity_paths = sorted((split_dir(processed_root, dataset, model, split) / "token_similarities").glob("*.parquet"))
+    if not similarity_paths:
+        raise FileNotFoundError(f"No token similarity parquet files for {dataset=} {model=} {split=}")
+    rows: dict[int, pd.Series] = {}
+    for path in similarity_paths:
+        for _, row in pd.read_parquet(path).iterrows():
+            text_id = int(row["id"])
+            if text_id in rows:
+                raise ValueError(f"Duplicate token similarity row for text id {text_id}")
+            rows[text_id] = row
+    return rows
+
+
 def _iter_stage_one_rows(
     processed_root: Path,
     dataset: str,
@@ -78,6 +92,40 @@ def _iter_stage_one_rows(
         raise FileNotFoundError(f"No stage-1 data parquet files for {dataset=} {model=} {split=}")
     for path in data_paths:
         yield from (row for _, row in pd.read_parquet(path).iterrows())
+
+
+def validated_text_summary(
+    logprob_row: pd.Series,
+    similarity_row: pd.Series,
+    *,
+    top_k: int = 20,
+) -> tuple[dict[str, np.ndarray], list[str]]:
+    logprob_id = int(logprob_row["id"])
+    similarity_id = int(similarity_row["id"])
+    if logprob_id != similarity_id:
+        raise ValueError(f"parent row id mismatch: stage-1={logprob_id}, stage-2={similarity_id}")
+    tokens = list(logprob_row["tokens"])
+    similarity_tokens = list(similarity_row["token_similarities"])
+    if len(tokens) != len(similarity_tokens):
+        raise ValueError(f"token count mismatch: stage-1={len(tokens)}, stage-2={len(similarity_tokens)}")
+    for position, (token, similarity_token) in enumerate(zip(tokens, similarity_tokens)):
+        if similarity_token.get("position", position) != position:
+            raise ValueError(f"stage-2 token position {similarity_token.get('position')} does not match position {position}")
+        if token.get("token_id") is not None and similarity_token.get("token_id") is not None:
+            if int(token["token_id"]) != int(similarity_token["token_id"]):
+                raise ValueError(f"token id mismatch at position {position}")
+    matrices = build_text_heatmap_matrices(logprob_row, similarity_row, top_k=top_k)
+    observed_logprobs = np.asarray(
+        [
+            float(token["logprob"])
+            if token.get("logprob") is not None and math.isfinite(float(token["logprob"]))
+            else math.nan
+            for token in tokens
+        ],
+        dtype="float64",
+    )
+    coverage = compute_token_coverage(logprob_row, top_k=top_k)
+    return token_summary_series(matrices, coverage, observed_logprobs=observed_logprobs), matrices.token_labels
 
 
 def calculate_rolling_statistics(
@@ -92,12 +140,14 @@ def calculate_rolling_statistics(
     rows = []
     columns = ["split", "text_id", "metric", "mean", "std", "variance"]
     for split in splits:
+        similarity_rows = load_similarity_rows(processed_root, dataset, model, split)
         for logprob_row in _iter_stage_one_rows(processed_root, dataset, model, split):
             text_id = int(logprob_row["id"])
-            similarity_row = load_similarity_row(processed_root, dataset, model, split, text_id)
-            matrices = build_text_heatmap_matrices(logprob_row, similarity_row, top_k=top_k)
-            coverage = compute_token_coverage(logprob_row, top_k=top_k)
-            summary = token_summary_series(matrices, coverage[: len(matrices.token_labels)])
+            try:
+                similarity_row = similarity_rows[text_id]
+            except KeyError as error:
+                raise KeyError(f"No token similarity row for text id {text_id}") from error
+            summary, _ = validated_text_summary(logprob_row, similarity_row, top_k=top_k)
             for metric, values in summary.items():
                 smoothed = rolling_mean(values, window=window)
                 finite = smoothed[np.isfinite(smoothed)]
