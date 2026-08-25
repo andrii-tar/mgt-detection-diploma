@@ -39,3 +39,14 @@ Implemented the reusable alignment and normalization helpers required for the no
 ## Concerns
 
 - None identified for the Task 1 requirements.
+
+## Review Fix
+
+- Fixed `_expand_window_scores_to_tokens` to coerce `mg_score` values with `pd.to_numeric(errors="coerce")` before finite checks.
+- Nullable and non-numeric scores are now treated as missing and ignored, while finite numeric scores continue to aggregate normally.
+- Added regression coverage for mixed finite, `pd.NA`, and non-numeric scores in `tests/test_notebook_utils.py`.
+
+## Fix Verification
+
+- `uv run pytest tests/test_notebook_utils.py -k "expand_window_scores or normalize_series" -q`: 12 passed, 60 deselected in 21.23s.
+- `uv run pytest tests/test_notebook_utils.py -q`: 72 passed in 27.23s.

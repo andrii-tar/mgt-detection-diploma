@@ -444,7 +444,10 @@ def _expand_window_scores_to_tokens(scored_windows: pd.DataFrame, token_count: i
 
     sums = np.zeros(token_count, dtype=float)
     counts = np.zeros(token_count, dtype=int)
-    for start, stop, score in scored_windows[["start_token", "stop_token", "mg_score"]].itertuples(index=False, name=None):
+    scores = pd.to_numeric(scored_windows["mg_score"], errors="coerce").astype(float).to_numpy()
+    for (start, stop), score in zip(
+        scored_windows[["start_token", "stop_token"]].itertuples(index=False, name=None), scores, strict=True
+    ):
         if (
             not isinstance(start, (int, np.integer))
             or isinstance(start, (bool, np.bool_))

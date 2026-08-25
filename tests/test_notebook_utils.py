@@ -583,6 +583,20 @@ def test_expand_window_scores_to_tokens_averages_overlapping_windows() -> None:
     assert scores == pytest.approx([0.2, 0.2, 0.5, 0.5, 0.8])
 
 
+def test_expand_window_scores_to_tokens_ignores_missing_and_non_numeric_scores() -> None:
+    scored_windows = pd.DataFrame(
+        {
+            "start_token": [0, 0, 0],
+            "stop_token": [2, 2, 2],
+            "mg_score": [0.2, pd.NA, "missing"],
+        }
+    )
+
+    scores = _expand_window_scores_to_tokens(scored_windows, token_count=2)
+
+    assert scores == pytest.approx([0.2, 0.2])
+
+
 @pytest.mark.parametrize(
     "scored_windows, token_count, match",
     [
