@@ -4,6 +4,7 @@ import builtins
 
 import pandas as pd
 import pytest
+from sklearn.naive_bayes import GaussianNB
 
 import notebooks.local_evidence_models_utils as models_utils
 from notebooks.local_evidence_models_utils import (
@@ -73,8 +74,39 @@ def test_gaussian_nb_preserves_signed_continuous_features() -> None:
 
     fitted = fit_local_evidence_classifier("gaussian_nb", windows, FEATURES, seed=42)
 
+    assert isinstance(fitted.estimator.named_steps["model"], GaussianNB)
+    assert list(fitted.estimator.named_steps) == ["impute", "model"]
+    assert "scale" not in fitted.estimator.named_steps
     imputed = fitted.estimator.named_steps["impute"].transform(windows[list(FEATURES)])
     assert imputed.min() < 0.0
+
+
+def test_gaussian_nb_preprocessing_ignores_mutated_non_training_rows() -> None:
+    train = training_windows()
+    non_training = pd.DataFrame(
+        {
+            "feature_a": [10.0, 20.0],
+            "feature_b": [-10.0, -20.0],
+        }
+    )
+    fitted = fit_local_evidence_classifier("gaussian_nb", train, FEATURES, seed=42)
+    imputer = fitted.estimator.named_steps["impute"]
+    transformed_before = imputer.transform(train[list(FEATURES)])
+    statistics_before = imputer.statistics_.copy()
+
+    non_training.loc[:, "feature_a"] = [-1_000.0, 1_000.0]
+    non_training.loc[:, "feature_b"] = [2_000.0, -2_000.0]
+
+    transformed_after = imputer.transform(train[list(FEATURES)])
+    pd.testing.assert_frame_equal(
+        pd.DataFrame(transformed_before, columns=FEATURES),
+        pd.DataFrame(transformed_after, columns=FEATURES),
+    )
+    pd.testing.assert_series_equal(
+        pd.Series(statistics_before, index=FEATURES),
+        train[list(FEATURES)].median(),
+        check_names=False,
+    )
 
 
 def test_deterministic_scores_have_missing_uncertainty_columns() -> None:

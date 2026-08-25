@@ -156,3 +156,20 @@ The new test initially failed during collection with `ModuleNotFoundError` becau
 ### Concerns
 
 - None identified for Task 2. Shared comparison evaluation and notebook work remain intentionally deferred to Task 3.
+
+## Task 2 Review-Fix Addendum
+
+### Changes
+
+- Strengthened GaussianNB coverage to assert the fitted estimator type and confirm its pipeline contains median imputation plus GaussianNB only, without scaling or non-negative transformation.
+- Added a deterministic preprocessing-boundary regression test that mutates separate non-training rows and confirms fitted training imputation statistics and transformed training values remain unchanged.
+- Production behavior was not modified.
+
+### Verification
+
+- `uv run pytest tests/test_local_evidence_models_utils.py -q`: `9 passed in 23.89s`.
+- PyMC smoke tests ran, not skipped.
+
+### Concerns
+
+- None identified. Shared comparison evaluation and notebook work remain intentionally deferred to Task 3.
