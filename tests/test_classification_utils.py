@@ -625,7 +625,7 @@ def test_local_evidence_classification_notebook_is_thin_and_output_free() -> Non
         assert required_source in source
 
     code_cells = [cell for cell in cells if cell["cell_type"] == "code"]
-    assert len(code_cells) == 6
+    assert len(code_cells) == 9
     for required_source in (
         "path=WINDOWS_PATH,",
         "recompute=RECOMPUTE_WINDOWS,",
@@ -717,6 +717,19 @@ def test_local_evidence_classification_notebook_supports_custom_local_inspection
         "custom_windows",
         "custom_features",
     ]
+
+    custom_cells = [
+        cell
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code" and "custom_windows =" in "".join(cell.get("source", []))
+    ]
+    assert len(custom_cells) == 4
+    for cell in custom_cells:
+        custom_source = "".join(cell["source"])
+        assert "token_summary_series(" in custom_source
+        assert "plot_normalized_token_metrics_with_local_evidence(" in custom_source
+        assert "custom_windows" in custom_source
+        assert "custom_prediction" in custom_source
 
 
 def test_local_evidence_notebook_does_not_merge_duplicate_evidence_columns() -> None:
