@@ -484,7 +484,7 @@ def test_local_evidence_classification_notebook_is_thin_and_output_free() -> Non
         "selected_predictions = test_predictions.assign(",
         "decision_score=lambda frame: frame[\"mg_score\"].where(",
         ").sort_values(\"decision_score\", ascending=False).reset_index(drop=True)",
-        "selected_evidence = selected_predictions.merge(",
+        "selected_evidence = selected_predictions.loc[",
         'left_on=["split", "text_id", "window_length", "selected_start_token", "selected_stop_token"]',
         '"score_direction",\n            "mg_score",\n            "decision_score",',
         "INSPECT_TEXT = None",
@@ -500,3 +500,16 @@ def test_local_evidence_classification_notebook_is_thin_and_output_free() -> Non
         "def " not in "".join(cell.get("source", []))
         for cell in code_cells
     )
+
+
+def test_local_evidence_notebook_does_not_merge_duplicate_evidence_columns() -> None:
+    import json
+
+    notebook_path = Path(__file__).parents[1] / "notebooks" / "local_evidence_classification.ipynb"
+    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+    source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+    merge_source = source.split("selected_evidence = selected_predictions.loc[", maxsplit=1)[1].split("].merge(", maxsplit=1)[0]
+
+    assert '"window_text"' not in merge_source
+    assert '"top_positive_feature"' not in merge_source
+    assert '"top_negative_feature"' not in merge_source
