@@ -77,3 +77,25 @@ $env:MPLBACKEND='Agg'; uv run pytest -q
 ..................                                                       [100%]
 162 passed in 52.67s
 ```
+
+## Contract Assertion Fix
+
+- Added AST assertions that `fit_local_evidence_model` receives `windows`, `partitions`, and `CUSTOM_WINDOW_LENGTH`.
+- Added AST assertions that `score_local_evidence_windows` receives `custom_model`, `custom_windows`, and `custom_features`.
+- No notebook or implementation behavior was changed; the notebook remains output-free.
+
+## Contract Assertion Fix Commands And Outputs
+
+```text
+uv run pytest tests/test_classification_utils.py -q
+.................................                                        [100%]
+33 passed in 14.59s
+```
+
+```text
+$env:MPLBACKEND='Agg'; uv run pytest -q
+........................................................................ [ 44%]
+........................................................................ [ 88%]
+..................                                                       [100%]
+162 passed in 50.13s
+```

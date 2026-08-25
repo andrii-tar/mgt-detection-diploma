@@ -703,6 +703,21 @@ def test_local_evidence_classification_notebook_supports_custom_local_inspection
     assert text_ids.elts[0].id == "custom_text_id"
     assert any(keyword.arg == "show_progress" for keyword in build_call.keywords)
 
+    fit_call = calls["fit_local_evidence_model"]
+    assert [argument.id for argument in fit_call.args[:2] if isinstance(argument, ast.Name)] == [
+        "windows",
+        "partitions",
+    ]
+    assert isinstance(fit_call.args[2], ast.Name)
+    assert fit_call.args[2].id == "CUSTOM_WINDOW_LENGTH"
+
+    score_call = calls["score_local_evidence_windows"]
+    assert [argument.id for argument in score_call.args if isinstance(argument, ast.Name)] == [
+        "custom_model",
+        "custom_windows",
+        "custom_features",
+    ]
+
 
 def test_local_evidence_notebook_does_not_merge_duplicate_evidence_columns() -> None:
     import json
