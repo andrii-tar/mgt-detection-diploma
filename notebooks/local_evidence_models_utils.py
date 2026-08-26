@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from numbers import Integral
+from numbers import Integral, Real
 from typing import Any
 
 import numpy as np
@@ -44,6 +44,8 @@ class GaussianMixtureNBConfig:
     def __post_init__(self) -> None:
         if isinstance(self.components, bool) or not isinstance(self.components, Integral) or self.components <= 0:
             raise ValueError("components must be a positive integer")
+        if isinstance(self.reg_covar, bool) or not isinstance(self.reg_covar, Real):
+            raise ValueError("reg_covar must be a positive finite number")
         if self.reg_covar <= 0 or not np.isfinite(self.reg_covar):
             raise ValueError("reg_covar must be positive and finite")
 

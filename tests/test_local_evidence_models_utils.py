@@ -87,6 +87,12 @@ def test_gaussian_mixture_config_has_stable_defaults_and_validates_values() -> N
         GaussianMixtureNBConfig(reg_covar=float("inf"))
 
 
+@pytest.mark.parametrize("reg_covar", [-1.0, float("nan"), "invalid"])
+def test_gaussian_mixture_config_rejects_invalid_regularization(reg_covar: object) -> None:
+    with pytest.raises(ValueError, match="reg_covar"):
+        GaussianMixtureNBConfig(reg_covar=reg_covar)  # type: ignore[arg-type]
+
+
 def test_bayesian_config_has_stable_defaults() -> None:
     assert BayesianConfig() == BayesianConfig(
         prior_scale=1.0,
