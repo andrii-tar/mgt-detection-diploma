@@ -171,6 +171,18 @@ def test_gaussian_mixture_nb_repeated_fits_with_same_seed_are_deterministic() ->
     np.testing.assert_array_equal(first_scores, second_scores)
 
 
+def test_gaussian_mixture_nb_scores_finite_fallback_for_pathological_log_scores() -> None:
+    fitted = fit_local_evidence_classifier("gaussian_mixture_nb", training_windows(), FEATURES, seed=42)
+    for mixture in fitted.estimator.mixtures.values():
+        mixture.score_samples = lambda features: np.array([np.nan, np.inf, -np.inf, 1e308])
+
+    scored = score_local_evidence_classifier(fitted, training_windows(), FEATURES)
+
+    assert np.isfinite(scored["mg_score"]).all()
+    assert scored["mg_score"].between(0.0, 1.0).all()
+    np.testing.assert_array_equal(scored["mg_score"].to_numpy(), np.full(4, 0.5))
+
+
 def test_gaussian_nb_preserves_signed_continuous_features() -> None:
     windows = training_windows()
     windows["feature_a"] = [-2.5, -1.0, 0.5, 2.0]

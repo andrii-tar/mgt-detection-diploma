@@ -119,3 +119,11 @@ def test_notebook_groups_overall_metrics_and_covers_configured_lengths(source: s
 def test_notebook_preserves_local_evidence_plot_contract(source: str):
     assert "plot_normalized_token_metrics_with_local_evidence" in source
     assert "display(plot_normalized_token_metrics_with_local_evidence(" in source
+
+
+def test_notebook_passes_one_labeled_model_to_legacy_local_evidence_plot(source: str):
+    assert 'LOCAL_EVIDENCE_MODEL = "logistic_regression"' in source
+    assert 'local_evidence_windows = text_windows.loc[' in source
+    assert 'text_windows["model"].eq(LOCAL_EVIDENCE_MODEL)' in source
+    assert 'display(f"Local evidence model: {LOCAL_EVIDENCE_MODEL}")' in source
+    assert 'token_summary, local_evidence_windows' in source

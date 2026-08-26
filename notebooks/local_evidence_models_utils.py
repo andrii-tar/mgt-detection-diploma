@@ -91,6 +91,29 @@ def _validate_features(frame: pd.DataFrame, feature_columns: tuple[str, ...]) ->
         raise ValueError(f"missing feature columns: {missing_features}")
 
 
+def _normalize_log_scores(log_scores: np.ndarray) -> np.ndarray:
+    scores = np.asarray(log_scores, dtype="float64")
+    if scores.ndim != 2 or scores.shape[1] == 0:
+        raise ValueError("log_scores must be a two-dimensional array with at least one class")
+
+    probabilities = np.full(scores.shape, 1.0 / scores.shape[1], dtype="float64")
+    finite_rows = np.isfinite(scores).all(axis=1)
+    if not finite_rows.any():
+        return probabilities
+
+    with np.errstate(over="ignore", invalid="ignore", under="ignore", divide="ignore"):
+        valid_scores = scores[finite_rows]
+        shifted = valid_scores - np.max(valid_scores, axis=1, keepdims=True)
+        weights = np.exp(shifted)
+        totals = weights.sum(axis=1, keepdims=True)
+        normalizable = np.isfinite(totals[:, 0]) & (totals[:, 0] > 0.0)
+        normalized = np.full_like(weights, 1.0 / scores.shape[1])
+        normalized[normalizable] = weights[normalizable] / totals[normalizable]
+
+    probabilities[finite_rows] = normalized
+    return probabilities
+
+
 def _deterministic_estimator(model_name: str, seed: int) -> Pipeline:
     if model_name == "logistic_regression":
         steps = [
@@ -230,15 +253,14 @@ def score_local_evidence_classifier(
         estimator = fitted.estimator
         features = estimator.preprocessing.transform(windows[list(normalized_features)])
         log_scores = np.empty((len(windows), 2), dtype="float64")
-        for class_index, label in enumerate((0, 1)):
-            log_scores[:, class_index] = estimator.class_log_priors[label]
-            for feature_index, feature in enumerate(normalized_features):
-                log_scores[:, class_index] += estimator.mixtures[(feature, label)].score_samples(
-                    features[:, feature_index, None]
-                )
-        shifted = log_scores - np.max(log_scores, axis=1, keepdims=True)
-        probabilities = np.exp(shifted)
-        probabilities /= probabilities.sum(axis=1, keepdims=True)
+        with np.errstate(over="ignore", invalid="ignore"):
+            for class_index, label in enumerate((0, 1)):
+                log_scores[:, class_index] = estimator.class_log_priors[label]
+                for feature_index, feature in enumerate(normalized_features):
+                    log_scores[:, class_index] += estimator.mixtures[(feature, label)].score_samples(
+                        features[:, feature_index, None]
+                    )
+        probabilities = _normalize_log_scores(log_scores)
         scores = probabilities[:, 1]
         lower = upper = None
     else:
