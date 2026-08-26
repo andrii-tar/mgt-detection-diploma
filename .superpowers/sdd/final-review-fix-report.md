@@ -42,3 +42,8 @@ passed (Git emitted only its CRLF-to-LF normalization warning for the notebook.)
 - The notebook was structurally validated and output-cleared, but its full data/model execution was not run.
 - `nbconvert` normalized pre-existing notebook JSON indentation; the resulting formatting-only changes are included with the semantic notebook fix.
 - Non-finite or unnormalizable Gaussian mixture rows intentionally receive a uniform probability fallback because no class preference can be inferred reliably.
+
+## P2 Follow-up
+
+- Added focused coverage for ordinary finite Gaussian mixture scores, asserting finite probabilities in `[0, 1]` and higher MG scores for MG-like inputs than HG-like inputs.
+- The implementation was unchanged because the new regression test passed against the existing finite softmax behavior.

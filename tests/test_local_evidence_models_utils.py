@@ -183,6 +183,35 @@ def test_gaussian_mixture_nb_scores_finite_fallback_for_pathological_log_scores(
     np.testing.assert_array_equal(scored["mg_score"].to_numpy(), np.full(4, 0.5))
 
 
+def test_gaussian_mixture_nb_finite_scores_preserve_class_preference() -> None:
+    windows = pd.DataFrame(
+        {
+            "split": ["HG"] * 4 + ["MG"] * 4,
+            "text_id": range(8),
+            "label": [0] * 4 + [1] * 4,
+            "feature_a": [-2.2, -1.8, -2.0, -1.9, 1.8, 2.0, 2.2, 1.9],
+            "feature_b": [-2.1, -1.9, -2.2, -1.8, 1.9, 2.1, 1.8, 2.0],
+        }
+    )
+    scored = score_local_evidence_classifier(
+        fit_local_evidence_classifier(
+            "gaussian_mixture_nb",
+            windows,
+            FEATURES,
+            seed=42,
+            gaussian_mixture_config=GaussianMixtureNBConfig(components=2),
+        ),
+        windows,
+        FEATURES,
+    )
+
+    probabilities = scored["mg_score"].to_numpy()
+    assert np.isfinite(probabilities).all()
+    assert np.logical_and(probabilities >= 0.0, probabilities <= 1.0).all()
+    assert probabilities[:4].mean() < 0.5
+    assert probabilities[4:].mean() > 0.5
+
+
 def test_gaussian_nb_preserves_signed_continuous_features() -> None:
     windows = training_windows()
     windows["feature_a"] = [-2.5, -1.0, 0.5, 2.0]
