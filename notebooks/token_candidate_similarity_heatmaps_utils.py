@@ -562,6 +562,41 @@ def plot_normalized_token_metrics_with_local_evidence(
     plt.show()
 
 
+def plot_focused_token_metrics_with_local_evidence(
+    summary: dict[str, np.ndarray],
+    scored_windows: pd.DataFrame,
+    token_count: int,
+    *,
+    window: int = 10,
+) -> plt.Figure:
+    required_metrics = ("mean_candidate_similarity", "top20_coverage")
+    for name in required_metrics:
+        if name not in summary:
+            raise ValueError(f"missing required metric: {name}")
+
+    processed_series = []
+    for name in required_metrics:
+        values = np.asarray(summary[name], dtype=float)
+        if values.ndim != 1 or values.size != token_count:
+            raise ValueError(f"{name} length must match token_count ({token_count}); got {values.size}")
+        processed_series.append((name, _normalize_series(rolling_mean(values, window=window))))
+
+    local_scores = _normalize_series(_expand_window_scores_to_tokens(scored_windows, token_count))
+    positions = np.arange(token_count)
+    figure, axis = plt.subplots(figsize=(12, 4), constrained_layout=True)
+    for name, values in processed_series:
+        axis.plot(positions, values, linewidth=1.8, label=name)
+    axis.plot(positions, local_scores, linewidth=2.0, label="local mg_score")
+    axis.set_title(f"Focused token metrics with smoothing window={window}")
+    axis.set_xlabel("Token position")
+    axis.set_ylabel("Normalized value")
+    axis.set_ylim(0.0, 1.0)
+    axis.grid(axis="y", alpha=0.25)
+    axis.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=3)
+    plt.show()
+    return figure
+
+
 def plot_rolling_statistics_histograms(
     statistics: pd.DataFrame,
     *,
