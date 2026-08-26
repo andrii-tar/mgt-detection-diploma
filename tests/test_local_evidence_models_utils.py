@@ -323,18 +323,26 @@ def test_comparison_evaluates_each_model_window_and_aggregation() -> None:
     summaries, predictions, scored_windows, coefficient_summaries = run_local_evidence_model_comparison(
         windows,
         partitions,
-        ("logistic_regression", "gaussian_nb"),
+        ("logistic_regression", "gaussian_nb", "gaussian_mixture_nb"),
         feature_columns=FEATURES,
         show_progress=False,
     )
 
-    assert len(summaries) == 8
+    assert len(summaries) == 12
     assert summaries.groupby(["model", "window_length", "aggregation"]).size().eq(1).all()
+    assert set(summaries["model"]) == {"logistic_regression", "gaussian_nb", "gaussian_mixture_nb"}
     assert {"model", "window_length", "aggregation", "accuracy", "macro_f1", "document_threshold", "window_threshold", "hg_support", "mg_support"} <= set(summaries.columns)
     assert {"model", "mg_score", "prediction", "document_threshold", "window_threshold"} <= set(predictions.columns)
     assert {"partition", "model", "mg_score"} <= set(scored_windows.columns)
     assert np.isfinite(scored_windows["mg_score"]).all()
     assert scored_windows["mg_score"].between(0.0, 1.0).all()
+    mixture_scores = scored_windows.loc[scored_windows["model"].eq("gaussian_mixture_nb")]
+    assert {"split", "text_id", "label", "model", "mg_score", "mg_score_lower", "mg_score_upper"} <= set(mixture_scores.columns)
+    assert mixture_scores["mg_score"].between(0.0, 1.0).all()
+    mixture_summaries = summaries.loc[summaries["model"].eq("gaussian_mixture_nb")]
+    assert len(mixture_summaries) == 4
+    assert mixture_summaries["window_length"].nunique() == 2
+    assert mixture_summaries["aggregation"].nunique() == 2
     assert {"model", "window_length", "feature", "coefficient"} <= set(coefficient_summaries.columns)
 
 

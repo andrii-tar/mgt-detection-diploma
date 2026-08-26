@@ -49,7 +49,11 @@ def test_notebook_contains_comparison_contract(source: str):
     required_fragments = (
         "logistic_regression",
         "gaussian_nb",
+        "gaussian_mixture_nb",
         "pymc_bayesian_logistic",
+        "GaussianMixtureNBConfig",
+        "GAUSSIAN_MIXTURE_COMPONENTS",
+        "gaussian_mixture_config=GAUSSIAN_MIXTURE_CONFIG",
         "run_local_evidence_model_comparison",
         "accuracy",
         "macro_f1",
@@ -101,7 +105,7 @@ def test_notebook_runs_one_comparison_with_mandatory_deterministic_models(source
         and node.func.id == "run_local_evidence_model_comparison"
     ]
     assert len(comparison_calls) == 1
-    assert 'MODEL_NAMES = ("logistic_regression", "gaussian_nb", "pymc_bayesian_logistic")' in source
+    assert 'MODEL_NAMES = ("logistic_regression", "gaussian_nb", "gaussian_mixture_nb", "pymc_bayesian_logistic")' in source
     assert "AVAILABLE_MODELS" in source
 
 
