@@ -93,3 +93,59 @@ $env:MPLBACKEND='Agg'; uv run pytest tests/test_notebook_utils.py -q
 .......                                                                  [100%]
 79 passed in 9.16s
 ```
+
+## Task 3 Gaussian Mixture Verification
+
+### Status
+
+Verified. No implementation or regression-test fixes were necessary.
+
+### Verification
+
+Focused local-evidence suites:
+
+```text
+$env:MPLBACKEND = "Agg"; uv run pytest tests/test_local_evidence_models_utils.py tests/test_local_evidence_comparison_utils.py -q
+...........................                                              [100%]
+27 passed in 23.60s
+```
+
+Notebook output clearing and contract validation:
+
+```text
+uv run python -m nbconvert --ClearOutputPreprocessor.enabled=True --inplace notebooks/bayesian_model_comparison.ipynb
+[NbConvertApp] Converting notebook notebooks/bayesian_model_comparison.ipynb to notebook
+[NbConvertApp] Writing 8391 bytes to notebooks\\bayesian_model_comparison.ipynb
+
+uv run pytest tests/test_bayesian_model_comparison_notebook.py::test_notebook_is_valid_output_free_nbformat -q
+.                                                                        [100%]
+1 passed in 0.02s
+```
+
+Complete relevant suite:
+
+```text
+$env:MPLBACKEND = "Agg"; uv run pytest tests/test_bayesian_model_comparison_notebook.py tests/test_local_evidence_models_utils.py tests/test_local_evidence_comparison_utils.py -q
+...................................                                      [100%]
+35 passed in 23.59s
+```
+
+Additional checks:
+
+```text
+git diff --check
+```
+
+Passed. The notebook has five code cells, all with `execution_count: null` and `outputs: []`. The `nbconvert` command produced only formatting churn; it was removed, leaving no semantic notebook change. Only the report is committed.
+
+### Spec Compliance
+
+PASS. All required commands were run successfully, the notebook remained valid and output-free, and the final repository change is limited to this historical report append.
+
+### Task Quality
+
+PASS. The Gaussian mixture implementation is covered by the focused model/comparison tests and the complete relevant notebook/model suite. No additional regression test was warranted.
+
+### Concerns
+
+- `git diff --check` emits a CRLF-to-LF warning for the notebook, but reports no whitespace errors.
