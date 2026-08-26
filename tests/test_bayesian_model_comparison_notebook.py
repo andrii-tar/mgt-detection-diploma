@@ -127,3 +127,79 @@ def test_notebook_passes_one_labeled_model_to_legacy_local_evidence_plot(source:
     assert 'text_windows["model"].eq(LOCAL_EVIDENCE_MODEL)' in source
     assert 'display(f"Local evidence model: {LOCAL_EVIDENCE_MODEL}")' in source
     assert 'token_summary, local_evidence_windows' in source
+
+
+def test_notebook_calls_focused_plot_with_lr_filtered_windows(source: str):
+    tree = ast.parse(source)
+    focused_imports = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "token_candidate_similarity_heatmaps_utils"
+        and any(
+            alias.name == "plot_focused_token_metrics_with_local_evidence"
+            for alias in node.names
+        )
+    ]
+    assert focused_imports
+
+    focused_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "plot_focused_token_metrics_with_local_evidence"
+    ]
+    assert len(focused_calls) == 1
+    focused_call = focused_calls[0]
+    assert [ast.unparse(argument) for argument in focused_call.args] == [
+        "token_summary",
+        "local_evidence_windows",
+        "len(token_labels)",
+    ]
+    assert {
+        keyword.arg: ast.unparse(keyword.value)
+        for keyword in focused_call.keywords
+    } == {"window": "SMOOTHING_WINDOW"}
+
+    visualization_loop = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.For)
+        and any(
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Name)
+            and child.func.id == "visualize_text_similarities"
+            for child in ast.walk(node)
+        )
+    )
+    window_loop = next(
+        node
+        for node in ast.walk(visualization_loop)
+        if isinstance(node, ast.For)
+        and any(
+            isinstance(child, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "local_evidence_windows"
+                for target in child.targets
+            )
+            for child in node.body
+        )
+    )
+    filter_index = next(
+        index
+        for index, child in enumerate(window_loop.body)
+        if isinstance(child, ast.Assign)
+        and any(
+            isinstance(target, ast.Name)
+            and target.id == "local_evidence_windows"
+            for target in child.targets
+        )
+    )
+    call_index = next(
+        index
+        for index, child in enumerate(window_loop.body)
+        if focused_call in ast.walk(child)
+    )
+    assert call_index > filter_index
