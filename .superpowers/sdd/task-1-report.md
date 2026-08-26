@@ -31,3 +31,36 @@ PASS. Tests were written before implementation, the expected RED collection fail
 
 - Scikit-learn rejects a one-row fit even for one component, so the single observation is duplicated solely to satisfy its minimum sample requirement. The fitted estimator still uses one component and the configured regularization.
 - Only the named test file was run; the full repository suite was not requested.
+
+## Review Fix
+
+The original Task 1 report history was available and has been preserved above.
+
+### Finding
+
+`GaussianMixtureNBConfig` could raise `TypeError` for a non-numeric `reg_covar` instead of the required clear `ValueError`, and invalid negative/NaN values lacked dedicated regression coverage.
+
+### Resolution
+
+Commit: `8c0f3e20e16626f073dd7c4abaf7708f919a9a1f`
+
+Added explicit numeric validation for `reg_covar` and tests for negative, NaN, and non-numeric values. Existing zero and infinite-value coverage remains in place.
+
+### Verification
+
+Command:
+
+```text
+uv run pytest tests/test_local_evidence_models_utils.py -q
+```
+
+Output:
+
+```text
+......................                                                   [100%]
+22 passed in 48.02s
+```
+
+Review-fix verdict: COMPLIANT. The concrete code-quality finding is fixed and covered by regression tests.
+
+Review-fix concerns: The original report's concern about one-row GaussianMixture fitting and its limited test scope remain unchanged.
