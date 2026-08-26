@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import matplotlib
+
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -21,7 +25,7 @@ def _scored_windows() -> pd.DataFrame:
 
 
 def test_focused_plot_has_exactly_three_labels_and_lines(monkeypatch) -> None:
-    monkeypatch.setattr(plt, "show", lambda: None)
+    monkeypatch.setattr(plt, "show", lambda: pytest.fail("focused helper must not show the figure"))
 
     figure = plot_focused_token_metrics_with_local_evidence(
         {
@@ -40,6 +44,7 @@ def test_focused_plot_has_exactly_three_labels_and_lines(monkeypatch) -> None:
         "local mg_score",
     ]
     assert len(axis.lines) == 3
+    assert all(np.array_equal(line.get_xdata(), np.arange(5)) for line in axis.lines)
     assert axis.get_ylim() == (0.0, 1.0)
     plt.close(figure)
 

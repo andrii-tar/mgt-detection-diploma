@@ -47,3 +47,32 @@ passed (Git emitted only its CRLF-to-LF normalization warning for the notebook.)
 
 - Added focused coverage for ordinary finite Gaussian mixture scores, asserting finite probabilities in `[0, 1]` and higher MG scores for MG-like inputs than HG-like inputs.
 - The implementation was unchanged because the new regression test passed against the existing finite softmax behavior.
+
+## Focused Plot Review Fixes
+
+### Changes
+
+- Removed the duplicate `plt.show()` call from `plot_focused_token_metrics_with_local_evidence`, which now returns its figure for notebook `display(...)` without rendering it itself.
+- Configured the focused plotting tests to use the non-interactive `Agg` Matplotlib backend before importing `pyplot`.
+- Added regression assertions for token x-values `0..token_count-1` and for the focused helper not calling `plt.show()`.
+
+### Verification
+
+```text
+$env:MPLBACKEND = "Agg"; uv run pytest tests/test_token_candidate_similarity_heatmaps_utils.py tests/test_bayesian_model_comparison_notebook.py tests/test_local_evidence_comparison_utils.py -q
+22 passed
+
+uv run pytest tests/test_token_candidate_similarity_heatmaps_utils.py -q
+7 passed
+
+uv run pytest tests/test_bayesian_model_comparison_notebook.py::test_notebook_is_valid_output_free_nbformat -q
+1 passed
+
+git diff --check
+passed
+```
+
+### Concerns
+
+- The full notebook data/model execution was not run.
+- Existing unrelated working-tree changes in `.superpowers/sdd/task-1-report.md` and `.superpowers/sdd/task-2-report.md` were preserved and excluded from the commit.
