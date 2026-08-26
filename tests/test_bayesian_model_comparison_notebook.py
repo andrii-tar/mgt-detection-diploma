@@ -63,6 +63,7 @@ def test_notebook_contains_comparison_contract(source: str):
         "SELECTED_TEXTS",
         "PYMC_AVAILABLE",
         "uv sync --extra bayesian",
+        "LR, GaussianNB, and GaussianMixtureNB",
         "groupby([\"model\", \"window_length\", \"aggregation\"])",
         "np.isfinite",
     )
@@ -115,5 +116,6 @@ def test_notebook_groups_overall_metrics_and_covers_configured_lengths(source: s
     assert "drop_duplicates([\"split\", \"text_id\"])" in source
 
 
-def test_notebook_uses_only_multi_model_plot_for_model_scores(source: str):
-    assert "plot_normalized_token_metrics_with_local_evidence(" not in source
+def test_notebook_preserves_local_evidence_plot_contract(source: str):
+    assert "plot_normalized_token_metrics_with_local_evidence" in source
+    assert "display(plot_normalized_token_metrics_with_local_evidence(" in source

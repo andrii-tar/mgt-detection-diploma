@@ -14,3 +14,16 @@ Spec Compliance: PASS. The notebook exposes the mixture configuration, includes 
 Task Quality: PASS. Changes are limited to the requested notebook and contract tests, use the existing deterministic implementation, and were verified with the specified focused suite.
 
 Concerns: The optional PyMC import remains guarded; no PyMC-dependent test was required or run when unavailable.
+
+## Review Fixes
+
+The pre-task `plot_normalized_token_metrics_with_local_evidence` import and invocation were restored exactly while retaining the Gaussian mixture model integration. The PyMC-unavailable message now identifies all enabled deterministic models: LR, GaussianNB, and GaussianMixtureNB. Notebook contract coverage verifies both the restored plotting call and the complete fallback message.
+
+Fix tests/output:
+
+```text
+uv run pytest tests/test_bayesian_model_comparison_notebook.py tests/test_local_evidence_models_utils.py -q
+30 passed in 33.01s
+```
+
+Concerns: PyMC-dependent tests remain skipped when PyMC is unavailable.
