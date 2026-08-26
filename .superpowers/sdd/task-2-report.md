@@ -1,6 +1,6 @@
 # Task 2 Report
 
-Commit: `0d7b825a59ad78bd54df6dbb760fd4ee6c9727b1`
+Commits: final Task 2 fix `28e4702`; initial implementation `0d7b825a59ad78bd54df6dbb760fd4ee6c9727b1`
 
 Tests/output:
 
