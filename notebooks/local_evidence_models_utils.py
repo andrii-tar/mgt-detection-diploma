@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from numbers import Integral
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
+from sklearn.mixture import GaussianMixture
 from sklearn.naive_bayes import GaussianNB
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-MODEL_NAMES = ("logistic_regression", "gaussian_nb", "pymc_bayesian_logistic")
+MODEL_NAMES = ("logistic_regression", "gaussian_nb", "gaussian_mixture_nb", "pymc_bayesian_logistic")
 LOCAL_FEATURE_COLUMNS = tuple(
     f"{metric}__{statistic}"
     for metric in (
@@ -35,6 +37,18 @@ class BayesianConfig:
 
 
 @dataclass(frozen=True)
+class GaussianMixtureNBConfig:
+    components: int = 2
+    reg_covar: float = 1e-6
+
+    def __post_init__(self) -> None:
+        if isinstance(self.components, bool) or not isinstance(self.components, Integral) or self.components <= 0:
+            raise ValueError("components must be a positive integer")
+        if self.reg_covar <= 0 or not np.isfinite(self.reg_covar):
+            raise ValueError("reg_covar must be positive and finite")
+
+
+@dataclass(frozen=True)
 class _FittedClassifier:
     model_name: str
     feature_columns: tuple[str, ...]
@@ -49,6 +63,14 @@ class _PymcEstimator:
     posterior: Any
     config: BayesianConfig
     seed: int
+
+
+@dataclass
+class _GaussianMixtureNBEstimator:
+    preprocessing: Pipeline
+    mixtures: dict[tuple[str, int], GaussianMixture]
+    class_log_priors: dict[int, float]
+    config: GaussianMixtureNBConfig
 
 
 def _load_pymc() -> Any:
@@ -90,6 +112,7 @@ def fit_local_evidence_classifier(
     feature_columns: tuple[str, ...] | list[str],
     seed: int,
     bayesian_config: BayesianConfig | None = None,
+    gaussian_mixture_config: GaussianMixtureNBConfig | None = None,
 ) -> _FittedClassifier:
     if model_name not in MODEL_NAMES:
         raise ValueError(f"unknown model name: {model_name!r}")
@@ -104,6 +127,34 @@ def fit_local_evidence_classifier(
         fit_windows = train_windows.loc[train_rows]
     if "label" not in fit_windows.columns:
         raise ValueError("train_windows must contain a label column")
+    if model_name == "gaussian_mixture_nb":
+        config = gaussian_mixture_config or GaussianMixtureNBConfig()
+        labels = fit_windows["label"].to_numpy()
+        class_counts = {label: int(np.count_nonzero(labels == label)) for label in (0, 1)}
+        if any(count == 0 for count in class_counts.values()):
+            raise ValueError("gaussian_mixture_nb requires training rows for both classes")
+        preprocessing = Pipeline(
+            [("impute", SimpleImputer(strategy="median", keep_empty_features=True))]
+        )
+        features = preprocessing.fit_transform(fit_windows[list(normalized_features)])
+        mixtures = {}
+        for feature_index, feature in enumerate(normalized_features):
+            for label in (0, 1):
+                mixture = GaussianMixture(
+                    n_components=min(config.components, class_counts[label]),
+                    covariance_type="full",
+                    reg_covar=config.reg_covar,
+                    random_state=seed,
+                )
+                class_features = features[labels == label, feature_index, None]
+                if len(class_features) == 1:
+                    class_features = np.repeat(class_features, 2, axis=0)
+                mixture.fit(class_features)
+                mixtures[(feature, label)] = mixture
+        total_rows = len(labels)
+        class_log_priors = {label: float(np.log(count / total_rows)) for label, count in class_counts.items()}
+        estimator = _GaussianMixtureNBEstimator(preprocessing, mixtures, class_log_priors, config)
+        return _FittedClassifier(model_name, normalized_features, estimator)
     if model_name == "pymc_bayesian_logistic":
         pymc = _load_pymc()
         config = bayesian_config or BayesianConfig()
@@ -173,6 +224,21 @@ def score_local_evidence_classifier(
         probabilities = 1.0 / (1.0 + np.exp(-np.clip(logits, -700.0, 700.0)))
         scores = np.asarray(probabilities.mean(axis=0), dtype="float64")
         lower, upper = np.quantile(probabilities, estimator.config.credible_interval, axis=0)
+    elif fitted.model_name == "gaussian_mixture_nb":
+        estimator = fitted.estimator
+        features = estimator.preprocessing.transform(windows[list(normalized_features)])
+        log_scores = np.empty((len(windows), 2), dtype="float64")
+        for class_index, label in enumerate((0, 1)):
+            log_scores[:, class_index] = estimator.class_log_priors[label]
+            for feature_index, feature in enumerate(normalized_features):
+                log_scores[:, class_index] += estimator.mixtures[(feature, label)].score_samples(
+                    features[:, feature_index, None]
+                )
+        shifted = log_scores - np.max(log_scores, axis=1, keepdims=True)
+        probabilities = np.exp(shifted)
+        probabilities /= probabilities.sum(axis=1, keepdims=True)
+        scores = probabilities[:, 1]
+        lower = upper = None
     else:
         scores = np.asarray(fitted.estimator.predict_proba(windows[list(normalized_features)])[:, 1], dtype="float64")
         lower = upper = None
@@ -229,6 +295,7 @@ def run_local_evidence_model_comparison(
     feature_columns: tuple[str, ...] = LOCAL_FEATURE_COLUMNS,
     seed: int = 42,
     bayesian_config: BayesianConfig | None = None,
+    gaussian_mixture_config: GaussianMixtureNBConfig | None = None,
     show_progress: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     from tqdm import tqdm
@@ -270,12 +337,17 @@ def run_local_evidence_model_comparison(
             if any(set(frame["label"]) != {0, 1} for frame in (train, validation, test)):
                 raise ValueError(f"window_length={window_length} must have rows for both labels in every partition")
 
+            fit_kwargs: dict[str, Any] = {}
+            if model_name == "pymc_bayesian_logistic":
+                fit_kwargs["bayesian_config"] = bayesian_config
+            elif model_name == "gaussian_mixture_nb":
+                fit_kwargs["gaussian_mixture_config"] = gaussian_mixture_config
             fitted = fit_local_evidence_classifier(
                 model_name,
                 train,
                 normalized_features,
                 seed,
-                bayesian_config,
+                **fit_kwargs,
             )
             coefficient_summary = _summarize_deterministic_coefficients(fitted, window_length)
             if model_name == "pymc_bayesian_logistic":

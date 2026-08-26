@@ -5,12 +5,14 @@ import builtins
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.mixture import GaussianMixture
 from sklearn.naive_bayes import GaussianNB
 
 import notebooks.local_evidence_models_utils as models_utils
 from notebooks.local_evidence_models_utils import (
     MODEL_NAMES,
     BayesianConfig,
+    GaussianMixtureNBConfig,
     fit_local_evidence_classifier,
     run_local_evidence_model_comparison,
     score_local_evidence_classifier,
@@ -65,7 +67,24 @@ def training_windows() -> pd.DataFrame:
 
 
 def test_model_names_are_stable() -> None:
-    assert MODEL_NAMES == ("logistic_regression", "gaussian_nb", "pymc_bayesian_logistic")
+    assert MODEL_NAMES == (
+        "logistic_regression",
+        "gaussian_nb",
+        "gaussian_mixture_nb",
+        "pymc_bayesian_logistic",
+    )
+
+
+def test_gaussian_mixture_config_has_stable_defaults_and_validates_values() -> None:
+    assert GaussianMixtureNBConfig() == GaussianMixtureNBConfig(components=2, reg_covar=1e-6)
+    with pytest.raises(ValueError, match="components"):
+        GaussianMixtureNBConfig(components=0)
+    with pytest.raises(ValueError, match="components"):
+        GaussianMixtureNBConfig(components=1.5)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="reg_covar"):
+        GaussianMixtureNBConfig(reg_covar=0.0)
+    with pytest.raises(ValueError, match="reg_covar"):
+        GaussianMixtureNBConfig(reg_covar=float("inf"))
 
 
 def test_bayesian_config_has_stable_defaults() -> None:
@@ -98,6 +117,52 @@ def test_gaussian_nb_scores_have_common_schema_and_bounded_probabilities() -> No
     assert {"model", "mg_score", "mg_score_lower", "mg_score_upper"} <= set(scored.columns)
     assert scored["model"].eq("gaussian_nb").all()
     assert scored["mg_score"].between(0.0, 1.0).all()
+
+
+def test_gaussian_mixture_nb_fits_one_dimensional_mixtures_and_scores() -> None:
+    config = GaussianMixtureNBConfig(components=2, reg_covar=1e-5)
+
+    fitted = fit_local_evidence_classifier(
+        "gaussian_mixture_nb", training_windows(), FEATURES, seed=42, gaussian_mixture_config=config
+    )
+
+    assert fitted.estimator.config == config
+    assert set(fitted.estimator.mixtures) == {(feature, label) for feature in FEATURES for label in (0, 1)}
+    assert all(isinstance(mixture, GaussianMixture) for mixture in fitted.estimator.mixtures.values())
+    assert all(mixture.n_components == 2 for mixture in fitted.estimator.mixtures.values())
+    assert all(mixture.covariance_type == "full" for mixture in fitted.estimator.mixtures.values())
+    scored = score_local_evidence_classifier(fitted, training_windows(), FEATURES)
+    assert scored["model"].eq("gaussian_mixture_nb").all()
+    assert scored["mg_score"].between(0.0, 1.0).all()
+    assert scored["mg_score_lower"].isna().all()
+    assert scored["mg_score_upper"].isna().all()
+
+
+def test_gaussian_mixture_nb_falls_back_to_one_component_per_class() -> None:
+    windows = training_windows().iloc[[0, 2]].reset_index(drop=True)
+
+    fitted = fit_local_evidence_classifier(
+        "gaussian_mixture_nb", windows, FEATURES, seed=42, gaussian_mixture_config=GaussianMixtureNBConfig(components=2)
+    )
+
+    assert all(mixture.n_components == 1 for mixture in fitted.estimator.mixtures.values())
+
+
+def test_gaussian_mixture_nb_requires_rows_for_both_classes() -> None:
+    with pytest.raises(ValueError, match="both classes"):
+        fit_local_evidence_classifier(
+            "gaussian_mixture_nb", training_windows().query("label == 0"), FEATURES, seed=42
+        )
+
+
+def test_gaussian_mixture_nb_repeated_fits_with_same_seed_are_deterministic() -> None:
+    windows = training_windows().assign(feature_a=[-2.0, 0.0, 1.0, 3.0])
+    first = fit_local_evidence_classifier("gaussian_mixture_nb", windows, FEATURES, seed=42)
+    second = fit_local_evidence_classifier("gaussian_mixture_nb", windows, FEATURES, seed=42)
+
+    first_scores = score_local_evidence_classifier(first, windows, FEATURES)["mg_score"]
+    second_scores = score_local_evidence_classifier(second, windows, FEATURES)["mg_score"]
+    np.testing.assert_array_equal(first_scores, second_scores)
 
 
 def test_gaussian_nb_preserves_signed_continuous_features() -> None:
