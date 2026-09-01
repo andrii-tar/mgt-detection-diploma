@@ -8,8 +8,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+import pyarrow.parquet as pq
 
 import notebooks.logprob_metrics_distributions_utils as metric_utils
+import notebooks.local_evidence_utils as local_evidence_utils
+import notebooks.token_candidate_similarity_heatmaps_utils as heatmap_utils
 from scripts.logprob_metrics import compute_logprob_metrics
 from notebooks.logprob_metrics_distributions_utils import (
     TOKEN_DERIVED_METRICS,
@@ -26,12 +29,21 @@ from notebooks.token_candidate_similarity_heatmaps_utils import (
     build_text_heatmap_matrices,
     calculate_rolling_statistics,
     compute_token_coverage,
+    _expand_window_scores_to_tokens,
+    _normalize_series,
     plot_rolling_statistics_histograms,
     plot_smoothed_token_summaries,
     rolling_mean,
     token_summary_series,
     text_d_score_summary,
+    validated_text_summary,
     visualize_text_similarities,
+)
+from notebooks.local_evidence_utils import (
+    LOCAL_FEATURE_COLUMNS,
+    build_local_evidence_windows,
+    load_local_evidence_windows,
+    save_local_evidence_windows,
 )
 
 
@@ -557,6 +569,196 @@ def test_plot_smoothed_token_summaries_displays_smoothed_statistics(monkeypatch)
     plt.close("all")
 
 
+def test_expand_window_scores_to_tokens_averages_overlapping_windows() -> None:
+    scored_windows = pd.DataFrame(
+        {
+            "start_token": [0, 2],
+            "stop_token": [4, 5],
+            "mg_score": [0.2, 0.8],
+        }
+    )
+
+    scores = _expand_window_scores_to_tokens(scored_windows, token_count=5)
+
+    assert scores == pytest.approx([0.2, 0.2, 0.5, 0.5, 0.8])
+
+
+def test_expand_window_scores_to_tokens_ignores_missing_and_non_numeric_scores() -> None:
+    scored_windows = pd.DataFrame(
+        {
+            "start_token": [0, 0, 0],
+            "stop_token": [2, 2, 2],
+            "mg_score": [0.2, pd.NA, "missing"],
+        }
+    )
+
+    scores = _expand_window_scores_to_tokens(scored_windows, token_count=2)
+
+    assert scores == pytest.approx([0.2, 0.2])
+
+
+def test_expand_window_scores_to_tokens_returns_nan_for_uncovered_positions() -> None:
+    scored_windows = pd.DataFrame(
+        {
+            "start_token": [1],
+            "stop_token": [3],
+            "mg_score": [0.4],
+        }
+    )
+
+    scores = _expand_window_scores_to_tokens(scored_windows, token_count=4)
+
+    assert scores == pytest.approx([np.nan, 0.4, 0.4, np.nan], nan_ok=True)
+
+
+def test_expand_window_scores_to_tokens_returns_all_nan_for_all_invalid_scores() -> None:
+    scored_windows = pd.DataFrame(
+        {
+            "start_token": [0, 1],
+            "stop_token": [2, 4],
+            "mg_score": [np.nan, "invalid"],
+        }
+    )
+
+    scores = _expand_window_scores_to_tokens(scored_windows, token_count=4)
+
+    assert np.isnan(scores).all()
+
+
+@pytest.mark.parametrize(
+    "scored_windows, token_count, match",
+    [
+        (pd.DataFrame({"start_token": [0], "stop_token": [1]}), 1, "mg_score"),
+        (pd.DataFrame({"stop_token": [1], "mg_score": [0.2]}), 1, "start_token"),
+        (pd.DataFrame({"start_token": [0], "stop_token": [1], "mg_score": [0.2]}), 0, "token_count"),
+        (pd.DataFrame({"start_token": [0], "stop_token": [1], "mg_score": [0.2]}), -1, "token_count"),
+        (pd.DataFrame({"start_token": [2], "stop_token": [2], "mg_score": [0.2]}), 3, "span"),
+        (pd.DataFrame({"start_token": [3], "stop_token": [2], "mg_score": [0.2]}), 3, "span"),
+        (pd.DataFrame({"start_token": [-1], "stop_token": [2], "mg_score": [0.2]}), 3, "range"),
+        (pd.DataFrame({"start_token": [1], "stop_token": [4], "mg_score": [0.2]}), 3, "range"),
+    ],
+)
+def test_expand_window_scores_to_tokens_rejects_invalid_input(
+    scored_windows: pd.DataFrame,
+    token_count: int,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        _expand_window_scores_to_tokens(scored_windows, token_count)
+
+
+def test_normalize_series_scales_finite_values_and_preserves_nan() -> None:
+    values = _normalize_series(np.array([2.0, 4.0, np.nan]))
+
+    assert values == pytest.approx([0.0, 1.0, np.nan], nan_ok=True)
+
+
+def test_normalize_series_maps_constant_finite_values_to_zero() -> None:
+    values = _normalize_series(np.array([3.0, 3.0]))
+
+    assert values == pytest.approx([0.0, 0.0])
+
+
+def test_normalize_series_preserves_all_nan_series() -> None:
+    values = _normalize_series(np.array([np.nan]))
+
+    assert np.isnan(values).all()
+
+
+def test_plot_normalized_token_metrics_with_local_evidence_uses_one_shared_axis(monkeypatch) -> None:
+    class FakeAxis:
+        def __init__(self) -> None:
+            self.lines = []
+            self.legend_kwargs = None
+
+        def plot(self, _positions, values, **kwargs):
+            self.lines.append((np.asarray(values), kwargs))
+
+        def set_title(self, _title):
+            pass
+
+        def set_xlabel(self, _label):
+            pass
+
+        def set_ylabel(self, _label):
+            pass
+
+        def set_ylim(self, _lower, _upper):
+            pass
+
+        def grid(self, **_kwargs):
+            pass
+
+        def legend(self, **_kwargs):
+            self.legend_kwargs = _kwargs
+
+    class FakeFigure:
+        def suptitle(self, _title):
+            pass
+
+    axis = FakeAxis()
+    monkeypatch.setattr(plt, "subplots", lambda **_kwargs: (FakeFigure(), axis))
+    monkeypatch.setattr(plt, "show", lambda: None)
+    scored_windows = pd.DataFrame(
+        {
+            "start_token": [0, 1],
+            "stop_token": [2, 3],
+            "mg_score": [0.2, 0.8],
+        }
+    )
+
+    heatmap_utils.plot_normalized_token_metrics_with_local_evidence(
+        {"metric_a": np.array([1.0, 2.0, 3.0]), "metric_b": np.array([3.0, 2.0, 1.0])},
+        scored_windows,
+        token_count=3,
+        window=2,
+    )
+
+    assert len(axis.lines) == 3
+    assert [line[1]["label"] for line in axis.lines] == [
+        "metric_a rolling mean (2)",
+        "metric_b rolling mean (2)",
+        "local mg_score",
+    ]
+    assert [line[1]["alpha"] for line in axis.lines[:2]] == [0.5, 0.5]
+    assert "alpha" not in axis.lines[2][1]
+    assert axis.legend_kwargs == {"loc": "upper center", "bbox_to_anchor": (0.5, -0.15), "ncol": 2}
+    assert all(
+        np.all((values[np.isfinite(values)] >= 0.0) & (values[np.isfinite(values)] <= 1.0))
+        for values, _kwargs in axis.lines
+    )
+
+
+def test_plot_normalized_token_metrics_with_local_evidence_rejects_summary_length_mismatch(monkeypatch) -> None:
+    with pytest.raises(ValueError, match="metric length.*token_count"):
+        heatmap_utils.plot_normalized_token_metrics_with_local_evidence(
+            {"metric": np.array([1.0, 2.0])},
+            pd.DataFrame({"start_token": [], "stop_token": [], "mg_score": []}),
+            token_count=3,
+        )
+
+
+def test_plot_normalized_token_metrics_with_local_evidence_propagates_invalid_window() -> None:
+    with pytest.raises(ValueError, match="window must be positive"):
+        heatmap_utils.plot_normalized_token_metrics_with_local_evidence(
+            {"metric": np.array([1.0, 2.0])},
+            pd.DataFrame({"start_token": [], "stop_token": [], "mg_score": []}),
+            token_count=2,
+            window=0,
+        )
+
+
+def test_plot_normalized_token_metrics_with_local_evidence_handles_all_nan_series(monkeypatch) -> None:
+    monkeypatch.setattr(plt, "show", lambda: None)
+
+    heatmap_utils.plot_normalized_token_metrics_with_local_evidence(
+        {"metric": np.array([np.nan, np.nan])},
+        pd.DataFrame({"start_token": [], "stop_token": [], "mg_score": []}),
+        token_count=2,
+    )
+    plt.close("all")
+
+
 def test_plot_rolling_statistics_histograms_separates_splits_and_metrics(monkeypatch) -> None:
     statistics = pd.DataFrame(
         [
@@ -680,6 +882,86 @@ def _rolling_statistics_rows(text_id: int) -> tuple[dict, dict]:
     )
 
 
+def test_validated_text_summary_rejects_misaligned_positions() -> None:
+    logprob_row, similarity_row = _rolling_statistics_rows(11)
+    similarity_row["token_similarities"][1]["position"] = 9
+
+    with pytest.raises(ValueError, match="position 1"):
+        validated_text_summary(pd.Series(logprob_row), pd.Series(similarity_row), top_k=1)
+
+
+def test_validated_text_summary_rejects_mismatched_token_counts() -> None:
+    logprob_row, similarity_row = _rolling_statistics_rows(11)
+    similarity_row["token_similarities"].pop()
+
+    with pytest.raises(ValueError, match="token count mismatch"):
+        validated_text_summary(pd.Series(logprob_row), pd.Series(similarity_row), top_k=1)
+
+
+def test_validated_text_summary_rejects_mismatched_token_ids() -> None:
+    logprob_row, similarity_row = _rolling_statistics_rows(11)
+    logprob_row["tokens"][2]["token_id"] = 10
+    similarity_row["token_similarities"][2]["token_id"] = 20
+
+    with pytest.raises(ValueError, match="token id mismatch at position 2"):
+        validated_text_summary(pd.Series(logprob_row), pd.Series(similarity_row), top_k=1)
+
+
+def test_validated_text_summary_rejects_mismatched_parent_row_ids() -> None:
+    logprob_row, similarity_row = _rolling_statistics_rows(11)
+    similarity_row["id"] = 99
+
+    with pytest.raises(ValueError, match="parent row id mismatch: stage-1=11, stage-2=99"):
+        validated_text_summary(pd.Series(logprob_row), pd.Series(similarity_row), top_k=1)
+
+
+def test_calculate_rolling_statistics_uses_ground_truth_logprobs(tmp_path: Path) -> None:
+    logprob_row, similarity_row = _rolling_statistics_rows(11)
+    for index, token in enumerate(logprob_row["tokens"]):
+        token["logprob"] = float(index - 5)
+    data_dir = tmp_path / "processed" / "demo__model" / "HG" / "data"
+    similarity_dir = tmp_path / "processed" / "demo__model" / "HG" / "token_similarities"
+    data_dir.mkdir(parents=True)
+    similarity_dir.mkdir(parents=True)
+    pd.DataFrame([logprob_row]).to_parquet(data_dir / "part.parquet")
+    pd.DataFrame([similarity_row]).to_parquet(similarity_dir / "part.parquet")
+    result = calculate_rolling_statistics(tmp_path / "processed", "demo", "model", splits=("HG",), top_k=1, window=5)
+
+    observed = result.loc[result["metric"] == "observed_logprob"].iloc[0]
+    assert observed["mean"] == pytest.approx(-3.0)
+
+
+def test_calculate_rolling_statistics_reports_progress_per_split(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    progress: list[dict[str, object]] = []
+
+    class Progress:
+        def __init__(self, iterable: object, **kwargs: object) -> None:
+            self.iterable = iterable
+            progress.append(kwargs)
+
+        def __iter__(self):
+            return iter(self.iterable)
+
+    monkeypatch.setattr(heatmap_utils, "tqdm", Progress)
+
+    calculate_rolling_statistics(processed_root, "demo", "model", top_k=1, window=3)
+
+    assert progress == [
+        {"total": 1, "desc": "HG: rolling statistics", "unit": "text"},
+        {"total": 1, "desc": "MG: rolling statistics", "unit": "text"},
+    ]
+
+
+def test_calculate_rolling_statistics_can_disable_progress(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    monkeypatch.setattr(heatmap_utils, "tqdm", lambda *_args, **_kwargs: pytest.fail("progress created"))
+
+    calculate_rolling_statistics(processed_root, "demo", "model", top_k=1, window=3, show_progress=False)
+
+
 def test_calculate_rolling_statistics_reads_both_splits_and_computes_window_five(tmp_path):
     processed_root = tmp_path / "processed"
     for split, text_id in (("HG", 11), ("MG", 22)):
@@ -720,3 +1002,305 @@ def test_calculate_rolling_statistics_raises_for_missing_similarity_row(tmp_path
 
     with pytest.raises(KeyError, match="No token similarity row for text id 11"):
         calculate_rolling_statistics(tmp_path / "processed", "demo", "model", splits=("HG",))
+
+
+def _local_evidence_rows(text_id: int) -> tuple[dict, dict]:
+    tokens = [
+        {
+            "token": f" token-{index}",
+            "token_id": index,
+            "logprob": float(index) - 1.5,
+            "top_logprobs": [{"logprob": -2.0}],
+        }
+        for index in range(6)
+    ]
+    similarities = [
+        {
+            "position": index,
+            "token_id": index,
+            "top_logprobs": [{"similarity_to_gt": 0.1 * (index + 1)}],
+        }
+        for index in range(6)
+    ]
+    return (
+        {"id": text_id, "tokens": tokens},
+        {"id": text_id, "token_similarities": similarities},
+    )
+
+
+def _write_local_evidence_artifacts(processed_root: Path, dataset: str = "demo", model: str = "model") -> None:
+    for split, text_id in (("HG", 11), ("MG", 22)):
+        data_dir = processed_root / f"{dataset}__{model}" / split / "data"
+        similarity_dir = processed_root / f"{dataset}__{model}" / split / "token_similarities"
+        data_dir.mkdir(parents=True)
+        similarity_dir.mkdir(parents=True)
+        logprob_row, similarity_row = _local_evidence_rows(text_id)
+        pd.DataFrame([logprob_row]).to_parquet(data_dir / "part.parquet")
+        pd.DataFrame([similarity_row]).to_parquet(similarity_dir / "part.parquet")
+
+
+def test_build_local_evidence_windows_extracts_complete_windows_from_both_splits(tmp_path: Path) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+
+    windows = build_local_evidence_windows(
+        processed_root, "demo", "model", window_lengths=(4,), stride=3, top_k=1
+    )
+
+    assert windows[["split", "text_id", "label", "window_length", "start_token", "stop_token"]].to_dict("records") == [
+        {"split": "HG", "text_id": 11, "label": 0, "window_length": 4, "start_token": 0, "stop_token": 4},
+        {"split": "HG", "text_id": 11, "label": 0, "window_length": 4, "start_token": 2, "stop_token": 6},
+        {"split": "MG", "text_id": 22, "label": 1, "window_length": 4, "start_token": 0, "stop_token": 4},
+        {"split": "MG", "text_id": 22, "label": 1, "window_length": 4, "start_token": 2, "stop_token": 6},
+    ]
+    assert list(windows.columns) == [
+        "dataset",
+        "model",
+        "split",
+        "label",
+        "text_id",
+        "window_length",
+        "start_token",
+        "stop_token",
+        "num_tokens",
+        "window_text",
+        *LOCAL_FEATURE_COLUMNS,
+    ]
+    assert windows.loc[0, "observed_logprob__mean"] == pytest.approx(0.0)
+    assert windows.loc[0, "observed_logprob__finite_fraction"] == pytest.approx(1.0)
+    assert windows.loc[0, "window_text"] == " token-0 token-1 token-2 token-3"
+
+
+def test_build_local_evidence_windows_reports_progress_per_split(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    progress: list[dict[str, object]] = []
+
+    class Progress:
+        def __init__(self, iterable: object, **kwargs: object) -> None:
+            self.iterable = iterable
+            progress.append(kwargs)
+
+        def __iter__(self):
+            return iter(self.iterable)
+
+    monkeypatch.setattr(local_evidence_utils, "tqdm", Progress)
+
+    build_local_evidence_windows(processed_root, "demo", "model", window_lengths=(4,), stride=3, top_k=1)
+
+    assert progress == [
+        {"total": 1, "desc": "HG: local evidence", "unit": "text"},
+        {"total": 1, "desc": "MG: local evidence", "unit": "text"},
+    ]
+
+
+def test_build_local_evidence_windows_can_disable_progress(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    monkeypatch.setattr(local_evidence_utils, "tqdm", lambda *_args, **_kwargs: pytest.fail("progress created"))
+
+    build_local_evidence_windows(
+        processed_root, "demo", "model", window_lengths=(4,), stride=3, top_k=1, show_progress=False
+    )
+
+
+@pytest.mark.parametrize("window_lengths, stride", [((0,), 1), ((4,), 0), ((4,), -1)])
+def test_build_local_evidence_windows_rejects_invalid_window_parameters(
+    tmp_path: Path, window_lengths: tuple[int, ...], stride: int
+) -> None:
+    with pytest.raises(ValueError):
+        build_local_evidence_windows(tmp_path, "demo", "model", window_lengths=window_lengths, stride=stride)
+
+
+def test_build_local_evidence_windows_skips_lengths_longer_than_text(tmp_path: Path) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+
+    windows = build_local_evidence_windows(processed_root, "demo", "model", window_lengths=(7,), stride=3, top_k=1)
+
+    assert windows.empty
+
+
+def test_build_local_evidence_windows_raises_for_missing_similarity_row(tmp_path: Path) -> None:
+    processed_root = tmp_path / "processed"
+    data_dir = processed_root / "demo__model" / "HG" / "data"
+    similarity_dir = processed_root / "demo__model" / "HG" / "token_similarities"
+    data_dir.mkdir(parents=True)
+    similarity_dir.mkdir(parents=True)
+    logprob_row, similarity_row = _local_evidence_rows(11)
+    pd.DataFrame([logprob_row]).to_parquet(data_dir / "part.parquet")
+    pd.DataFrame([{**similarity_row, "id": 99}]).to_parquet(similarity_dir / "part.parquet")
+
+    with pytest.raises(KeyError, match="No token similarity row for text id 11"):
+        build_local_evidence_windows(processed_root, "demo", "model", window_lengths=(4,), stride=3, splits=("HG",))
+
+
+def test_build_local_evidence_windows_raises_for_token_id_mismatch(tmp_path: Path) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    similarity_path = processed_root / "demo__model" / "HG" / "token_similarities" / "part.parquet"
+    similarity_row = pd.read_parquet(similarity_path).iloc[0].to_dict()
+    similarity_row["token_similarities"][2]["token_id"] = 99
+    pd.DataFrame([similarity_row]).to_parquet(similarity_path)
+
+    with pytest.raises(ValueError, match="token id mismatch at position 2"):
+        build_local_evidence_windows(processed_root, "demo", "model", window_lengths=(4,), stride=3, splits=("HG",))
+
+
+def test_build_local_evidence_windows_indexes_multi_shard_similarity_rows_once_per_split(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    processed_root = tmp_path / "processed"
+    data_dir = processed_root / "demo__model" / "HG" / "data"
+    similarity_dir = processed_root / "demo__model" / "HG" / "token_similarities"
+    data_dir.mkdir(parents=True)
+    similarity_dir.mkdir(parents=True)
+    first_logprob_row, first_similarity_row = _local_evidence_rows(11)
+    second_logprob_row, second_similarity_row = _local_evidence_rows(12)
+    pd.DataFrame([first_logprob_row]).to_parquet(data_dir / "one.parquet")
+    pd.DataFrame([second_logprob_row]).to_parquet(data_dir / "two.parquet")
+    pd.DataFrame([first_similarity_row]).to_parquet(similarity_dir / "one.parquet")
+    pd.DataFrame([second_similarity_row]).to_parquet(similarity_dir / "two.parquet")
+    original_read_parquet = pd.read_parquet
+    similarity_reads: list[Path] = []
+
+    def read_parquet(path: str | Path, *args: object, **kwargs: object) -> pd.DataFrame:
+        path = Path(path)
+        if path.parent == similarity_dir:
+            similarity_reads.append(path)
+        return original_read_parquet(path, *args, **kwargs)
+
+    monkeypatch.setattr(pd, "read_parquet", read_parquet)
+
+    windows = build_local_evidence_windows(
+        processed_root, "demo", "model", window_lengths=(4,), stride=3, top_k=1, splits=("HG",)
+    )
+
+    assert set(windows["text_id"]) == {11, 12}
+    assert similarity_reads == [similarity_dir / "one.parquet", similarity_dir / "two.parquet"]
+
+
+def test_local_evidence_windows_parquet_round_trip(tmp_path: Path) -> None:
+    windows = pd.DataFrame({"dataset": ["demo"], "observed_logprob__mean": [0.0]})
+    path = tmp_path / "nested" / "windows.parquet"
+
+    saved_path = save_local_evidence_windows(
+        windows,
+        path,
+        dataset="demo",
+        model="model",
+        splits=("HG", "MG"),
+    )
+
+    assert saved_path == path
+    pd.testing.assert_frame_equal(
+        load_local_evidence_windows(path, dataset="demo", model="model", splits=("HG", "MG")), windows
+    )
+
+
+def test_local_evidence_cache_persists_and_validates_schema_configuration(tmp_path: Path) -> None:
+    windows = pd.DataFrame({"dataset": ["demo"], "window_length": [4], "observed_logprob__mean": [0.0]})
+    path = tmp_path / "windows.parquet"
+
+    save_local_evidence_windows(
+        windows,
+        path,
+        dataset="demo",
+        model="model",
+        splits=("MG", "HG"),
+        window_lengths=(4,),
+        stride=2,
+        top_k=1,
+    )
+
+    metadata = json.loads(pq.read_schema(path).metadata[b"local_evidence_cache"].decode("utf-8"))
+    assert metadata["dataset"] == "demo"
+    assert metadata["model"] == "model"
+    assert metadata["splits"] == ["HG", "MG"]
+    assert metadata["window_lengths"] == [4]
+    assert metadata["stride"] == 2
+    assert metadata["top_k"] == 1
+    assert metadata["feature_columns"] == list(LOCAL_FEATURE_COLUMNS)
+    pd.testing.assert_frame_equal(
+        load_local_evidence_windows(
+            path,
+            dataset="demo",
+            model="model",
+            splits=("HG", "MG"),
+            window_lengths=(4,),
+            stride=2,
+            top_k=1,
+        ),
+        windows,
+    )
+    with pytest.raises(ValueError, match="local-evidence cache configuration is incompatible"):
+        load_local_evidence_windows(
+            path,
+            dataset="demo",
+            model="model",
+            splits=("HG", "MG"),
+            window_lengths=(5,),
+            stride=2,
+            top_k=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("dataset", "model", "splits"),
+    [
+        ("other", "model", ("HG", "MG")),
+        ("demo", "other", ("HG", "MG")),
+        ("demo", "model", ("HG",)),
+    ],
+    ids=("dataset", "model", "splits"),
+)
+def test_local_evidence_cache_rebuilds_when_identity_configuration_is_incompatible(
+    tmp_path: Path, dataset: str, model: str, splits: tuple[str, ...]
+) -> None:
+    from notebooks.local_evidence_utils import load_or_build_local_evidence_windows
+
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    path = tmp_path / "windows.parquet"
+    stale_windows = build_local_evidence_windows(
+        processed_root, "demo", "model", window_lengths=(4,), stride=3, top_k=1
+    )
+    save_local_evidence_windows(
+        stale_windows,
+        path,
+        dataset="demo",
+        model="model",
+        splits=("HG", "MG"),
+        window_lengths=(4,),
+        stride=3,
+        top_k=1,
+    )
+    if (dataset, model) != ("demo", "model"):
+        _write_local_evidence_artifacts(processed_root, dataset=dataset, model=model)
+
+    rebuilt = load_or_build_local_evidence_windows(
+        processed_root,
+        dataset,
+        model,
+        path=path,
+        window_lengths=(4,),
+        stride=3,
+        top_k=1,
+        splits=splits,
+    )
+
+    assert set(rebuilt["dataset"]) == {dataset}
+    assert set(rebuilt["model"]) == {model}
+    assert set(rebuilt["split"]) == set(splits)
+    pd.testing.assert_frame_equal(
+        load_local_evidence_windows(
+            path,
+            dataset=dataset,
+            model=model,
+            splits=splits,
+            window_lengths=(4,),
+            stride=3,
+            top_k=1,
+        ),
+        rebuilt,
+    )

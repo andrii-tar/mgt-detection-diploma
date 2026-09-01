@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.colors import TwoSlopeNorm
 from IPython.display import display
+from tqdm import tqdm
 
 from scripts.logprob_metrics import compute_top20_coverage, compute_top20_d_score
 
@@ -55,6 +56,20 @@ def load_text_row(processed_root: Path, dataset: str, model: str, split: str, te
     raise IndexError(f"text_index {text_index} is outside {offset} available rows")
 
 
+def text_index_for_id(processed_root: Path, dataset: str, model: str, split: str, text_id: int) -> int:
+    data_paths = sorted((split_dir(processed_root, dataset, model, split) / "data").glob("*.parquet"))
+    if not data_paths:
+        raise FileNotFoundError(f"No stage-1 data parquet files for {dataset=} {model=} {split=}")
+    offset = 0
+    for path in data_paths:
+        frame = pd.read_parquet(path)
+        matches = frame.index[frame["id"].eq(text_id)]
+        if len(matches):
+            return offset + int(frame.index.get_loc(matches[0]))
+        offset += len(frame)
+    raise KeyError(f"No stage-1 data row for text id {text_id}")
+
+
 def load_similarity_row(processed_root: Path, dataset: str, model: str, split: str, text_id: int) -> pd.Series:
     similarity_paths = sorted((split_dir(processed_root, dataset, model, split) / "token_similarities").glob("*.parquet"))
     if not similarity_paths:
@@ -67,17 +82,70 @@ def load_similarity_row(processed_root: Path, dataset: str, model: str, split: s
     raise KeyError(f"No token similarity row for text id {text_id}")
 
 
+def load_similarity_rows(processed_root: Path, dataset: str, model: str, split: str) -> dict[int, pd.Series]:
+    similarity_paths = sorted((split_dir(processed_root, dataset, model, split) / "token_similarities").glob("*.parquet"))
+    if not similarity_paths:
+        raise FileNotFoundError(f"No token similarity parquet files for {dataset=} {model=} {split=}")
+    rows: dict[int, pd.Series] = {}
+    for path in similarity_paths:
+        for _, row in pd.read_parquet(path).iterrows():
+            text_id = int(row["id"])
+            if text_id in rows:
+                raise ValueError(f"Duplicate token similarity row for text id {text_id}")
+            rows[text_id] = row
+    return rows
+
+
 def _iter_stage_one_rows(
     processed_root: Path,
     dataset: str,
     model: str,
     split: str,
+    text_ids: tuple[int, ...] | None = None,
 ) -> Iterator[pd.Series]:
     data_paths = sorted((split_dir(processed_root, dataset, model, split) / "data").glob("*.parquet"))
     if not data_paths:
         raise FileNotFoundError(f"No stage-1 data parquet files for {dataset=} {model=} {split=}")
+    selected_ids = set(text_ids) if text_ids is not None else None
     for path in data_paths:
-        yield from (row for _, row in pd.read_parquet(path).iterrows())
+        rows = pd.read_parquet(path)
+        if selected_ids is not None:
+            rows = rows.loc[rows["id"].isin(selected_ids)]
+        yield from (row for _, row in rows.iterrows())
+
+
+def validated_text_summary(
+    logprob_row: pd.Series,
+    similarity_row: pd.Series,
+    *,
+    top_k: int = 20,
+) -> tuple[dict[str, np.ndarray], list[str]]:
+    logprob_id = int(logprob_row["id"])
+    similarity_id = int(similarity_row["id"])
+    if logprob_id != similarity_id:
+        raise ValueError(f"parent row id mismatch: stage-1={logprob_id}, stage-2={similarity_id}")
+    tokens = list(logprob_row["tokens"])
+    similarity_tokens = list(similarity_row["token_similarities"])
+    if len(tokens) != len(similarity_tokens):
+        raise ValueError(f"token count mismatch: stage-1={len(tokens)}, stage-2={len(similarity_tokens)}")
+    for position, (token, similarity_token) in enumerate(zip(tokens, similarity_tokens)):
+        if similarity_token.get("position", position) != position:
+            raise ValueError(f"stage-2 token position {similarity_token.get('position')} does not match position {position}")
+        if token.get("token_id") is not None and similarity_token.get("token_id") is not None:
+            if int(token["token_id"]) != int(similarity_token["token_id"]):
+                raise ValueError(f"token id mismatch at position {position}")
+    matrices = build_text_heatmap_matrices(logprob_row, similarity_row, top_k=top_k)
+    observed_logprobs = np.asarray(
+        [
+            float(token["logprob"])
+            if token.get("logprob") is not None and math.isfinite(float(token["logprob"]))
+            else math.nan
+            for token in tokens
+        ],
+        dtype="float64",
+    )
+    coverage = compute_token_coverage(logprob_row, top_k=top_k)
+    return token_summary_series(matrices, coverage, observed_logprobs=observed_logprobs), matrices.token_labels
 
 
 def calculate_rolling_statistics(
@@ -88,16 +156,27 @@ def calculate_rolling_statistics(
     splits: tuple[str, ...] = ("HG", "MG"),
     top_k: int = 20,
     window: int = 5,
+    show_progress: bool = True,
 ) -> pd.DataFrame:
     rows = []
     columns = ["split", "text_id", "metric", "mean", "std", "variance"]
     for split in splits:
-        for logprob_row in _iter_stage_one_rows(processed_root, dataset, model, split):
+        similarity_rows = load_similarity_rows(processed_root, dataset, model, split)
+        logprob_rows = _iter_stage_one_rows(processed_root, dataset, model, split)
+        if show_progress:
+            logprob_rows = tqdm(
+                logprob_rows,
+                total=len(similarity_rows),
+                desc=f"{split}: rolling statistics",
+                unit="text",
+            )
+        for logprob_row in logprob_rows:
             text_id = int(logprob_row["id"])
-            similarity_row = load_similarity_row(processed_root, dataset, model, split, text_id)
-            matrices = build_text_heatmap_matrices(logprob_row, similarity_row, top_k=top_k)
-            coverage = compute_token_coverage(logprob_row, top_k=top_k)
-            summary = token_summary_series(matrices, coverage[: len(matrices.token_labels)])
+            try:
+                similarity_row = similarity_rows[text_id]
+            except KeyError as error:
+                raise KeyError(f"No token similarity row for text id {text_id}") from error
+            summary, _ = validated_text_summary(logprob_row, similarity_row, top_k=top_k)
             for metric, values in summary.items():
                 smoothed = rolling_mean(values, window=window)
                 finite = smoothed[np.isfinite(smoothed)]
@@ -355,6 +434,54 @@ def draw_token_coverage_scatter(coverage: np.ndarray) -> None:
     plt.show()
 
 
+def _expand_window_scores_to_tokens(scored_windows: pd.DataFrame, token_count: int) -> np.ndarray:
+    required_columns = {"start_token", "stop_token", "mg_score"}
+    missing_columns = required_columns.difference(scored_windows.columns)
+    if missing_columns:
+        raise ValueError(f"missing columns: {', '.join(sorted(missing_columns))}")
+    if not isinstance(token_count, (int, np.integer)) or isinstance(token_count, (bool, np.bool_)) or token_count <= 0:
+        raise ValueError("token_count must be positive")
+
+    sums = np.zeros(token_count, dtype=float)
+    counts = np.zeros(token_count, dtype=int)
+    scores = pd.to_numeric(scored_windows["mg_score"], errors="coerce").astype(float).to_numpy()
+    for (start, stop), score in zip(
+        scored_windows[["start_token", "stop_token"]].itertuples(index=False, name=None), scores, strict=True
+    ):
+        if (
+            not isinstance(start, (int, np.integer))
+            or isinstance(start, (bool, np.bool_))
+            or not isinstance(stop, (int, np.integer))
+            or isinstance(stop, (bool, np.bool_))
+            or start >= stop
+        ):
+            raise ValueError("invalid span")
+        if start < 0 or stop > token_count:
+            raise ValueError("span is outside token range")
+        if np.isfinite(score):
+            sums[start:stop] += score
+            counts[start:stop] += 1
+
+    scores = np.full(token_count, np.nan, dtype=float)
+    covered = counts > 0
+    scores[covered] = sums[covered] / counts[covered]
+    return scores
+
+
+def _normalize_series(values: np.ndarray) -> np.ndarray:
+    normalized = np.asarray(values, dtype=float).copy()
+    finite = np.isfinite(normalized)
+    if not finite.any():
+        return normalized
+    minimum = normalized[finite].min()
+    maximum = normalized[finite].max()
+    if minimum == maximum:
+        normalized[finite] = 0.0
+    else:
+        normalized[finite] = (normalized[finite] - minimum) / (maximum - minimum)
+    return normalized
+
+
 def plot_smoothed_token_summaries(
     summary: dict[str, np.ndarray],
     *,
@@ -396,6 +523,77 @@ def plot_smoothed_token_summaries(
     axes[-1, 0].set_xlabel("Token position")
     figure.suptitle(f"Token-level metrics with rolling smoothing (window={window})")
     plt.show()
+
+
+def plot_normalized_token_metrics_with_local_evidence(
+    summary: dict[str, np.ndarray],
+    scored_windows: pd.DataFrame,
+    token_count: int,
+    *,
+    window: int = 10,
+) -> None:
+    local_scores = _expand_window_scores_to_tokens(scored_windows, token_count)
+    series: list[tuple[str, np.ndarray]] = []
+    for name, values in summary.items():
+        array = np.asarray(values, dtype=float)
+        if array.ndim != 1 or array.size != token_count:
+            raise ValueError(f"{name} length must match token_count ({token_count}); got {array.size}")
+        rolling = rolling_mean(array, window=window)
+        series.append((name, _normalize_series(rolling)))
+
+    positions = np.arange(token_count)
+    figure, axis = plt.subplots(figsize=(12, 4), constrained_layout=True)
+    for name, rolling in series:
+        axis.plot(
+            positions,
+            rolling,
+            linewidth=1.8,
+            alpha=0.5,
+            label=f"{name} rolling mean ({window})",
+        )
+    axis.plot(positions, _normalize_series(local_scores), linewidth=2.0, label="local mg_score")
+    axis.set_title(f"Normalized token metrics with smoothing window={window}")
+    axis.set_xlabel("Token position")
+    axis.set_ylabel("Normalized value")
+    axis.set_ylim(0.0, 1.0)
+    axis.grid(axis="y", alpha=0.25)
+    axis.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=2)
+    figure.suptitle(f"Normalized token metrics with smoothing window={window}")
+    plt.show()
+
+
+def plot_focused_token_metrics_with_local_evidence(
+    summary: dict[str, np.ndarray],
+    scored_windows: pd.DataFrame,
+    token_count: int,
+    *,
+    window: int = 10,
+) -> plt.Figure:
+    required_metrics = ("mean_candidate_similarity", "top20_coverage")
+    for name in required_metrics:
+        if name not in summary:
+            raise ValueError(f"missing required metric: {name}")
+
+    processed_series = []
+    for name in required_metrics:
+        values = np.asarray(summary[name], dtype=float)
+        if values.ndim != 1 or values.size != token_count:
+            raise ValueError(f"{name} length must match token_count ({token_count}); got {values.size}")
+        processed_series.append((name, _normalize_series(rolling_mean(values, window=window))))
+
+    local_scores = _normalize_series(_expand_window_scores_to_tokens(scored_windows, token_count))
+    positions = np.arange(token_count)
+    figure, axis = plt.subplots(figsize=(12, 4), constrained_layout=True)
+    for name, values in processed_series:
+        axis.plot(positions, values, linewidth=1.8, label=name)
+    axis.plot(positions, local_scores, linewidth=2.0, label="local mg_score")
+    axis.set_title(f"Focused token metrics with smoothing window={window}")
+    axis.set_xlabel("Token position")
+    axis.set_ylabel("Normalized value")
+    axis.set_ylim(0.0, 1.0)
+    axis.grid(axis="y", alpha=0.25)
+    axis.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=3)
+    return figure
 
 
 def plot_rolling_statistics_histograms(
