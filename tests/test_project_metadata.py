@@ -34,7 +34,7 @@ def test_notebook_extra_contains_notebook_workflow_dependencies():
     assert {
         "jupyter>=1.1.1",
         "jupyter-collaboration>=3.1.2",
-        "matplotlib>=3.10.0",
+        "matplotlib>=3.10.0,<3.11",
         "numpy",
         "seaborn>=0.13.2",
     } <= notebook
