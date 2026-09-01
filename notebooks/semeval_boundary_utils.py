@@ -50,10 +50,12 @@ def predict_boundary_positions(
         above_threshold = np.isfinite(smoothed_scores) & (smoothed_scores >= threshold)
         run_length = 0
         boundary = token_count
+        crossed = False
         for token_position, is_above_threshold in enumerate(above_threshold):
             run_length = run_length + 1 if is_above_threshold else 0
             if run_length >= sustained_length:
                 boundary = token_position - sustained_length + 1
+                crossed = True
                 break
         rows.append(
             {
@@ -62,11 +64,12 @@ def predict_boundary_positions(
                 "text_id": text_id,
                 "predicted_token_boundary": boundary,
                 "token_count": token_count,
+                "no_crossing": not crossed,
             }
         )
     return pd.DataFrame(
         rows,
-        columns=["model", "window_length", "text_id", "predicted_token_boundary", "token_count"],
+        columns=["model", "window_length", "text_id", "predicted_token_boundary", "token_count", "no_crossing"],
     )
 
 
@@ -139,6 +142,32 @@ def summarize_boundary_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for (model, window_length), group in predictions.groupby(["model", "window_length"], sort=True):
         errors = group["absolute_token_error"].to_numpy(dtype="float64")
+        if {"predicted_token_boundary", "gold_token_boundary"}.issubset(group.columns):
+            predicted = group["predicted_token_boundary"].to_numpy(dtype="float64")
+            gold = group["gold_token_boundary"].to_numpy(dtype="float64")
+            valid_boundaries = np.isfinite(predicted) & np.isfinite(gold)
+            if valid_boundaries.any():
+                early_rate = float(np.mean(predicted[valid_boundaries] < gold[valid_boundaries]))
+                late_rate = float(np.mean(predicted[valid_boundaries] > gold[valid_boundaries]))
+            else:
+                early_rate = float("nan")
+                late_rate = float("nan")
+        else:
+            early_rate = float("nan")
+            late_rate = float("nan")
+        if "no_crossing" in group:
+            no_crossing_rate = float(
+                group["no_crossing"].astype("boolean").mean()
+            )
+        elif {"predicted_token_boundary", "token_count"}.issubset(group.columns):
+            no_crossing_rate = float(
+                np.mean(
+                    group["predicted_token_boundary"].to_numpy(dtype="float64")
+                    == group["token_count"].to_numpy(dtype="float64")
+                )
+            )
+        else:
+            no_crossing_rate = float("nan")
         rows.append(
             {
                 "model": model,
@@ -150,6 +179,9 @@ def summarize_boundary_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
                 "within_1_accuracy": float(np.mean(errors <= 1)),
                 "within_3_accuracy": float(np.mean(errors <= 3)),
                 "within_5_accuracy": float(np.mean(errors <= 5)),
+                "early_rate": early_rate,
+                "late_rate": late_rate,
+                "no_crossing_rate": no_crossing_rate,
             }
         )
     return pd.DataFrame(
@@ -164,5 +196,8 @@ def summarize_boundary_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
             "within_1_accuracy",
             "within_3_accuracy",
             "within_5_accuracy",
+            "early_rate",
+            "late_rate",
+            "no_crossing_rate",
         ],
     )

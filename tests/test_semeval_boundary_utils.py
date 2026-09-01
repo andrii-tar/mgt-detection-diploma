@@ -72,6 +72,7 @@ def test_falls_back_to_token_count_when_no_sustained_run_exists() -> None:
     )
 
     assert predictions["predicted_token_boundary"].tolist() == [4]
+    assert predictions["no_crossing"].tolist() == [True]
 
 
 @pytest.mark.parametrize(
@@ -114,6 +115,7 @@ def test_predicts_first_mg_scored_token_without_accessing_gold_labels() -> None:
             "text_id": 7,
             "predicted_token_boundary": 2,
             "token_count": 4,
+            "no_crossing": False,
         }
     ]
 
@@ -161,8 +163,111 @@ def test_aligns_semantic_word_boundary_to_token_and_summarizes_errors() -> None:
             "within_1_accuracy": 1.0,
             "within_3_accuracy": 1.0,
             "within_5_accuracy": 1.0,
+            "early_rate": 0.0,
+            "late_rate": 0.5,
+            "no_crossing_rate": 0.0,
         }
     ]
+
+
+def test_summarizes_early_late_and_no_crossing_rates() -> None:
+    predictions = pd.DataFrame(
+        [
+            {"model": "lr", "window_length": 1, "predicted_token_boundary": 2, "gold_token_boundary": 3, "absolute_token_error": 1, "no_crossing": False},
+            {"model": "lr", "window_length": 1, "predicted_token_boundary": 4, "gold_token_boundary": 3, "absolute_token_error": 1, "no_crossing": False},
+            {"model": "lr", "window_length": 1, "predicted_token_boundary": 5, "gold_token_boundary": 3, "absolute_token_error": 2, "no_crossing": True},
+        ]
+    )
+
+    assert summarize_boundary_predictions(predictions).to_dict("records") == [
+        {
+            "model": "lr",
+            "window_length": 1,
+            "texts": 3,
+            "mean_absolute_token_error": 4 / 3,
+            "median_absolute_token_error": 1.0,
+            "exact_accuracy": 0.0,
+            "within_1_accuracy": 2 / 3,
+            "within_3_accuracy": 1.0,
+            "within_5_accuracy": 1.0,
+            "early_rate": 1 / 3,
+            "late_rate": 2 / 3,
+            "no_crossing_rate": 1 / 3,
+        }
+    ]
+
+
+def test_summary_preserves_legacy_input_and_reports_unavailable_diagnostics_as_nan() -> None:
+    summary = summarize_boundary_predictions(
+        pd.DataFrame(
+            [
+                {
+                    "model": "lr",
+                    "window_length": 1,
+                    "absolute_token_error": 2,
+                }
+            ]
+        )
+    )
+
+    assert summary.loc[0, "mean_absolute_token_error"] == 2.0
+    assert pd.isna(summary.loc[0, "early_rate"])
+    assert pd.isna(summary.loc[0, "late_rate"])
+    assert pd.isna(summary.loc[0, "no_crossing_rate"])
+
+
+def test_summary_uses_token_count_for_no_crossing_when_flag_is_absent() -> None:
+    summary = summarize_boundary_predictions(
+        pd.DataFrame(
+            [
+                {
+                    "model": "lr",
+                    "window_length": 1,
+                    "absolute_token_error": 1,
+                    "predicted_token_boundary": 4,
+                    "token_count": 4,
+                }
+            ]
+        )
+    )
+
+    assert summary.loc[0, "no_crossing_rate"] == 1.0
+
+
+def test_summary_ignores_rows_with_partial_boundary_pairs() -> None:
+    summary = summarize_boundary_predictions(
+        pd.DataFrame(
+            [
+                {
+                    "model": "lr",
+                    "window_length": 1,
+                    "absolute_token_error": 1,
+                    "predicted_token_boundary": 2,
+                    "gold_token_boundary": 3,
+                    "no_crossing": False,
+                },
+                {
+                    "model": "lr",
+                    "window_length": 1,
+                    "absolute_token_error": 2,
+                    "predicted_token_boundary": None,
+                    "gold_token_boundary": 3,
+                    "no_crossing": True,
+                },
+                {
+                    "model": "lr",
+                    "window_length": 1,
+                    "absolute_token_error": 3,
+                    "predicted_token_boundary": 4,
+                    "gold_token_boundary": None,
+                    "no_crossing": False,
+                },
+            ]
+        )
+    )
+
+    assert summary.loc[0, "early_rate"] == 1.0
+    assert summary.loc[0, "late_rate"] == 0.0
 
 
 def test_aligns_boundary_when_decoded_tokens_normalize_whitespace() -> None:

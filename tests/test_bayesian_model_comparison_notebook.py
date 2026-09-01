@@ -227,3 +227,26 @@ def test_notebook_validates_kaggle_trained_models_on_semeval_boundaries(source: 
     )
     for fragment in required_fragments:
         assert fragment in source
+
+
+def test_notebook_configures_sustained_boundary_detection(source: str):
+    assert "SEMEVAL_SMOOTHING_WINDOW = 5" in source
+    assert "SEMEVAL_SUSTAINED_LENGTH = 3" in source
+
+    tree = ast.parse(source)
+    prediction_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "predict_boundary_positions"
+    ]
+    assert len(prediction_calls) == 1
+    keyword_values = {
+        keyword.arg: ast.unparse(keyword.value)
+        for keyword in prediction_calls[0].keywords
+    }
+    assert {
+        "smoothing_window": "SEMEVAL_SMOOTHING_WINDOW",
+        "sustained_length": "SEMEVAL_SUSTAINED_LENGTH",
+    }.items() <= keyword_values.items()
