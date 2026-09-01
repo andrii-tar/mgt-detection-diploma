@@ -203,3 +203,22 @@ def test_notebook_calls_focused_plot_with_lr_filtered_windows(source: str):
         if focused_call in ast.walk(child)
     )
     assert call_index > filter_index
+
+
+def test_notebook_validates_kaggle_trained_models_on_semeval_boundaries(source: str):
+    required_fragments = (
+        'SEMEVAL_DATASET = "semeval2024_task8_subtask_c_dev"',
+        "SEMEVAL_PREPARED_PATH",
+        "SEMEVAL_MG_SCORE_THRESHOLD = 0.5",
+        "fit_local_evidence_classifier",
+        "score_local_evidence_classifier",
+        "predict_boundary_positions",
+        "add_gold_boundaries",
+        "summarize_boundary_predictions",
+        "boundary_word_index",
+        "mean_absolute_token_error",
+        "gold_token_boundary",
+        "predicted_token_boundary",
+    )
+    for fragment in required_fragments:
+        assert fragment in source
