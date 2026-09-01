@@ -387,6 +387,22 @@ def test_comparison_evaluates_each_model_window_and_aggregation() -> None:
     assert {"model", "window_length", "feature", "coefficient"} <= set(coefficient_summaries.columns)
 
 
+def test_comparison_can_return_fitted_models_for_reuse() -> None:
+    windows, partitions = comparison_fixture()
+    fitted_models: dict[tuple[str, int], object] = {}
+
+    run_local_evidence_model_comparison(
+        windows,
+        partitions,
+        ("logistic_regression",),
+        feature_columns=FEATURES,
+        fitted_models=fitted_models,
+        show_progress=False,
+    )
+
+    assert set(fitted_models) == {("logistic_regression", 2), ("logistic_regression", 4)}
+
+
 def test_comparison_fits_only_training_parent_windows() -> None:
     windows, partitions = comparison_fixture()
     original = run_local_evidence_model_comparison(

@@ -321,6 +321,7 @@ def run_local_evidence_model_comparison(
     bayesian_config: BayesianConfig | None = None,
     gaussian_mixture_config: GaussianMixtureNBConfig | None = None,
     show_progress: bool = True,
+    fitted_models: dict[tuple[str, int], _FittedClassifier] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     from tqdm import tqdm
     from notebooks.local_evidence_utils import (
@@ -366,13 +367,19 @@ def run_local_evidence_model_comparison(
                 fit_kwargs["bayesian_config"] = bayesian_config
             elif model_name == "gaussian_mixture_nb":
                 fit_kwargs["gaussian_mixture_config"] = gaussian_mixture_config
-            fitted = fit_local_evidence_classifier(
-                model_name,
-                train,
-                normalized_features,
-                seed,
-                **fit_kwargs,
-            )
+            model_key = (model_name, int(window_length))
+            if fitted_models is not None and model_key in fitted_models:
+                fitted = fitted_models[model_key]
+            else:
+                fitted = fit_local_evidence_classifier(
+                    model_name,
+                    train,
+                    normalized_features,
+                    seed,
+                    **fit_kwargs,
+                )
+                if fitted_models is not None:
+                    fitted_models[model_key] = fitted
             coefficient_summary = _summarize_deterministic_coefficients(fitted, window_length)
             if model_name == "pymc_bayesian_logistic":
                 coefficient_summary = summarize_pymc_coefficients(fitted).assign(
