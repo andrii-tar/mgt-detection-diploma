@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import hashlib
 import json
 from numbers import Integral, Real
 from pathlib import Path
@@ -84,6 +85,33 @@ _MODEL_CACHE_FILENAME = "manifest.json"
 
 def _canonical_manifest(manifest: Mapping[str, object]) -> str:
     return json.dumps(dict(manifest), sort_keys=True, separators=(",", ":"))
+
+
+def _canonical_frame_bytes(frame: pd.DataFrame) -> bytes:
+    ordered_columns = sorted(frame.columns, key=lambda column: str(column))
+    normalized = frame.loc[:, ordered_columns].reset_index(drop=True)
+    if ordered_columns:
+        normalized = normalized.sort_values(ordered_columns, kind="mergesort", na_position="first").reset_index(drop=True)
+    metadata = json.dumps(
+        {"columns": [str(column) for column in ordered_columns], "dtypes": [str(dtype) for dtype in normalized.dtypes]},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    values = pd.util.hash_pandas_object(normalized, index=False).to_numpy(dtype="<u8").tobytes()
+    return metadata + b"\0" + values
+
+
+def training_input_fingerprint(
+    windows: pd.DataFrame, partitions: Mapping[str, pd.DataFrame]
+) -> str:
+    """Return a stable digest of the windows and parent partitions used for fitting."""
+    digest = hashlib.sha256()
+    digest.update(_canonical_frame_bytes(windows))
+    for name in sorted(partitions):
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(_canonical_frame_bytes(partitions[name]))
+    return digest.hexdigest()
 
 
 def _fitted_pipeline(pipeline: object, expected_steps: tuple[str, ...], feature_count: int) -> bool:
@@ -289,8 +317,12 @@ def save_fitted_models(
 def load_fitted_models(
     cache_root: Path,
     manifest: Mapping[str, object],
+    *,
+    trust_cache: bool = False,
 ) -> dict[tuple[str, int], _FittedClassifier]:
     """Load a compatible fitted-model cache, treating cache failures as a miss."""
+    if not trust_cache:
+        return {}
     try:
         with (Path(cache_root) / _MODEL_CACHE_FILENAME).open("rb") as cache_file:
             payload = pickle.load(cache_file)
@@ -563,6 +595,7 @@ def run_local_evidence_model_comparison(
     cache_manifest: Mapping[str, object] | None = None,
     reuse_fitted_models: bool = False,
     save_fitted_models: bool = False,
+    trust_fitted_models: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     from tqdm import tqdm
     from notebooks.local_evidence_utils import (
@@ -584,8 +617,16 @@ def run_local_evidence_model_comparison(
     if unknown_models:
         raise ValueError(f"unknown model name: {unknown_models[0]!r}")
     fitted_registry = fitted_models if fitted_models is not None else {}
+    manifest_for_cache = cache_manifest
+    if reuse_fitted_models and cache_manifest is not None:
+        manifest_for_cache = {
+            **cache_manifest,
+            "training_input_fingerprint": training_input_fingerprint(windows, partitions),
+        }
     if reuse_fitted_models and cache_root is not None and cache_manifest is not None:
-        for model_key, fitted in _load_model_cache(cache_root, cache_manifest).items():
+        for model_key, fitted in _load_model_cache(
+            cache_root, manifest_for_cache, trust_cache=trust_fitted_models
+        ).items():
             fitted_registry.setdefault(model_key, fitted)
     partitioned = {
         partition: _partition_windows(windows, partitions[partition], partition)
@@ -706,8 +747,8 @@ def run_local_evidence_model_comparison(
         if coefficient_frames
         else pd.DataFrame(columns=coefficient_columns)
     )
-    if save_fitted_models and cache_root is not None and cache_manifest is not None:
-        _save_model_cache(cache_root, fitted_registry, cache_manifest)
+    if save_fitted_models and cache_root is not None and manifest_for_cache is not None:
+        _save_model_cache(cache_root, fitted_registry, manifest_for_cache)
     return (
         pd.DataFrame(summaries),
         pd.concat(prediction_frames, ignore_index=True),

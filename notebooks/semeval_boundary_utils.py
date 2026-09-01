@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 import re
-import unicodedata
 
 import numpy as np
 import pandas as pd
@@ -75,8 +74,7 @@ def predict_boundary_positions(
 
 
 def _canonicalize_reconstructed_text(text: str) -> str:
-    compatible_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
-    return re.sub(r"\s+", " ", compatible_text).strip()
+    return re.sub(r"\s+", " ", text.replace("\ufffd", "")).strip()
 
 
 def _is_small_character_loss(expected: str, actual: str) -> bool:
@@ -87,6 +85,7 @@ def _is_small_character_loss(expected: str, actual: str) -> bool:
     expected_index = 0
     actual_index = 0
     skipped = 0
+    skipped_characters: list[str] = []
     while expected_index < len(expected) and actual_index < len(actual):
         if expected[expected_index] == actual[actual_index]:
             expected_index += 1
@@ -94,20 +93,46 @@ def _is_small_character_loss(expected: str, actual: str) -> bool:
         else:
             expected_index += 1
             skipped += 1
+            skipped_characters.append(expected[expected_index - 1])
             if skipped > 2:
                 return False
+    skipped_characters.extend(expected[expected_index:])
     skipped += len(expected) - expected_index
-    return skipped == loss
+    return skipped == loss and all(ord(character) < 128 for character in skipped_characters)
+
+
+def _matches_replacement_artifacts(expected: str, actual: str) -> bool:
+    expected_index = 0
+    actual_index = 0
+    while actual_index < len(actual):
+        if actual[actual_index] == "\ufffd":
+            while actual_index < len(actual) and actual[actual_index] == "\ufffd":
+                actual_index += 1
+            if expected_index >= len(expected) or ord(expected[expected_index]) < 128:
+                return False
+            expected_index += 1
+            continue
+        if expected_index >= len(expected) or actual[actual_index] != expected[expected_index]:
+            return False
+        actual_index += 1
+        expected_index += 1
+    return expected_index == len(expected)
 
 
 def _gold_token_boundary(text: str, word_boundary: int, token_labels: Sequence[str]) -> int:
     normalized_text = _canonicalize_reconstructed_text(text)
-    words = normalized_text.split()
+    expected_raw = re.sub(r"\s+", " ", text).strip()
+    decoded_raw = re.sub(r"\s+", " ", "".join(map(str, token_labels))).strip()
+    decoded_text = _canonicalize_reconstructed_text(decoded_raw)
+    replacement_match = _matches_replacement_artifacts(expected_raw, decoded_raw)
+    if not replacement_match and (
+        decoded_text == normalized_text or not _is_small_character_loss(normalized_text, decoded_text)
+    ):
+        raise ValueError("token labels do not reconstruct the annotated text")
+    boundary_text = decoded_text if replacement_match else normalized_text
+    words = boundary_text.split()
     if not 0 <= word_boundary < len(words):
         raise ValueError("boundary_word_index is outside the text word range")
-    decoded_text = _canonicalize_reconstructed_text("".join(map(str, token_labels)))
-    if decoded_text != normalized_text and not _is_small_character_loss(normalized_text, decoded_text):
-        raise ValueError("token labels do not reconstruct the annotated text")
     character_boundary = len(" ".join(words[:word_boundary]))
     character_end = 0
     saw_token_text = False

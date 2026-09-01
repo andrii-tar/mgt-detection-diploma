@@ -377,3 +377,21 @@ def test_rejects_token_labels_that_do_not_match_annotation() -> None:
             pd.DataFrame([{"id": 7, "text": "human words machine only", "boundary_word_index": 2}]),
             {7: ["human", " words", " different", " only"]},
         )
+
+
+def test_rejects_meaningful_unicode_mismatch_in_token_reconstruction() -> None:
+    with pytest.raises(ValueError, match="do not reconstruct"):
+        add_gold_boundaries(
+            pd.DataFrame([{"text_id": 7, "predicted_token_boundary": 2, "token_count": 4}]),
+            pd.DataFrame([{"id": 7, "text": "human café words machine", "boundary_word_index": 2}]),
+            {7: ["human", " cafe", " words", " machine"]},
+        )
+
+
+def test_rejects_inserted_replacement_artifact_in_ascii_annotation() -> None:
+    with pytest.raises(ValueError, match="do not reconstruct"):
+        add_gold_boundaries(
+            pd.DataFrame([{"text_id": 7, "predicted_token_boundary": 2, "token_count": 4}]),
+            pd.DataFrame([{"id": 7, "text": "human words machine only", "boundary_word_index": 2}]),
+            {7: ["human", "\ufffd words", " machine", " only"]},
+        )

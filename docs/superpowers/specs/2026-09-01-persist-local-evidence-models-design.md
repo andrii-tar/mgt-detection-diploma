@@ -14,7 +14,7 @@ The notebook exposes `SAVE_FITTED_MODELS` and `REUSE_FITTED_MODELS` options. Reu
 
 ## Compatibility and Safety
 
-The existing in-memory `fitted_models` registry remains supported for same-run SemEval reuse. Disk persistence is an optional notebook workflow and does not alter classifier output schemas. Cache files are generated data and remain outside git. Loading is restricted to the expected cache directory and failures fall back to retraining with a visible progress message.
+The existing in-memory `fitted_models` registry remains supported for same-run SemEval reuse. Disk persistence is an optional notebook workflow and does not alter classifier output schemas. Cache files are generated data and remain outside git. Pickle loading is a trusted-operation boundary: callers must explicitly set the trust option, which defaults to false, before any cache bytes are deserialized. Loading is restricted to the expected cache directory and failures fall back to retraining with a visible progress message. The manifest also contains a stable fingerprint of the actual windows and partitions used for training, not merely notebook constants.
 
 ## Testing
 

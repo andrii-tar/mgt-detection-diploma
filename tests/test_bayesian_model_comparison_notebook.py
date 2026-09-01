@@ -113,6 +113,7 @@ def test_notebook_runs_one_comparison_with_mandatory_deterministic_models(source
 def test_notebook_configures_fitted_model_cache(source: str):
     assert "SAVE_FITTED_MODELS = False" in source
     assert "REUSE_FITTED_MODELS = True" in source
+    assert "TRUST_FITTED_MODEL_CACHE = False" in source
     assert 'MODEL_CACHE_ROOT = PROCESSED_ROOT / f"{DATASET}__{MODEL}" / "local_evidence" / "models"' in source
     assert "MODEL_CACHE_MANIFEST" in source
     for field in (
@@ -124,6 +125,7 @@ def test_notebook_configures_fitted_model_cache(source: str):
         '"model_names": AVAILABLE_MODELS',
         '"bayesian_config": asdict(BAYESIAN_CONFIG)',
         '"gaussian_mixture_config": asdict(GAUSSIAN_MIXTURE_CONFIG)',
+        'MODEL_CACHE_MANIFEST["training_input_fingerprint"] = training_input_fingerprint(windows, partitions)',
     ):
         assert field in source
 
@@ -147,6 +149,7 @@ def test_notebook_wires_cache_configuration_into_comparison(source: str):
         "cache_manifest": "MODEL_CACHE_MANIFEST",
         "reuse_fitted_models": "REUSE_FITTED_MODELS",
         "save_fitted_models": "SAVE_FITTED_MODELS",
+        "trust_fitted_models": "TRUST_FITTED_MODEL_CACHE",
     }.items() <= keyword_values.items()
 
 
