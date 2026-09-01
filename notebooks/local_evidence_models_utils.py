@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import json
 from numbers import Integral, Real
-from typing import Any
+from pathlib import Path
+import pickle
+import tempfile
+from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
@@ -73,6 +77,239 @@ class _GaussianMixtureNBEstimator:
     mixtures: dict[tuple[str, int], GaussianMixture]
     class_log_priors: dict[int, float]
     config: GaussianMixtureNBConfig
+
+
+_MODEL_CACHE_FILENAME = "manifest.json"
+
+
+def _canonical_manifest(manifest: Mapping[str, object]) -> str:
+    return json.dumps(dict(manifest), sort_keys=True, separators=(",", ":"))
+
+
+def _fitted_pipeline(pipeline: object, expected_steps: tuple[str, ...], feature_count: int) -> bool:
+    if not isinstance(pipeline, Pipeline) or tuple(pipeline.named_steps) != expected_steps:
+        return False
+    imputer = pipeline.named_steps["impute"]
+    if not isinstance(imputer, SimpleImputer) or not hasattr(imputer, "statistics_"):
+        return False
+    statistics = np.asarray(imputer.statistics_)
+    return statistics.ndim == 1 and len(statistics) == feature_count and np.isfinite(statistics).all()
+
+
+def _fitted_deterministic_pipeline(model_name: str, pipeline: object, feature_count: int) -> bool:
+    if model_name == "logistic_regression":
+        if not _fitted_pipeline(pipeline, ("impute", "scale", "model"), feature_count):
+            return False
+        scale = pipeline.named_steps["scale"]
+        model = pipeline.named_steps["model"]
+        return (
+            isinstance(scale, StandardScaler)
+            and hasattr(scale, "mean_")
+            and hasattr(scale, "scale_")
+            and np.asarray(scale.mean_).shape == (feature_count,)
+            and np.asarray(scale.scale_).shape == (feature_count,)
+            and np.isfinite(scale.mean_).all()
+            and np.isfinite(scale.scale_).all()
+            and isinstance(model, LogisticRegression)
+            and hasattr(model, "classes_")
+            and hasattr(model, "coef_")
+            and hasattr(model, "intercept_")
+            and np.asarray(model.classes_).shape == (2,)
+            and np.asarray(model.coef_).shape == (1, feature_count)
+            and np.asarray(model.intercept_).shape == (1,)
+            and np.isfinite(model.coef_).all()
+            and np.isfinite(model.intercept_).all()
+            and hasattr(model, "n_iter_")
+            and np.isfinite(model.n_iter_).all()
+            and np.isfinite(model.C)
+            and np.isfinite(model.tol)
+            and np.isfinite(model.intercept_scaling)
+        )
+    if not _fitted_pipeline(pipeline, ("impute", "model"), feature_count):
+        return False
+    model = pipeline.named_steps["model"]
+    return (
+        isinstance(model, GaussianNB)
+        and hasattr(model, "classes_")
+        and hasattr(model, "class_count_")
+        and hasattr(model, "class_prior_")
+        and hasattr(model, "theta_")
+        and hasattr(model, "var_")
+        and np.asarray(model.classes_).shape == (2,)
+        and np.asarray(model.class_count_).shape == (2,)
+        and np.asarray(model.class_prior_).shape == (2,)
+        and np.asarray(model.theta_).shape == (2, feature_count)
+        and np.asarray(model.var_).shape == (2, feature_count)
+        and np.isfinite(model.classes_).all()
+        and np.isfinite(model.class_count_).all()
+        and np.isfinite(model.class_prior_).all()
+        and np.isfinite(model.theta_).all()
+        and np.isfinite(model.var_).all()
+        and hasattr(model, "epsilon_")
+        and np.isfinite(model.epsilon_)
+        and np.isfinite(model.var_smoothing)
+    )
+
+
+def _fitted_gaussian_mixture(mixture: object, feature_count: int) -> bool:
+    if not isinstance(mixture, GaussianMixture) or not hasattr(mixture, "n_features_in_"):
+        return False
+    if mixture.n_features_in_ != 1 or not hasattr(mixture, "converged_"):
+        return False
+    required = ("weights_", "means_", "covariances_", "precisions_cholesky_")
+    if not all(hasattr(mixture, attribute) for attribute in required):
+        return False
+    components = mixture.n_components
+    return (
+        components > 0
+        and np.asarray(mixture.weights_).shape == (components,)
+        and np.asarray(mixture.means_).shape == (components, 1)
+        and np.asarray(mixture.covariances_).shape == (components, 1, 1)
+        and np.asarray(mixture.precisions_cholesky_).shape == (components, 1, 1)
+        and all(np.isfinite(getattr(mixture, attribute)).all() for attribute in required)
+    )
+
+
+def _fitted_pymc_estimator(estimator: object, feature_count: int) -> bool:
+    if not isinstance(estimator, _PymcEstimator) or estimator.model is None:
+        return False
+    if not _fitted_pipeline(estimator.preprocessing, ("impute", "scale"), feature_count):
+        return False
+    if not isinstance(estimator.config, BayesianConfig) or isinstance(estimator.seed, bool) or not isinstance(estimator.seed, Integral):
+        return False
+    if estimator.approximation is None or not callable(getattr(estimator.approximation, "sample", None)):
+        return False
+    posterior_data = getattr(estimator.posterior, "posterior", None)
+    if posterior_data is None:
+        return False
+    coefficients = np.asarray(posterior_data["coefficients"])
+    intercept = np.asarray(posterior_data["intercept"])
+    return (
+        coefficients.ndim >= 2
+        and coefficients.shape[-1] == feature_count
+        and intercept.size > 0
+        and np.isfinite(coefficients).all()
+        and np.isfinite(intercept).all()
+    )
+
+
+def _valid_cached_classifier(key: object, fitted: object) -> bool:
+    if not isinstance(key, tuple) or len(key) != 2:
+        return False
+    model_name, window_length = key
+    if model_name not in MODEL_NAMES or isinstance(window_length, bool) or not isinstance(window_length, Integral):
+        return False
+    if not isinstance(fitted, _FittedClassifier) or fitted.model_name != model_name:
+        return False
+    if (
+        not isinstance(fitted.feature_columns, tuple)
+        or not fitted.feature_columns
+        or not all(isinstance(feature, str) for feature in fitted.feature_columns)
+    ):
+        return False
+    if model_name in {"logistic_regression", "gaussian_nb"}:
+        return _fitted_deterministic_pipeline(model_name, fitted.estimator, len(fitted.feature_columns))
+    if model_name == "gaussian_mixture_nb":
+        estimator = fitted.estimator
+        if not isinstance(estimator, _GaussianMixtureNBEstimator):
+            return False
+        return (
+            _fitted_pipeline(estimator.preprocessing, ("impute",), len(fitted.feature_columns))
+            and isinstance(estimator.mixtures, dict)
+            and set(estimator.mixtures) == {(feature, label) for feature in fitted.feature_columns for label in (0, 1)}
+            and isinstance(estimator.class_log_priors, dict)
+            and set(estimator.class_log_priors) == {0, 1}
+            and all(isinstance(value, Real) and not isinstance(value, bool) and np.isfinite(value) for value in estimator.class_log_priors.values())
+            and all(
+                _fitted_gaussian_mixture(estimator.mixtures[key], len(fitted.feature_columns))
+                for key in estimator.mixtures
+            )
+        )
+    return _fitted_pymc_estimator(fitted.estimator, len(fitted.feature_columns))
+
+
+def _cached_registry_matches_manifest(
+    registry: Mapping[object, object], manifest: Mapping[str, object]
+) -> bool:
+    expected_features = manifest.get("features", manifest.get("feature_columns"))
+    if expected_features is not None:
+        if not isinstance(expected_features, (list, tuple)) or not all(
+            isinstance(feature, str) for feature in expected_features
+        ):
+            return False
+        if any(fitted.feature_columns != tuple(expected_features) for fitted in registry.values()):
+            return False
+
+    expected_models = manifest.get("model_names")
+    if expected_models is not None:
+        if not isinstance(expected_models, (list, tuple, set)) or not all(
+            isinstance(model_name, str) for model_name in expected_models
+        ):
+            return False
+        if any(fitted.model_name not in expected_models for fitted in registry.values()):
+            return False
+
+    expected_bayesian = manifest.get("bayesian_config")
+    expected_mixture = manifest.get("gaussian_mixture_config")
+    for fitted in registry.values():
+        if fitted.model_name == "pymc_bayesian_logistic" and expected_bayesian is not None:
+            if not isinstance(expected_bayesian, Mapping) or asdict(fitted.estimator.config) != dict(expected_bayesian):
+                return False
+        if fitted.model_name == "gaussian_mixture_nb" and expected_mixture is not None:
+            if not isinstance(expected_mixture, Mapping) or asdict(fitted.estimator.config) != dict(expected_mixture):
+                return False
+    return True
+
+
+def save_fitted_models(
+    cache_root: Path,
+    fitted_models: Mapping[tuple[str, int], _FittedClassifier],
+    manifest: Mapping[str, object],
+) -> None:
+    """Persist fitted models and their configuration as one atomic cache payload."""
+    cache_root = Path(cache_root)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    payload = {"manifest": _canonical_manifest(manifest), "registry": dict(fitted_models)}
+    cache_path = cache_root / _MODEL_CACHE_FILENAME
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=cache_root, prefix=f".{cache_path.name}.", suffix=".tmp", delete=False
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            pickle.dump(payload, temporary, protocol=pickle.HIGHEST_PROTOCOL)
+            temporary.flush()
+        temporary_path.replace(cache_path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def load_fitted_models(
+    cache_root: Path,
+    manifest: Mapping[str, object],
+) -> dict[tuple[str, int], _FittedClassifier]:
+    """Load a compatible fitted-model cache, treating cache failures as a miss."""
+    try:
+        with (Path(cache_root) / _MODEL_CACHE_FILENAME).open("rb") as cache_file:
+            payload = pickle.load(cache_file)
+        if not isinstance(payload, dict) or payload.get("manifest") != _canonical_manifest(manifest):
+            return {}
+        registry = payload.get("registry")
+        if not isinstance(registry, dict) or not all(
+            _valid_cached_classifier(key, fitted) for key, fitted in registry.items()
+        ):
+            return {}
+        if not _cached_registry_matches_manifest(registry, manifest):
+            return {}
+        return registry
+    except Exception:
+        return {}
+
+
+_load_model_cache = load_fitted_models
+_save_model_cache = save_fitted_models
 
 
 def _load_pymc() -> Any:
@@ -322,6 +559,10 @@ def run_local_evidence_model_comparison(
     gaussian_mixture_config: GaussianMixtureNBConfig | None = None,
     show_progress: bool = True,
     fitted_models: dict[tuple[str, int], _FittedClassifier] | None = None,
+    cache_root: Path | None = None,
+    cache_manifest: Mapping[str, object] | None = None,
+    reuse_fitted_models: bool = False,
+    save_fitted_models: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     from tqdm import tqdm
     from notebooks.local_evidence_utils import (
@@ -342,6 +583,10 @@ def run_local_evidence_model_comparison(
     unknown_models = [name for name in requested_models if name not in MODEL_NAMES]
     if unknown_models:
         raise ValueError(f"unknown model name: {unknown_models[0]!r}")
+    fitted_registry = fitted_models if fitted_models is not None else {}
+    if reuse_fitted_models and cache_root is not None and cache_manifest is not None:
+        for model_key, fitted in _load_model_cache(cache_root, cache_manifest).items():
+            fitted_registry.setdefault(model_key, fitted)
     partitioned = {
         partition: _partition_windows(windows, partitions[partition], partition)
         for partition in ("train", "validation", "test")
@@ -368,8 +613,8 @@ def run_local_evidence_model_comparison(
             elif model_name == "gaussian_mixture_nb":
                 fit_kwargs["gaussian_mixture_config"] = gaussian_mixture_config
             model_key = (model_name, int(window_length))
-            if fitted_models is not None and model_key in fitted_models:
-                fitted = fitted_models[model_key]
+            if model_key in fitted_registry:
+                fitted = fitted_registry[model_key]
             else:
                 fitted = fit_local_evidence_classifier(
                     model_name,
@@ -378,8 +623,7 @@ def run_local_evidence_model_comparison(
                     seed,
                     **fit_kwargs,
                 )
-                if fitted_models is not None:
-                    fitted_models[model_key] = fitted
+                fitted_registry[model_key] = fitted
             coefficient_summary = _summarize_deterministic_coefficients(fitted, window_length)
             if model_name == "pymc_bayesian_logistic":
                 coefficient_summary = summarize_pymc_coefficients(fitted).assign(
@@ -462,6 +706,8 @@ def run_local_evidence_model_comparison(
         if coefficient_frames
         else pd.DataFrame(columns=coefficient_columns)
     )
+    if save_fitted_models and cache_root is not None and cache_manifest is not None:
+        _save_model_cache(cache_root, fitted_registry, cache_manifest)
     return (
         pd.DataFrame(summaries),
         pd.concat(prediction_frames, ignore_index=True),

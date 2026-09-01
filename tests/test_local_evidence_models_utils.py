@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import builtins
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 from sklearn.mixture import GaussianMixture
 from sklearn.naive_bayes import GaussianNB
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 import notebooks.local_evidence_models_utils as models_utils
 from notebooks.local_evidence_models_utils import (
@@ -64,6 +67,10 @@ def training_windows() -> pd.DataFrame:
             "feature_b": [1.0, 1.2, 0.0, 0.2],
         }
     )
+
+
+def _cache_manifest() -> dict[str, object]:
+    return {"schema_version": 1, "feature_columns": list(FEATURES), "seed": 42}
 
 
 def test_model_names_are_stable() -> None:
@@ -403,6 +410,128 @@ def test_comparison_can_return_fitted_models_for_reuse() -> None:
     assert set(fitted_models) == {("logistic_regression", 2), ("logistic_regression", 4)}
 
 
+def test_comparison_reuses_compatible_cache_without_fitting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    windows, partitions = comparison_fixture()
+    registry = {}
+    for window_length in (2, 4):
+        train = windows.loc[windows["window_length"].eq(window_length)]
+        registry[("logistic_regression", window_length)] = fit_local_evidence_classifier(
+            "logistic_regression", train, FEATURES, seed=42
+        )
+    manifest = {"feature_columns": list(FEATURES), "seed": 42}
+    models_utils.save_fitted_models(tmp_path, registry, manifest)
+
+    def fail_fit(*args: object, **kwargs: object) -> object:
+        raise AssertionError("compatible cache should avoid fitting")
+
+    monkeypatch.setattr(models_utils, "fit_local_evidence_classifier", fail_fit)
+    result = run_local_evidence_model_comparison(
+        windows,
+        partitions,
+        ("logistic_regression",),
+        feature_columns=FEATURES,
+        cache_root=tmp_path,
+        cache_manifest=manifest,
+        reuse_fitted_models=True,
+        show_progress=False,
+    )
+
+    assert len(result) == 4
+
+
+@pytest.mark.parametrize("cache_manifest", [None, {"feature_columns": ["other"], "seed": 42}])
+def test_comparison_fits_when_cache_is_missing_or_incompatible(
+    tmp_path: Path, cache_manifest: dict[str, object] | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    windows, partitions = comparison_fixture()
+    fit_calls = 0
+    original_fit = models_utils.fit_local_evidence_classifier
+
+    def count_fit(*args: object, **kwargs: object) -> object:
+        nonlocal fit_calls
+        fit_calls += 1
+        return original_fit(*args, **kwargs)
+
+    monkeypatch.setattr(models_utils, "fit_local_evidence_classifier", count_fit)
+    result = run_local_evidence_model_comparison(
+        windows,
+        partitions,
+        ("logistic_regression",),
+        feature_columns=FEATURES,
+        cache_root=tmp_path,
+        cache_manifest=cache_manifest or {"feature_columns": list(FEATURES), "seed": 42},
+        reuse_fitted_models=True,
+        show_progress=False,
+    )
+
+    assert len(result) == 4
+    assert fit_calls == 2
+
+
+def test_comparison_saves_only_after_successful_comparison(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    windows, partitions = comparison_fixture()
+    manifest = {"feature_columns": list(FEATURES), "seed": 42}
+    save_calls = []
+    monkeypatch.setattr(
+        models_utils,
+        "_save_model_cache",
+        lambda root, registry, cache_manifest: save_calls.append((root, registry, cache_manifest)),
+    )
+
+    run_local_evidence_model_comparison(
+        windows,
+        partitions,
+        ("logistic_regression",),
+        feature_columns=FEATURES,
+        cache_root=tmp_path,
+        cache_manifest=manifest,
+        save_fitted_models=True,
+        show_progress=False,
+    )
+    assert len(save_calls) == 1
+    assert set(save_calls[0][1]) == {("logistic_regression", 2), ("logistic_regression", 4)}
+
+    invalid_partitions = {key: value.copy() for key, value in partitions.items()}
+    invalid_partitions["test"]["label"] = 0
+    with pytest.raises(ValueError, match="labels inconsistent"):
+        run_local_evidence_model_comparison(
+            windows,
+            invalid_partitions,
+            ("logistic_regression",),
+            feature_columns=FEATURES,
+            cache_root=tmp_path,
+            cache_manifest=manifest,
+            save_fitted_models=True,
+            show_progress=False,
+        )
+    assert len(save_calls) == 1
+
+
+def test_cache_rejects_registry_with_manifest_feature_or_configuration_mismatch(tmp_path: Path) -> None:
+    fitted = fit_local_evidence_classifier("logistic_regression", training_windows(), FEATURES, seed=42)
+    models_utils.save_fitted_models(
+        tmp_path,
+        {("logistic_regression", 4): fitted},
+        {"feature_columns": ["wrong_a", "wrong_b"], "model_names": ["logistic_regression"], "seed": 42},
+    )
+
+    assert models_utils.load_fitted_models(
+        tmp_path,
+        {"feature_columns": ["wrong_a", "wrong_b"], "model_names": ["logistic_regression"], "seed": 42},
+    ) == {}
+
+    mixture = fit_local_evidence_classifier("gaussian_mixture_nb", training_windows(), FEATURES, seed=42)
+    mixture_manifest = {
+        "features": list(FEATURES),
+        "model_names": ["gaussian_mixture_nb"],
+        "gaussian_mixture_config": {"components": 3, "reg_covar": 1e-6},
+    }
+    models_utils.save_fitted_models(tmp_path, {("gaussian_mixture_nb", 4): mixture}, mixture_manifest)
+    assert models_utils.load_fitted_models(tmp_path, mixture_manifest) == {}
+
+
 def test_comparison_fits_only_training_parent_windows() -> None:
     windows, partitions = comparison_fixture()
     original = run_local_evidence_model_comparison(
@@ -486,3 +615,114 @@ def test_comparison_threshold_selection_ignores_test_labels() -> None:
         original[0][threshold_columns].reset_index(drop=True),
         changed[0][threshold_columns].reset_index(drop=True),
     )
+
+
+def test_fitted_classifier_round_trips_through_cache_with_identical_predictions(tmp_path: Path) -> None:
+    fitted = fit_local_evidence_classifier("logistic_regression", training_windows(), FEATURES, seed=42)
+    registry = {("logistic_regression", 4): fitted}
+    manifest = _cache_manifest()
+
+    models_utils.save_fitted_models(tmp_path, registry, manifest)
+
+    loaded = models_utils.load_fitted_models(tmp_path, manifest)
+    assert set(loaded) == set(registry)
+    pd.testing.assert_frame_equal(
+        score_local_evidence_classifier(fitted, training_windows(), FEATURES),
+        score_local_evidence_classifier(loaded[("logistic_regression", 4)], training_windows(), FEATURES),
+    )
+
+
+def test_incompatible_manifest_returns_empty_registry(tmp_path: Path) -> None:
+    fitted = fit_local_evidence_classifier("gaussian_nb", training_windows(), FEATURES, seed=42)
+    models_utils.save_fitted_models(tmp_path, {("gaussian_nb", 4): fitted}, _cache_manifest())
+
+    incompatible = {**_cache_manifest(), "seed": 99}
+    assert models_utils.load_fitted_models(tmp_path, incompatible) == {}
+
+
+@pytest.mark.parametrize("cache_setup", ["missing", "malformed"])
+def test_missing_or_malformed_cache_data_returns_empty_registry(tmp_path: Path, cache_setup: str) -> None:
+    if cache_setup == "malformed":
+        (tmp_path / "manifest.json").write_text("not json", encoding="utf-8")
+
+    assert models_utils.load_fitted_models(tmp_path, _cache_manifest()) == {}
+
+
+def test_saving_replaces_existing_cache_atomically(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = fit_local_evidence_classifier("logistic_regression", training_windows(), FEATURES, seed=42)
+    second = fit_local_evidence_classifier("gaussian_nb", training_windows(), FEATURES, seed=42)
+    manifest = _cache_manifest()
+
+    models_utils.save_fitted_models(tmp_path, {("logistic_regression", 4): first}, manifest)
+
+    def fail_replace(self: Path, target: str | Path) -> Path:
+        raise OSError("simulated cache replacement failure")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    with pytest.raises(OSError, match="simulated cache replacement failure"):
+        models_utils.save_fitted_models(tmp_path, {("gaussian_nb", 4): second}, manifest)
+
+    loaded = models_utils.load_fitted_models(tmp_path, manifest)
+    assert set(loaded) == {("logistic_regression", 4)}
+
+
+@pytest.mark.parametrize("model_name", ["logistic_regression", "gaussian_nb"])
+def test_invalid_deterministic_pipeline_cache_returns_empty_registry(tmp_path: Path, model_name: str) -> None:
+    fitted = fit_local_evidence_classifier(model_name, training_windows(), FEATURES, seed=42)
+    estimator = fitted.estimator
+    del estimator.named_steps["impute"].statistics_
+    models_utils.save_fitted_models(tmp_path, {(model_name, 4): fitted}, _cache_manifest())
+
+    assert models_utils.load_fitted_models(tmp_path, _cache_manifest()) == {}
+
+
+@pytest.mark.parametrize(
+    ("model_name", "attribute"),
+    [
+        ("logistic_regression", "coef_"),
+        ("logistic_regression", "intercept_"),
+        ("gaussian_nb", "class_count_"),
+        ("gaussian_nb", "class_prior_"),
+        ("gaussian_nb", "theta_"),
+        ("gaussian_nb", "var_"),
+    ],
+)
+def test_non_finite_deterministic_model_state_invalidates_cache(
+    tmp_path: Path, model_name: str, attribute: str
+) -> None:
+    fitted = fit_local_evidence_classifier(model_name, training_windows(), FEATURES, seed=42)
+    learned = getattr(fitted.estimator.named_steps["model"], attribute)
+    learned.flat[0] = np.nan
+    models_utils.save_fitted_models(tmp_path, {(model_name, 4): fitted}, _cache_manifest())
+
+    assert models_utils.load_fitted_models(tmp_path, _cache_manifest()) == {}
+
+
+def test_invalid_gaussian_mixture_cache_returns_empty_registry(tmp_path: Path) -> None:
+    fitted = fit_local_evidence_classifier("gaussian_mixture_nb", training_windows(), FEATURES, seed=42)
+    del fitted.estimator.mixtures[(FEATURES[0], 1)]
+    fitted.estimator.class_log_priors[0] = float("nan")
+    models_utils.save_fitted_models(tmp_path, {("gaussian_mixture_nb", 4): fitted}, _cache_manifest())
+
+    assert models_utils.load_fitted_models(tmp_path, _cache_manifest()) == {}
+
+
+def test_invalid_pymc_cache_returns_empty_registry(tmp_path: Path) -> None:
+    preprocessing = Pipeline([("scale", StandardScaler())])
+    fitted = models_utils._FittedClassifier(
+        "pymc_bayesian_logistic",
+        FEATURES,
+        models_utils._PymcEstimator(
+            model=None,
+            approximation=None,
+            preprocessing=preprocessing,
+            posterior=None,
+            config=None,
+            seed=None,
+        ),
+    )
+    models_utils.save_fitted_models(tmp_path, {("pymc_bayesian_logistic", 4): fitted}, _cache_manifest())
+
+    assert models_utils.load_fitted_models(tmp_path, _cache_manifest()) == {}

@@ -110,6 +110,46 @@ def test_notebook_runs_one_comparison_with_mandatory_deterministic_models(source
     assert "AVAILABLE_MODELS" in source
 
 
+def test_notebook_configures_fitted_model_cache(source: str):
+    assert "SAVE_FITTED_MODELS = False" in source
+    assert "REUSE_FITTED_MODELS = True" in source
+    assert 'MODEL_CACHE_ROOT = PROCESSED_ROOT / f"{DATASET}__{MODEL}" / "local_evidence" / "models"' in source
+    assert "MODEL_CACHE_MANIFEST" in source
+    for field in (
+        '"dataset": DATASET',
+        '"model": MODEL',
+        '"features": LOCAL_FEATURE_COLUMNS',
+        '"seed": SEED',
+        '"window_lengths": WINDOW_LENGTHS',
+        '"model_names": AVAILABLE_MODELS',
+        '"bayesian_config": asdict(BAYESIAN_CONFIG)',
+        '"gaussian_mixture_config": asdict(GAUSSIAN_MIXTURE_CONFIG)',
+    ):
+        assert field in source
+
+
+def test_notebook_wires_cache_configuration_into_comparison(source: str):
+    tree = ast.parse(source)
+    comparison_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "run_local_evidence_model_comparison"
+    ]
+    assert len(comparison_calls) == 1
+    keyword_values = {
+        keyword.arg: ast.unparse(keyword.value)
+        for keyword in comparison_calls[0].keywords
+    }
+    assert {
+        "cache_root": "MODEL_CACHE_ROOT",
+        "cache_manifest": "MODEL_CACHE_MANIFEST",
+        "reuse_fitted_models": "REUSE_FITTED_MODELS",
+        "save_fitted_models": "SAVE_FITTED_MODELS",
+    }.items() <= keyword_values.items()
+
+
 def test_notebook_groups_overall_metrics_and_covers_configured_lengths(source: str):
     assert 'groupby(["model", "window_length", "aggregation"])' in source
     assert "for window_length in WINDOW_LENGTHS" in source
