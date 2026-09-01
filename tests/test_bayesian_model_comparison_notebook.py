@@ -219,6 +219,11 @@ def test_notebook_validates_kaggle_trained_models_on_semeval_boundaries(source: 
         "mean_absolute_token_error",
         "gold_token_boundary",
         "predicted_token_boundary",
+        "fitted_models = {}",
+        "fitted_models=fitted_models",
+        "load_token_labels",
+        "show_progress=True",
+        "Scoring SemEval with trained models",
     )
     for fragment in required_fragments:
         assert fragment in source
