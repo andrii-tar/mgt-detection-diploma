@@ -56,6 +56,29 @@ def load_text_row(processed_root: Path, dataset: str, model: str, split: str, te
     raise IndexError(f"text_index {text_index} is outside {offset} available rows")
 
 
+def load_token_labels(
+    processed_root: Path,
+    dataset: str,
+    model: str,
+    split: str,
+    *,
+    show_progress: bool = False,
+) -> dict[int, list[str]]:
+    data_paths = sorted((split_dir(processed_root, dataset, model, split) / "data").glob("*.parquet"))
+    if not data_paths:
+        raise FileNotFoundError(f"No stage-1 data parquet files for {dataset=} {model=} {split=}")
+    rows: dict[int, list[str]] = {}
+    paths = tqdm(data_paths, desc=f"Loading {dataset} {split} tokens", unit="file") if show_progress else data_paths
+    for path in paths:
+        frame = pd.read_parquet(path, columns=["id", "tokens"])
+        for row in frame.itertuples(index=False):
+            text_id = int(row.id)
+            if text_id in rows:
+                raise ValueError(f"duplicate stage-1 text id: {text_id}")
+            rows[text_id] = [str(token["token"]) for token in row.tokens]
+    return rows
+
+
 def text_index_for_id(processed_root: Path, dataset: str, model: str, split: str, text_id: int) -> int:
     data_paths = sorted((split_dir(processed_root, dataset, model, split) / "data").glob("*.parquet"))
     if not data_paths:

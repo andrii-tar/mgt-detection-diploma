@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from notebooks.token_candidate_similarity_heatmaps_utils import (
+    load_token_labels,
     plot_focused_token_metrics_with_local_evidence,
 )
 
@@ -47,6 +48,30 @@ def test_focused_plot_has_exactly_three_labels_and_lines(monkeypatch) -> None:
     assert all(np.array_equal(line.get_xdata(), np.arange(5)) for line in axis.lines)
     assert axis.get_ylim() == (0.0, 1.0)
     plt.close(figure)
+
+
+def test_load_token_labels_reads_stage_one_files_once(tmp_path, monkeypatch) -> None:
+    data_dir = tmp_path / "dataset__model" / "MG" / "data"
+    data_dir.mkdir(parents=True)
+    paths = [data_dir / "000.parquet", data_dir / "001.parquet"]
+    for path in paths:
+        path.touch()
+    calls = []
+
+    monkeypatch.setattr(
+        pd,
+        "read_parquet",
+        lambda path, **_: calls.append(path) or pd.DataFrame(
+            [{"id": 1, "tokens": [{"token": "hello"}]}]
+            if path == paths[0]
+            else [{"id": 2, "tokens": [{"token": "world"}]}]
+        ),
+    )
+
+    labels = load_token_labels(tmp_path, "dataset", "model", "MG")
+
+    assert labels == {1: ["hello"], 2: ["world"]}
+    assert calls == paths
 
 
 def test_focused_plot_normalizes_each_series_independently(monkeypatch) -> None:
