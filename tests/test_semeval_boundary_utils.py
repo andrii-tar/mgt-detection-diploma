@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from notebooks.semeval_boundary_utils import (
     add_gold_boundaries,
