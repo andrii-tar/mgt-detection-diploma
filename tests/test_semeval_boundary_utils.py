@@ -287,6 +287,89 @@ def test_aligns_boundary_when_decoded_tokens_normalize_whitespace() -> None:
     assert labeled["gold_token_boundary"].tolist() == [2]
 
 
+def test_aligns_boundary_when_unicode_artifacts_are_ascii_compatible() -> None:
+    predictions = pd.DataFrame(
+        [{"text_id": 7, "predicted_token_boundary": 2, "token_count": 4}]
+    )
+    annotations = pd.DataFrame(
+        [{"id": 7, "text": "human’s words machine only", "boundary_word_index": 2}]
+    )
+
+    labeled = add_gold_boundaries(
+        predictions,
+        annotations,
+        {7: ["human�s", " words", " machine", " only"]},
+    )
+
+    assert labeled["gold_token_boundary"].tolist() == [2]
+
+
+def test_omits_repeated_replacement_artifacts_during_reconstruction() -> None:
+    predictions = pd.DataFrame(
+        [{"text_id": 7, "predicted_token_boundary": 1, "token_count": 2}]
+    )
+    annotations = pd.DataFrame(
+        [{"id": 7, "text": "human’s—words machine", "boundary_word_index": 1}]
+    )
+
+    labeled = add_gold_boundaries(
+        predictions,
+        annotations,
+        {7: ["human��s���words", " machine"]},
+    )
+
+    assert labeled["gold_token_boundary"].tolist() == [1]
+
+
+def test_aligns_boundary_when_token_reconstruction_loses_one_character() -> None:
+    predictions = pd.DataFrame(
+        [{"text_id": 7, "predicted_token_boundary": 2, "token_count": 4}]
+    )
+    annotations = pd.DataFrame(
+        [{"id": 7, "text": "human words machine only", "boundary_word_index": 2}]
+    )
+
+    labeled = add_gold_boundaries(
+        predictions,
+        annotations,
+        {7: ["human", " words", " machine", " onl"]},
+    )
+
+    assert labeled["gold_token_boundary"].tolist() == [2]
+
+
+def test_aligns_boundary_when_long_token_reconstruction_loses_two_characters() -> None:
+    predictions = pd.DataFrame(
+        [{"text_id": 7, "predicted_token_boundary": 5, "token_count": 6}]
+    )
+    annotations = pd.DataFrame(
+        [{
+            "id": 7,
+            "text": (
+                "human written material contains a carefully constructed machine generated continuation"
+            ),
+            "boundary_word_index": 5,
+        }]
+    )
+
+    labeled = add_gold_boundaries(
+        predictions,
+        annotations,
+        {
+            7: [
+                "human",
+                " written",
+                " material",
+                " contains",
+                " a",
+                " carefully constructed machine generated continuati",
+            ]
+        },
+    )
+
+    assert labeled["gold_token_boundary"].tolist() == [5]
+
+
 def test_rejects_token_labels_that_do_not_match_annotation() -> None:
     with pytest.raises(ValueError, match="do not reconstruct"):
         add_gold_boundaries(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 import re
+import unicodedata
 
 import numpy as np
 import pandas as pd
@@ -73,19 +74,45 @@ def predict_boundary_positions(
     )
 
 
+def _canonicalize_reconstructed_text(text: str) -> str:
+    compatible_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", compatible_text).strip()
+
+
+def _is_small_character_loss(expected: str, actual: str) -> bool:
+    loss = len(expected) - len(actual)
+    if not 1 <= loss <= 2:
+        return False
+
+    expected_index = 0
+    actual_index = 0
+    skipped = 0
+    while expected_index < len(expected) and actual_index < len(actual):
+        if expected[expected_index] == actual[actual_index]:
+            expected_index += 1
+            actual_index += 1
+        else:
+            expected_index += 1
+            skipped += 1
+            if skipped > 2:
+                return False
+    skipped += len(expected) - expected_index
+    return skipped == loss
+
+
 def _gold_token_boundary(text: str, word_boundary: int, token_labels: Sequence[str]) -> int:
-    words = text.split()
+    normalized_text = _canonicalize_reconstructed_text(text)
+    words = normalized_text.split()
     if not 0 <= word_boundary < len(words):
         raise ValueError("boundary_word_index is outside the text word range")
-    normalized_text = re.sub(r"\s+", " ", text).strip()
-    decoded_text = re.sub(r"\s+", " ", "".join(map(str, token_labels))).strip()
-    if decoded_text != normalized_text:
+    decoded_text = _canonicalize_reconstructed_text("".join(map(str, token_labels)))
+    if decoded_text != normalized_text and not _is_small_character_loss(normalized_text, decoded_text):
         raise ValueError("token labels do not reconstruct the annotated text")
     character_boundary = len(" ".join(words[:word_boundary]))
     character_end = 0
     saw_token_text = False
     for token_index, token in enumerate(token_labels):
-        normalized_token = re.sub(r"\s+", " ", str(token)).strip()
+        normalized_token = _canonicalize_reconstructed_text(str(token))
         if normalized_token:
             saw_token_text = True
             character_end += len(normalized_token) + int(character_end > 0)
