@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import re
 
 import numpy as np
 import pandas as pd
+from tqdm.auto import tqdm
 
 from notebooks.local_evidence_comparison_utils import expand_model_scores_to_tokens
 
@@ -13,6 +15,7 @@ def predict_boundary_positions(
     token_counts: Mapping[int, int],
     *,
     threshold: float = 0.5,
+    show_progress: bool = False,
 ) -> pd.DataFrame:
     required = {"model", "window_length", "text_id", "start_token", "stop_token", "mg_score"}
     missing = required.difference(scored_windows.columns)
@@ -22,9 +25,9 @@ def predict_boundary_positions(
         raise ValueError("threshold must be between zero and one")
 
     rows: list[dict[str, object]] = []
-    for (model, window_length, text_id), text_windows in scored_windows.groupby(
-        ["model", "window_length", "text_id"], sort=True
-    ):
+    grouped = scored_windows.groupby(["model", "window_length", "text_id"], sort=True)
+    groups = tqdm(grouped, total=grouped.ngroups, desc="Finding SemEval boundaries", unit="text") if show_progress else grouped
+    for (model, window_length, text_id), text_windows in groups:
         text_id = int(text_id)
         try:
             token_count = int(token_counts[text_id])
@@ -49,19 +52,26 @@ def predict_boundary_positions(
 
 
 def _gold_token_boundary(text: str, word_boundary: int, token_labels: Sequence[str]) -> int:
-    words = text.split(" ")
+    words = text.split()
     if not 0 <= word_boundary < len(words):
         raise ValueError("boundary_word_index is outside the text word range")
-    if "".join(token_labels) != text:
+    normalized_text = re.sub(r"\s+", " ", text).strip()
+    decoded_text = re.sub(r"\s+", " ", "".join(map(str, token_labels))).strip()
+    if decoded_text != normalized_text:
         raise ValueError("token labels do not reconstruct the annotated text")
-
-    character_boundary = len(" ".join(words[:word_boundary])) + int(word_boundary > 0)
+    character_boundary = len(" ".join(words[:word_boundary]))
     character_end = 0
+    saw_token_text = False
     for token_index, token in enumerate(token_labels):
-        character_end += len(token)
-        if character_end > character_boundary:
-            return token_index
-    raise ValueError("word boundary does not map to a token")
+        normalized_token = re.sub(r"\s+", " ", str(token)).strip()
+        if normalized_token:
+            saw_token_text = True
+            character_end += len(normalized_token) + int(character_end > 0)
+        if character_end >= character_boundary:
+            return 0 if word_boundary == 0 else token_index + 1
+    if saw_token_text and character_end >= character_boundary:
+        return len(token_labels)
+    raise ValueError("word boundary does not map to a decoded token")
 
 
 def add_gold_boundaries(

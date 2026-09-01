@@ -75,3 +75,29 @@ def test_aligns_semantic_word_boundary_to_token_and_summarizes_errors() -> None:
             "within_5_accuracy": 1.0,
         }
     ]
+
+
+def test_aligns_boundary_when_decoded_tokens_normalize_whitespace() -> None:
+    predictions = pd.DataFrame(
+        [{"text_id": 7, "predicted_token_boundary": 2, "token_count": 4}]
+    )
+    annotations = pd.DataFrame(
+        [{"id": 7, "text": "human words\nmachine only", "boundary_word_index": 2}]
+    )
+
+    labeled = add_gold_boundaries(
+        predictions,
+        annotations,
+        {7: ["human", " words", " machine", " only"]},
+    )
+
+    assert labeled["gold_token_boundary"].tolist() == [2]
+
+
+def test_rejects_token_labels_that_do_not_match_annotation() -> None:
+    with pytest.raises(ValueError, match="do not reconstruct"):
+        add_gold_boundaries(
+            pd.DataFrame([{"text_id": 7, "predicted_token_boundary": 2, "token_count": 4}]),
+            pd.DataFrame([{"id": 7, "text": "human words machine only", "boundary_word_index": 2}]),
+            {7: ["human", " words", " different", " only"]},
+        )
