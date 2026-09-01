@@ -15,6 +15,8 @@ def predict_boundary_positions(
     token_counts: Mapping[int, int],
     *,
     threshold: float = 0.5,
+    smoothing_window: int = 5,
+    sustained_length: int = 3,
     show_progress: bool = False,
 ) -> pd.DataFrame:
     required = {"model", "window_length", "text_id", "start_token", "stop_token", "mg_score"}
@@ -23,6 +25,10 @@ def predict_boundary_positions(
         raise ValueError(f"missing columns: {', '.join(sorted(missing))}")
     if not 0.0 <= threshold <= 1.0:
         raise ValueError("threshold must be between zero and one")
+    if smoothing_window <= 0 or smoothing_window % 2 == 0:
+        raise ValueError("smoothing_window must be a positive odd integer")
+    if sustained_length <= 0:
+        raise ValueError("sustained_length must be positive")
 
     rows: list[dict[str, object]] = []
     grouped = scored_windows.groupby(["model", "window_length", "text_id"], sort=True)
@@ -35,13 +41,26 @@ def predict_boundary_positions(
             raise KeyError(f"missing token count for text id {text_id}") from error
         expanded = expand_model_scores_to_tokens(text_windows, token_count)
         scores = expanded.sort_values("token_position")["mg_score"].to_numpy(dtype="float64")
-        matches = np.flatnonzero(np.isfinite(scores) & (scores >= threshold))
+        smoothed_scores = (
+            pd.Series(scores)
+            .rolling(smoothing_window, center=True, min_periods=1)
+            .median()
+            .to_numpy()
+        )
+        above_threshold = np.isfinite(smoothed_scores) & (smoothed_scores >= threshold)
+        run_length = 0
+        boundary = token_count
+        for token_position, is_above_threshold in enumerate(above_threshold):
+            run_length = run_length + 1 if is_above_threshold else 0
+            if run_length >= sustained_length:
+                boundary = token_position - sustained_length + 1
+                break
         rows.append(
             {
                 "model": model,
                 "window_length": int(window_length),
                 "text_id": text_id,
-                "predicted_token_boundary": int(matches[0]) if len(matches) else token_count,
+                "predicted_token_boundary": boundary,
                 "token_count": token_count,
             }
         )
