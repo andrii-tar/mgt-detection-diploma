@@ -61,6 +61,20 @@ def build_datasets(data_root: Path) -> dict[str, dict[str, object]]:
             "MG": data_root / "raw/outfox/outfox_chatgpt_all_MG.csv",
         },
     },
+    "semeval2024_task8_subtask_c_train": {
+        "dataset_name": "semeval2024_task8_subtask_c_train",
+        "splits": {
+            "MG": data_root
+            / "raw/semevals_2024-task8/SemEval2024-task8/subtaskC/SemEval2024_task8_C_train_MG.csv",
+        },
+    },
+    "semeval2024_task8_subtask_c_dev": {
+        "dataset_name": "semeval2024_task8_subtask_c_dev",
+        "splits": {
+            "MG": data_root
+            / "raw/semevals_2024-task8/SemEval2024-task8/subtaskC/SemEval2024_task8_C_dev_MG.csv",
+        },
+    },
     "custom_2025": {
         "dataset_name": "custom_2025",
         "splits": {

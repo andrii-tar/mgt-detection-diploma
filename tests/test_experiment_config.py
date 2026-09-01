@@ -23,3 +23,17 @@ def test_resolve_custom_2025_dataset_splits(tmp_path: Path):
         "HG": tmp_path / "raw/custom/samples_2025/custom_2025_HG.csv",
         "MG": tmp_path / "raw/custom/samples_2025/custom_2025_MG.csv",
     }
+
+
+def test_resolve_semeval_subtask_c_train_dataset_split(tmp_path: Path):
+    assert resolve_dataset_splits("semeval2024_task8_subtask_c_train", tmp_path) == {
+        "MG": tmp_path
+        / "raw/semevals_2024-task8/SemEval2024-task8/subtaskC/SemEval2024_task8_C_train_MG.csv",
+    }
+
+
+def test_resolve_semeval_subtask_c_dev_dataset_split(tmp_path: Path):
+    assert resolve_dataset_splits("semeval2024_task8_subtask_c_dev", tmp_path) == {
+        "MG": tmp_path
+        / "raw/semevals_2024-task8/SemEval2024-task8/subtaskC/SemEval2024_task8_C_dev_MG.csv",
+    }
