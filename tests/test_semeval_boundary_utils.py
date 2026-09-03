@@ -304,6 +304,57 @@ def test_aligns_boundary_when_unicode_artifacts_are_ascii_compatible() -> None:
     assert labeled["gold_token_boundary"].tolist() == [2]
 
 
+def test_aligns_boundary_when_replacement_artifacts_mask_three_nbsps() -> None:
+    predictions = pd.DataFrame(
+        [{"text_id": 7, "predicted_token_boundary": 2, "token_count": 4}]
+    )
+    annotations = pd.DataFrame(
+        [{"id": 7, "text": "first\u00a0second\u00a0third\u00a0fourth", "boundary_word_index": 2}]
+    )
+
+    labeled = add_gold_boundaries(
+        predictions,
+        annotations,
+        {7: ["first\ufffd\ufffd", "second\ufffd\ufffd", "third\ufffd\ufffd", "fourth"]},
+    )
+
+    assert labeled["gold_token_boundary"].tolist() == [2]
+
+
+def test_aligns_replacement_artifacts_when_token_whitespace_crosses_boundaries() -> None:
+    predictions = pd.DataFrame(
+        [{"text_id": 7, "predicted_token_boundary": 2, "token_count": 4}]
+    )
+    annotations = pd.DataFrame(
+        [{"id": 7, "text": "human words\u2014machine only", "boundary_word_index": 2}]
+    )
+
+    labeled = add_gold_boundaries(
+        predictions,
+        annotations,
+        {7: ["human ", "\nwords\ufffd", "machine", " only"]},
+    )
+
+    assert labeled["gold_token_boundary"].tolist() == [3]
+
+
+def test_aligns_boundary_after_nbsp_masked_across_adjacent_tokens() -> None:
+    predictions = pd.DataFrame(
+        [{"text_id": 7, "predicted_token_boundary": 4, "token_count": 5}]
+    )
+    annotations = pd.DataFrame(
+        [{"id": 7, "text": "abcde\u00a0abcde\u00a0third", "boundary_word_index": 2}]
+    )
+
+    labeled = add_gold_boundaries(
+        predictions,
+        annotations,
+        {7: ["a", "bcde\ufffd", "\ufffdabcd", "e\ufffd", "\ufffdthird"]},
+    )
+
+    assert labeled["gold_token_boundary"].tolist() == [4]
+
+
 def test_omits_repeated_replacement_artifacts_during_reconstruction() -> None:
     predictions = pd.DataFrame(
         [{"text_id": 7, "predicted_token_boundary": 1, "token_count": 2}]
@@ -376,6 +427,15 @@ def test_rejects_token_labels_that_do_not_match_annotation() -> None:
             pd.DataFrame([{"text_id": 7, "predicted_token_boundary": 2, "token_count": 4}]),
             pd.DataFrame([{"id": 7, "text": "human words machine only", "boundary_word_index": 2}]),
             {7: ["human", " words", " different", " only"]},
+        )
+
+
+def test_reports_text_id_for_token_reconstruction_error() -> None:
+    with pytest.raises(ValueError, match="text id 7"):
+        add_gold_boundaries(
+            pd.DataFrame([{"text_id": 7, "predicted_token_boundary": 1, "token_count": 2}]),
+            pd.DataFrame([{"id": 7, "text": "human machine", "boundary_word_index": 1}]),
+            {7: ["human", " different"]},
         )
 
 

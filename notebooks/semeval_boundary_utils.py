@@ -101,39 +101,82 @@ def _is_small_character_loss(expected: str, actual: str) -> bool:
     return skipped == loss and all(ord(character) < 128 for character in skipped_characters)
 
 
-def _matches_replacement_artifacts(expected: str, actual: str) -> bool:
+def _matches_replacement_artifacts(expected: str, actual: str) -> tuple[bool, bool]:
     expected_index = 0
     actual_index = 0
+    masked_whitespace = False
     while actual_index < len(actual):
         if actual[actual_index] == "\ufffd":
             while actual_index < len(actual) and actual[actual_index] == "\ufffd":
                 actual_index += 1
             if expected_index >= len(expected) or ord(expected[expected_index]) < 128:
-                return False
+                return False, False
+            masked_whitespace = masked_whitespace or expected[expected_index].isspace()
             expected_index += 1
             continue
         if expected_index >= len(expected) or actual[actual_index] != expected[expected_index]:
-            return False
+            return False, False
         actual_index += 1
         expected_index += 1
-    return expected_index == len(expected)
+    return expected_index == len(expected), masked_whitespace
 
 
 def _gold_token_boundary(text: str, word_boundary: int, token_labels: Sequence[str]) -> int:
     normalized_text = _canonicalize_reconstructed_text(text)
-    expected_raw = re.sub(r"\s+", " ", text).strip()
-    decoded_raw = re.sub(r"\s+", " ", "".join(map(str, token_labels))).strip()
+    expected_raw = re.sub(r"[ \t\r\n\f\v]+", " ", text).strip()
+    decoded_raw = re.sub(r"[ \t\r\n\f\v]+", " ", "".join(map(str, token_labels))).strip()
     decoded_text = _canonicalize_reconstructed_text(decoded_raw)
-    replacement_match = _matches_replacement_artifacts(expected_raw, decoded_raw)
+    replacement_match, masked_whitespace = _matches_replacement_artifacts(expected_raw, decoded_raw)
     if not replacement_match and (
         decoded_text == normalized_text or not _is_small_character_loss(normalized_text, decoded_text)
     ):
         raise ValueError("token labels do not reconstruct the annotated text")
-    boundary_text = decoded_text if replacement_match else normalized_text
+    boundary_text = normalized_text if masked_whitespace else decoded_text if replacement_match else normalized_text
     words = boundary_text.split()
     if not 0 <= word_boundary < len(words):
         raise ValueError("boundary_word_index is outside the text word range")
     character_boundary = len(" ".join(words[:word_boundary]))
+    if replacement_match:
+        expected_index = 0
+        replacement_run_continues = False
+        for token_index, token in enumerate(token_labels):
+            raw_token = re.sub(r"[ \t\r\n\f\v]+", " ", str(token))
+            token_index_in_raw = 0
+            while token_index_in_raw < len(raw_token):
+                if raw_token[token_index_in_raw] != "\ufffd":
+                    replacement_run_continues = False
+                if (
+                    raw_token[token_index_in_raw] == " "
+                    and expected_index < len(expected_raw)
+                    and expected_raw[expected_index] != " "
+                ):
+                    token_index_in_raw += 1
+                    continue
+                if raw_token[token_index_in_raw] == "\ufffd":
+                    while (
+                        token_index_in_raw < len(raw_token)
+                        and raw_token[token_index_in_raw] == "\ufffd"
+                    ):
+                        token_index_in_raw += 1
+                    if replacement_run_continues:
+                        continue
+                    if (
+                        expected_index >= len(expected_raw)
+                        or ord(expected_raw[expected_index]) < 128
+                    ):
+                        raise ValueError("token labels do not reconstruct the annotated text")
+                    replacement_run_continues = True
+                else:
+                    if (
+                        expected_index >= len(expected_raw)
+                        or raw_token[token_index_in_raw] != expected_raw[expected_index]
+                    ):
+                        raise ValueError("token labels do not reconstruct the annotated text")
+                    token_index_in_raw += 1
+                expected_index += 1
+            if len(_canonicalize_reconstructed_text(expected_raw[:expected_index])) >= character_boundary:
+                return 0 if word_boundary == 0 else token_index + 1
+        raise ValueError("word boundary does not map to a decoded token")
     character_end = 0
     saw_token_text = False
     for token_index, token in enumerate(token_labels):
@@ -176,7 +219,13 @@ def add_gold_boundaries(
             raise KeyError(f"missing SemEval annotation or tokens for text id {text_id}") from error
         if len(labels) != int(row.token_count):
             raise ValueError(f"token count mismatch for text id {text_id}")
-        gold_boundaries.append(_gold_token_boundary(str(annotation.text), int(annotation.boundary_word_index), labels))
+        try:
+            gold_boundary = _gold_token_boundary(
+                str(annotation.text), int(annotation.boundary_word_index), labels
+            )
+        except ValueError as error:
+            raise ValueError(f"{error} for text id {text_id}") from error
+        gold_boundaries.append(gold_boundary)
 
     result["gold_token_boundary"] = gold_boundaries
     result["absolute_token_error"] = (
