@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from itertools import zip_longest
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -17,9 +19,6 @@ from tqdm import tqdm
 
 from notebooks.classification_utils import evaluate_scores, fit_single_feature_threshold, split_cohort
 from notebooks.token_candidate_similarity_heatmaps_utils import (
-    _iter_stage_one_rows,
-    load_similarity_row,
-    load_similarity_rows,
     split_dir,
     validated_text_summary,
 )
@@ -69,6 +68,46 @@ def _pool_feature(values: np.ndarray) -> dict[str, float]:
     return statistics
 
 
+def _iter_parquet_rows(paths: list[Path]) -> Iterator[dict[str, object]]:
+    for path in paths:
+        for batch in pq.ParquetFile(path).iter_batches(batch_size=1):
+            yield batch.to_pylist()[0]
+
+
+def _iter_paired_processed_rows(
+    processed_root: Path,
+    dataset: str,
+    model: str,
+    split: str,
+    text_ids: tuple[int, ...] | None,
+) -> tuple[Iterator[tuple[dict[str, object], dict[str, object]]], int]:
+    data_paths = sorted((split_dir(processed_root, dataset, model, split) / "data").glob("*.parquet"))
+    similarity_paths = sorted((split_dir(processed_root, dataset, model, split) / "token_similarities").glob("*.parquet"))
+    if not data_paths:
+        raise FileNotFoundError(f"No stage-1 data parquet files for {dataset=} {model=} {split=}")
+    if not similarity_paths:
+        raise FileNotFoundError(f"No token similarity parquet files for {dataset=} {model=} {split=}")
+    selected_ids = None if text_ids is None else set(text_ids)
+    total = len(selected_ids) if selected_ids is not None else sum(
+        pq.ParquetFile(path).metadata.num_rows for path in similarity_paths
+    )
+
+    def rows() -> Iterator[tuple[dict[str, object], dict[str, object]]]:
+        sentinel = object()
+        for logprob_row, similarity_row in zip_longest(
+            _iter_parquet_rows(data_paths), _iter_parquet_rows(similarity_paths), fillvalue=sentinel
+        ):
+            if logprob_row is sentinel:
+                raise KeyError(f"Unexpected token similarity row for {dataset=} {model=} {split=}")
+            text_id = int(logprob_row["id"])
+            if similarity_row is sentinel or int(similarity_row["id"]) != text_id:
+                raise KeyError(f"No token similarity row for text id {text_id}")
+            if selected_ids is None or text_id in selected_ids:
+                yield logprob_row, similarity_row
+
+    return rows(), total
+
+
 def build_local_evidence_windows(
     processed_root: Path,
     dataset: str,
@@ -103,28 +142,16 @@ def build_local_evidence_windows(
     ]
     rows = []
     for split in splits:
-        if text_ids is None:
-            similarity_rows = load_similarity_rows(processed_root, dataset, model, split)
-            logprob_rows = _iter_stage_one_rows(processed_root, dataset, model, split)
-        else:
-            similarity_rows = {
-                text_id: load_similarity_row(processed_root, dataset, model, split, text_id)
-                for text_id in text_ids
-            }
-            logprob_rows = _iter_stage_one_rows(processed_root, dataset, model, split, text_ids)
+        paired_rows, total = _iter_paired_processed_rows(processed_root, dataset, model, split, text_ids)
         if show_progress:
-            logprob_rows = tqdm(
-                logprob_rows,
-                total=len(similarity_rows),
+            paired_rows = tqdm(
+                paired_rows,
+                total=total,
                 desc=f"{split}: local evidence",
                 unit="text",
             )
-        for logprob_row in logprob_rows:
+        for logprob_row, similarity_row in paired_rows:
             text_id = int(logprob_row["id"])
-            try:
-                similarity_row = similarity_rows[text_id]
-            except KeyError as error:
-                raise KeyError(f"No token similarity row for text id {text_id}") from error
             summary, token_labels = validated_text_summary(logprob_row, similarity_row, top_k=top_k)
             for window_length in window_lengths:
                 for start in _window_starts(len(token_labels), window_length, stride):

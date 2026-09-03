@@ -1147,7 +1147,7 @@ def test_build_local_evidence_windows_raises_for_token_id_mismatch(tmp_path: Pat
         build_local_evidence_windows(processed_root, "demo", "model", window_lengths=(4,), stride=3, splits=("HG",))
 
 
-def test_build_local_evidence_windows_indexes_multi_shard_similarity_rows_once_per_split(
+def test_build_local_evidence_windows_streams_multi_shard_similarity_rows_without_pandas_reads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     processed_root = tmp_path / "processed"
@@ -1177,7 +1177,29 @@ def test_build_local_evidence_windows_indexes_multi_shard_similarity_rows_once_p
     )
 
     assert set(windows["text_id"]) == {11, 12}
-    assert similarity_reads == [similarity_dir / "one.parquet", similarity_dir / "two.parquet"]
+    assert similarity_reads == []
+
+
+def test_build_local_evidence_windows_streams_similarity_parquets_without_pandas_conversion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    processed_root = tmp_path / "processed"
+    _write_local_evidence_artifacts(processed_root)
+    similarity_dir = processed_root / "demo__model" / "HG" / "token_similarities"
+    original_read_parquet = pd.read_parquet
+
+    def read_parquet(path: str | Path, *args: object, **kwargs: object) -> pd.DataFrame:
+        if Path(path).parent == similarity_dir:
+            pytest.fail("similarity parquet must not be converted through pandas")
+        return original_read_parquet(path, *args, **kwargs)
+
+    monkeypatch.setattr(pd, "read_parquet", read_parquet)
+
+    windows = build_local_evidence_windows(
+        processed_root, "demo", "model", window_lengths=(4,), stride=3, top_k=1, splits=("HG",)
+    )
+
+    assert windows["text_id"].tolist() == [11, 11]
 
 
 def test_local_evidence_windows_parquet_round_trip(tmp_path: Path) -> None:
