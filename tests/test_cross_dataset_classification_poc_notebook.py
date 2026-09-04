@@ -67,7 +67,12 @@ def test_poc_notebook_uses_mixed_local_evidence_for_both_processing_models() -> 
         "pymc_bayesian_logistic",
         '"Mixed"',
         "pd.concat(",
-        '"test": partitions_by_model',
+        '"test": partitions_by_dataset',
+        "collect_details=False",
+        "gc.collect()",
+        '"window_text"',
+        '"start_token"',
+        '"stop_token"',
     ):
         assert fragment in source
 
@@ -81,5 +86,23 @@ def test_poc_notebook_reports_dataset_specific_transfer_results() -> None:
         '"macro_f1"',
         'pivot(index=["classifier", "window_length"]',
         "sns.heatmap",
+    ):
+        assert fragment in source
+
+
+def test_poc_notebook_evaluates_mixed_models_on_semeval_regions() -> None:
+    source = _source()
+    for fragment in (
+        '"semeval2024_task8_subtask_c_dev"',
+        "build_gold_mg_regions",
+        "evaluate_mg_regions",
+        "predict_mg_regions",
+        "summarize_mg_region_evaluations",
+        "load_token_labels(",
+        "score_local_evidence_classifier(",
+        "splits=(SEMEVAL_SPLIT,)",
+        "semeval_predicted_regions",
+        "semeval_region_summary",
+        "semeval_region_evaluations",
     ):
         assert fragment in source

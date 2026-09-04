@@ -590,6 +590,7 @@ def run_local_evidence_model_comparison(
     bayesian_config: BayesianConfig | None = None,
     gaussian_mixture_config: GaussianMixtureNBConfig | None = None,
     show_progress: bool = True,
+    collect_details: bool = True,
     fitted_models: dict[tuple[str, int], _FittedClassifier] | None = None,
     cache_root: Path | None = None,
     cache_manifest: Mapping[str, object] | None = None,
@@ -688,7 +689,8 @@ def run_local_evidence_model_comparison(
 
             validation_scored = score_local_evidence_classifier(fitted, validation, normalized_features)
             test_scored = score_local_evidence_classifier(fitted, test, normalized_features)
-            scored_frames.extend((validation_scored, test_scored))
+            if collect_details:
+                scored_frames.extend((validation_scored, test_scored))
 
             validation_maximum = aggregate_maximum_window(validation_scored)
             maximum_parameters = _fit_document_threshold(validation_maximum["label"], validation_maximum["mg_score"])
@@ -730,7 +732,8 @@ def run_local_evidence_model_comparison(
                         **metrics,
                     }
                 )
-                prediction_frames.append(predictions)
+                if collect_details:
+                    prediction_frames.append(predictions)
 
     coefficient_columns = [
         "model",
@@ -751,7 +754,7 @@ def run_local_evidence_model_comparison(
         _save_model_cache(cache_root, fitted_registry, manifest_for_cache)
     return (
         pd.DataFrame(summaries),
-        pd.concat(prediction_frames, ignore_index=True),
-        pd.concat(scored_frames, ignore_index=True),
+        pd.concat(prediction_frames, ignore_index=True) if prediction_frames else pd.DataFrame(),
+        pd.concat(scored_frames, ignore_index=True) if scored_frames else pd.DataFrame(),
         coefficient_summaries,
     )

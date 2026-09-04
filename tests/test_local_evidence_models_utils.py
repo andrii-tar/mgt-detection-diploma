@@ -411,6 +411,24 @@ def test_comparison_evaluates_each_model_window_and_aggregation() -> None:
     assert {"model", "window_length", "feature", "coefficient"} <= set(coefficient_summaries.columns)
 
 
+def test_comparison_can_skip_detail_frames() -> None:
+    windows, partitions = comparison_fixture()
+
+    summaries, predictions, scored_windows, coefficient_summaries = run_local_evidence_model_comparison(
+        windows,
+        partitions,
+        ("logistic_regression",),
+        feature_columns=FEATURES,
+        collect_details=False,
+        show_progress=False,
+    )
+
+    assert len(summaries) == 4
+    assert predictions.empty
+    assert scored_windows.empty
+    assert not coefficient_summaries.empty
+
+
 def test_comparison_can_return_fitted_models_for_reuse() -> None:
     windows, partitions = comparison_fixture()
     fitted_models: dict[tuple[str, int], object] = {}
