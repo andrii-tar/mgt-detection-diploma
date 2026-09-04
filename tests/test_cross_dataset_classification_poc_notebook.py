@@ -49,3 +49,36 @@ def test_poc_notebook_does_not_process_new_llm_outputs() -> None:
         "run_stage_2",
     ):
         assert entry_point not in source
+
+
+def test_poc_notebook_uses_mixed_local_evidence_for_both_processing_models() -> None:
+    source = _source()
+    for fragment in (
+        '"gemma_3_1b_it"',
+        '"smollm2_360m"',
+        "load_or_build_local_evidence_windows(",
+        "split_local_evidence_texts(",
+        "run_local_evidence_model_comparison(",
+        "training_input_fingerprint(",
+        "logistic_regression",
+        "gaussian_nb",
+        "gaussian_mixture_nb",
+        "pymc_bayesian_logistic",
+        '"Mixed"',
+        "pd.concat(",
+        'split="test"',
+    ):
+        assert fragment in source
+
+
+def test_poc_notebook_reports_dataset_specific_transfer_results() -> None:
+    source = _source()
+    for fragment in (
+        '"evaluation_dataset"',
+        '"processing_model"',
+        '"window_length"',
+        '"macro_f1"',
+        'pivot(index=["classifier", "window_length"]',
+        "sns.heatmap",
+    ):
+        assert fragment in source
