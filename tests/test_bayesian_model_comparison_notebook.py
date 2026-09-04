@@ -255,13 +255,13 @@ def test_notebook_validates_kaggle_trained_models_on_semeval_boundaries(source: 
         "SEMEVAL_MG_SCORE_THRESHOLD = 0.5",
         "fit_local_evidence_classifier",
         "score_local_evidence_classifier",
-        "predict_boundary_positions",
-        "add_gold_boundaries",
-        "summarize_boundary_predictions",
+        "predict_mg_regions",
+        "build_gold_mg_regions",
+        "evaluate_mg_regions",
+        "summarize_mg_region_evaluations",
         "boundary_word_index",
-        "mean_absolute_token_error",
-        "gold_token_boundary",
-        "predicted_token_boundary",
+        "mg_f1",
+        "predicted_mg_region_count",
         "fitted_models = {}",
         "fitted_models=fitted_models",
         "load_token_labels",
@@ -272,9 +272,9 @@ def test_notebook_validates_kaggle_trained_models_on_semeval_boundaries(source: 
         assert fragment in source
 
 
-def test_notebook_configures_sustained_boundary_detection(source: str):
+def test_notebook_configures_multi_region_detection(source: str):
     assert "SEMEVAL_SMOOTHING_WINDOW = 5" in source
-    assert "SEMEVAL_SUSTAINED_LENGTH = 3" in source
+    assert "SEMEVAL_MINIMUM_REGION_LENGTH = 3" in source
 
     tree = ast.parse(source)
     prediction_calls = [
@@ -282,7 +282,7 @@ def test_notebook_configures_sustained_boundary_detection(source: str):
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
-        and node.func.id == "predict_boundary_positions"
+        and node.func.id == "predict_mg_regions"
     ]
     assert len(prediction_calls) == 1
     keyword_values = {
@@ -291,5 +291,10 @@ def test_notebook_configures_sustained_boundary_detection(source: str):
     }
     assert {
         "smoothing_window": "SEMEVAL_SMOOTHING_WINDOW",
-        "sustained_length": "SEMEVAL_SUSTAINED_LENGTH",
+        "minimum_region_length": "SEMEVAL_MINIMUM_REGION_LENGTH",
     }.items() <= keyword_values.items()
+
+
+def test_notebook_aligns_gold_annotations_to_available_processed_tokens(source: str):
+    assert 'semeval_annotations["id"].isin(semeval_token_labels)' in source
+    assert "available_semeval_annotations" in source

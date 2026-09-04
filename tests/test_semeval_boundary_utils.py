@@ -5,8 +5,12 @@ import pytest
 
 from notebooks.semeval_boundary_utils import (
     add_gold_boundaries,
+    build_gold_mg_regions,
+    evaluate_mg_regions,
     predict_boundary_positions,
+    predict_mg_regions,
     summarize_boundary_predictions,
+    summarize_mg_region_evaluations,
 )
 
 
@@ -455,3 +459,75 @@ def test_rejects_inserted_replacement_artifact_in_ascii_annotation() -> None:
             pd.DataFrame([{"id": 7, "text": "human words machine only", "boundary_word_index": 2}]),
             {7: ["human", "\ufffd words", " machine", " only"]},
         )
+
+
+def test_predicts_all_token_level_mg_regions_and_transitions() -> None:
+    scored_windows = _scored_token_windows(
+        [0.1, 0.1, 0.8, 0.8, 0.1, 0.1, 0.9, 0.9]
+    )
+
+    regions = predict_mg_regions(
+        scored_windows,
+        {7: 8},
+        threshold=0.5,
+        smoothing_window=1,
+        minimum_region_length=2,
+    )
+
+    assert regions[["start_token", "stop_token", "label"]].to_dict("records") == [
+        {"start_token": 0, "stop_token": 2, "label": "HG"},
+        {"start_token": 2, "stop_token": 4, "label": "MG"},
+        {"start_token": 4, "stop_token": 6, "label": "HG"},
+        {"start_token": 6, "stop_token": 8, "label": "MG"},
+    ]
+
+
+def test_merges_short_early_mg_region_into_hg() -> None:
+    regions = predict_mg_regions(
+        _scored_token_windows([0.1, 0.1, 0.1, 0.8, 0.8, 0.1, 0.1, 0.1]),
+        {7: 8},
+        smoothing_window=1,
+        minimum_region_length=3,
+    )
+
+    assert regions[["start_token", "stop_token", "label"]].to_dict("records") == [
+        {"start_token": 0, "stop_token": 8, "label": "HG"},
+    ]
+
+
+def test_builds_two_gold_semeval_regions() -> None:
+    annotations = pd.DataFrame(
+        [{"id": 7, "text": "human words machine generated", "boundary_word_index": 2}]
+    )
+
+    regions = build_gold_mg_regions(annotations, {7: ["human", " words", " machine", " generated"]})
+
+    assert regions[["text_id", "start_token", "stop_token", "label"]].to_dict("records") == [
+        {"text_id": 7, "start_token": 0, "stop_token": 2, "label": "HG"},
+        {"text_id": 7, "start_token": 2, "stop_token": 4, "label": "MG"},
+    ]
+
+
+def test_evaluates_spurious_early_mg_region_and_true_mg_region() -> None:
+    predicted = pd.DataFrame(
+        [
+            {"model": "lr", "window_length": 1, "text_id": 7, "start_token": 0, "stop_token": 2, "label": "HG", "token_count": 8},
+            {"model": "lr", "window_length": 1, "text_id": 7, "start_token": 2, "stop_token": 3, "label": "MG", "token_count": 8},
+            {"model": "lr", "window_length": 1, "text_id": 7, "start_token": 3, "stop_token": 5, "label": "HG", "token_count": 8},
+            {"model": "lr", "window_length": 1, "text_id": 7, "start_token": 5, "stop_token": 8, "label": "MG", "token_count": 8},
+        ]
+    )
+    gold = pd.DataFrame(
+        [
+            {"text_id": 7, "start_token": 0, "stop_token": 5, "label": "HG", "token_count": 8, "gold_token_boundary": 5},
+            {"text_id": 7, "start_token": 5, "stop_token": 8, "label": "MG", "token_count": 8, "gold_token_boundary": 5},
+        ]
+    )
+
+    evaluated = evaluate_mg_regions(predicted, gold)
+
+    assert evaluated.loc[0, "spurious_mg_region_count"] == 1
+    assert evaluated.loc[0, "missed_mg_region_count"] == 0
+    assert evaluated.loc[0, "nearest_predicted_hg_to_mg_boundary"] == 5
+    assert evaluated.loc[0, "mg_f1"] < 1.0
+    assert summarize_mg_region_evaluations(evaluated).loc[0, "texts"] == 1

@@ -302,3 +302,210 @@ def summarize_boundary_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
             "no_crossing_rate",
         ],
     )
+
+
+def _merge_short_region_labels(labels: np.ndarray, minimum_region_length: int) -> np.ndarray:
+    merged = labels.copy()
+    while True:
+        changes = False
+        starts = np.flatnonzero(np.r_[True, merged[1:] != merged[:-1]])
+        stops = np.r_[starts[1:], len(merged)]
+        if len(starts) == 1:
+            return merged
+        for index, (start, stop) in enumerate(zip(starts, stops)):
+            if stop - start >= minimum_region_length:
+                continue
+            if index == 0:
+                merged[start:stop] = merged[stops[index]]
+            elif index == len(starts) - 1:
+                merged[start:stop] = merged[starts[index - 1]]
+            else:
+                merged[start:stop] = merged[starts[index - 1]]
+            changes = True
+            break
+        if not changes:
+            return merged
+
+
+def _regions_from_labels(labels: np.ndarray) -> list[tuple[int, int, str]]:
+    starts = np.flatnonzero(np.r_[True, labels[1:] != labels[:-1]])
+    stops = np.r_[starts[1:], len(labels)]
+    return [(int(start), int(stop), str(labels[start])) for start, stop in zip(starts, stops)]
+
+
+def predict_mg_regions(
+    scored_windows: pd.DataFrame,
+    token_counts: Mapping[int, int],
+    *,
+    threshold: float = 0.5,
+    smoothing_window: int = 5,
+    minimum_region_length: int = 3,
+    show_progress: bool = False,
+) -> pd.DataFrame:
+    required = {"model", "window_length", "text_id", "start_token", "stop_token", "mg_score"}
+    missing = required.difference(scored_windows.columns)
+    if missing:
+        raise ValueError(f"missing columns: {', '.join(sorted(missing))}")
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError("threshold must be between zero and one")
+    if smoothing_window <= 0 or smoothing_window % 2 == 0:
+        raise ValueError("smoothing_window must be a positive odd integer")
+    if minimum_region_length <= 0:
+        raise ValueError("minimum_region_length must be positive")
+
+    rows: list[dict[str, object]] = []
+    grouped = scored_windows.groupby(["model", "window_length", "text_id"], sort=True)
+    groups = tqdm(grouped, total=grouped.ngroups, desc="Finding MG regions", unit="text") if show_progress else grouped
+    for (model, window_length, text_id), text_windows in groups:
+        text_id = int(text_id)
+        try:
+            token_count = int(token_counts[text_id])
+        except KeyError as error:
+            raise KeyError(f"missing token count for text id {text_id}") from error
+        expanded = expand_model_scores_to_tokens(text_windows, token_count)
+        scores = expanded.sort_values("token_position")["mg_score"].to_numpy(dtype="float64")
+        if not np.isfinite(scores).all():
+            raise ValueError(f"token-level MG scores do not cover text id {text_id}")
+        smoothed_scores = (
+            pd.Series(scores)
+            .rolling(smoothing_window, center=True, min_periods=1)
+            .median()
+            .to_numpy()
+        )
+        labels = np.where(smoothed_scores >= threshold, "MG", "HG")
+        labels = _merge_short_region_labels(labels, minimum_region_length)
+        for start_token, stop_token, label in _regions_from_labels(labels):
+            rows.append(
+                {
+                    "model": model,
+                    "window_length": int(window_length),
+                    "text_id": text_id,
+                    "start_token": start_token,
+                    "stop_token": stop_token,
+                    "label": label,
+                    "token_count": token_count,
+                }
+            )
+    return pd.DataFrame(
+        rows,
+        columns=["model", "window_length", "text_id", "start_token", "stop_token", "label", "token_count"],
+    )
+
+
+def build_gold_mg_regions(
+    annotations: pd.DataFrame,
+    token_labels: Mapping[int, Sequence[str]],
+) -> pd.DataFrame:
+    required = {"id", "text", "boundary_word_index"}
+    missing = required.difference(annotations.columns)
+    if missing:
+        raise ValueError(f"missing annotation columns: {', '.join(sorted(missing))}")
+    if annotations["id"].duplicated().any():
+        raise ValueError("annotation ids must be unique")
+
+    rows: list[dict[str, object]] = []
+    for annotation in annotations.itertuples(index=False):
+        text_id = int(annotation.id)
+        try:
+            labels = token_labels[text_id]
+        except KeyError as error:
+            raise KeyError(f"missing SemEval tokens for text id {text_id}") from error
+        boundary = _gold_token_boundary(
+            str(annotation.text), int(annotation.boundary_word_index), labels
+        )
+        token_count = len(labels)
+        for start_token, stop_token, label in ((0, boundary, "HG"), (boundary, token_count, "MG")):
+            if stop_token == start_token:
+                continue
+            rows.append(
+                {
+                    "text_id": text_id,
+                    "start_token": start_token,
+                    "stop_token": stop_token,
+                    "label": label,
+                    "token_count": token_count,
+                    "gold_token_boundary": boundary,
+                }
+            )
+    return pd.DataFrame(
+        rows,
+        columns=["text_id", "start_token", "stop_token", "label", "token_count", "gold_token_boundary"],
+    )
+
+
+def evaluate_mg_regions(predicted_regions: pd.DataFrame, gold_regions: pd.DataFrame) -> pd.DataFrame:
+    required_predicted = {"model", "window_length", "text_id", "start_token", "stop_token", "label", "token_count"}
+    required_gold = {"text_id", "start_token", "stop_token", "label", "token_count", "gold_token_boundary"}
+    missing_predicted = required_predicted.difference(predicted_regions.columns)
+    missing_gold = required_gold.difference(gold_regions.columns)
+    if missing_predicted:
+        raise ValueError(f"missing predicted region columns: {', '.join(sorted(missing_predicted))}")
+    if missing_gold:
+        raise ValueError(f"missing gold region columns: {', '.join(sorted(missing_gold))}")
+
+    rows: list[dict[str, object]] = []
+    gold_by_text = {int(text_id): group for text_id, group in gold_regions.groupby("text_id")}
+    for (model, window_length, text_id), predicted in predicted_regions.groupby(
+        ["model", "window_length", "text_id"], sort=True
+    ):
+        text_id = int(text_id)
+        if text_id not in gold_by_text:
+            raise KeyError(f"missing gold regions for text id {text_id}")
+        gold = gold_by_text[text_id]
+        token_count = int(gold["token_count"].iloc[0])
+        predicted_labels = np.full(token_count, "HG", dtype=object)
+        for region in predicted.itertuples(index=False):
+            predicted_labels[int(region.start_token):int(region.stop_token)] = region.label
+        gold_labels = np.full(token_count, "HG", dtype=object)
+        for region in gold.itertuples(index=False):
+            gold_labels[int(region.start_token):int(region.stop_token)] = region.label
+        predicted_mg = predicted_labels == "MG"
+        gold_mg = gold_labels == "MG"
+        true_positive = int(np.sum(predicted_mg & gold_mg))
+        false_positive = int(np.sum(predicted_mg & ~gold_mg))
+        false_negative = int(np.sum(~predicted_mg & gold_mg))
+        precision = true_positive / (true_positive + false_positive) if true_positive + false_positive else 0.0
+        recall = true_positive / (true_positive + false_negative) if true_positive + false_negative else 0.0
+        mg_f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        predicted_mg_regions = [region for region in _regions_from_labels(predicted_labels) if region[2] == "MG"]
+        gold_mg_regions = [region for region in _regions_from_labels(gold_labels) if region[2] == "MG"]
+        spurious = sum(not np.any(gold_mg[int(start):int(stop)]) for start, stop, _ in predicted_mg_regions)
+        missed = sum(not any(np.any(predicted_mg[max(start, other_start):min(stop, other_stop)]) for other_start, other_stop, _ in predicted_mg_regions) for start, stop, _ in gold_mg_regions)
+        predicted_boundaries = [start for index, (start, _, label) in enumerate(_regions_from_labels(predicted_labels)) if label == "MG" and index > 0]
+        gold_boundary = int(gold["gold_token_boundary"].iloc[0])
+        nearest_boundary = min(predicted_boundaries, key=lambda boundary: abs(boundary - gold_boundary), default=None)
+        rows.append(
+            {
+                "model": model,
+                "window_length": int(window_length),
+                "text_id": text_id,
+                "token_count": token_count,
+                "accuracy": float(np.mean(predicted_labels == gold_labels)),
+                "mg_precision": precision,
+                "mg_recall": recall,
+                "mg_f1": mg_f1,
+                "predicted_mg_region_count": len(predicted_mg_regions),
+                "spurious_mg_region_count": int(spurious),
+                "missed_mg_region_count": int(missed),
+                "exact_region_match": predicted_mg.tolist() == gold_mg.tolist(),
+                "gold_token_boundary": gold_boundary,
+                "nearest_predicted_hg_to_mg_boundary": nearest_boundary,
+                "boundary_error": abs(nearest_boundary - gold_boundary) if nearest_boundary is not None else np.nan,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def summarize_mg_region_evaluations(evaluations: pd.DataFrame) -> pd.DataFrame:
+    required = {"model", "window_length", "text_id", "accuracy", "mg_precision", "mg_recall", "mg_f1"}
+    missing = required.difference(evaluations.columns)
+    if missing:
+        raise ValueError(f"missing evaluation columns: {', '.join(sorted(missing))}")
+    aggregations = evaluations.groupby(["model", "window_length"], sort=True)
+    result = aggregations[["accuracy", "mg_precision", "mg_recall", "mg_f1", "boundary_error"]].mean(numeric_only=True).reset_index()
+    result.insert(2, "texts", aggregations["text_id"].nunique().to_numpy())
+    for column in ("exact_region_match", "spurious_mg_region_count", "missed_mg_region_count"):
+        if column in evaluations:
+            values = aggregations[column].mean(numeric_only=True).rename(column)
+            result = result.merge(values.reset_index(), on=["model", "window_length"])
+    return result
