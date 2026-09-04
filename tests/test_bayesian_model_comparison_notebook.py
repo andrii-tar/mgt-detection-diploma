@@ -298,3 +298,24 @@ def test_notebook_configures_multi_region_detection(source: str):
 def test_notebook_aligns_gold_annotations_to_available_processed_tokens(source: str):
     assert 'semeval_annotations["id"].isin(semeval_token_labels)' in source
     assert "available_semeval_annotations" in source
+
+
+def test_notebook_visualizes_gold_and_predicted_text_zones(source: str):
+    for fragment in (
+        "token_labels[prediction.text_id]",
+        "gold_zone_axis",
+        "predicted_zone_axis",
+        'gold_zone_axis.set_ylabel("Gold")',
+        'predicted_zone_axis.set_ylabel("Predicted")',
+        "HG-to-MG",
+        "MG-to-HG",
+    ):
+        assert fragment in source
+
+
+def test_notebook_plots_raw_and_smoothed_token_mg_scores(source: str):
+    assert 'token_scores["mg_score"]' in source
+    assert 'label="raw token MG score"' in source
+    assert 'label="smoothed token MG score"' in source
+    assert 'marker="."' in source
+    assert 'zorder=3' in source
