@@ -32,9 +32,10 @@ def test_poc_notebook_is_output_free() -> None:
 def test_poc_notebook_contains_cross_dataset_matrix_contract() -> None:
     source = _source()
     for fragment in (
-        "smollm2_360m", "opt_350m", "kaggle_train", "outfox_chatgpt_train", "mage_train",
-        "LogisticRegression", "load_metrics(", "train_test_split", '"Kaggle"', '"Outfox"',
-        '"MAGE"', '"Mixed"', "macro_f1", "sns.heatmap", "matrix.isna()", "mask=matrix.isna()",
+        "smollm2_360m", "gemma_3_1b_it", "kaggle_train", "outfox_chatgpt_train", "mage_train",
+        "load_or_build_local_evidence_windows(", "split_local_evidence_texts(",
+        '"Kaggle"', '"Outfox"', '"MAGE"', '"Mixed"', "macro_f1", "sns.heatmap",
+        "matrix.isna()", "mask=matrix.isna()",
     ):
         assert fragment in source
 
@@ -66,7 +67,7 @@ def test_poc_notebook_uses_mixed_local_evidence_for_both_processing_models() -> 
         "pymc_bayesian_logistic",
         '"Mixed"',
         "pd.concat(",
-        'split="test"',
+        '"test": partitions_by_model',
     ):
         assert fragment in source
 
