@@ -10,6 +10,10 @@ from tqdm import tqdm
 
 DEFAULT_MODEL_ID = "HuggingFaceTB/SmolLM2-360M-Instruct"
 TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
+MINISTRAL_Q4_FILES = {
+    "unsloth/Ministral-3-3B-Instruct-2512-GGUF": "Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
+    "unsloth/Ministral-3-3B-Reasoning-2512-GGUF": "Ministral-3-3B-Reasoning-2512-Q4_K_M.gguf",
+}
 
 
 def _decode_token(tokenizer: Any, token_id: int) -> str:
@@ -43,7 +47,10 @@ def load_local_model(model_id: str = DEFAULT_MODEL_ID) -> tuple[Any, Any, torch.
     load_kwargs = {"local_files_only": True} if local_files_only else {}
 
     tokenizer = AutoTokenizer.from_pretrained(model_id, **load_kwargs)
-    model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
+    model_kwargs = dict(load_kwargs)
+    if gguf_file := MINISTRAL_Q4_FILES.get(model_id):
+        model_kwargs["gguf"] = gguf_file
+    model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
     model.eval()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
