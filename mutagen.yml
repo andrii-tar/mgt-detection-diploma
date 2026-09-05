@@ -26,9 +26,14 @@ sync:
         - "!raw"
         - "!raw/kaggle_train"
         - "!raw/kaggle_train/**"
+        - "!raw/MAGE/train/**"
         - "!raw/outfox"
         - "!raw/outfox/outfox_chatgpt_train_HG.csv"
         - "!raw/outfox/outfox_chatgpt_train_MG.csv"
+        - "!raw/semevals_2024-task8/SemEval2024-task8/subtaskC/**"
+        - "!raw/bbc_news/bbc_news_content_HG.csv"
+        - "!raw/custom/samples_2025/custom_2025_HG.csv"
+        - "!raw/custom/samples_2025/custom_2025_MG.csv"
 
   processed-states-upload:
     alpha: D:/Projects/master_diploma/text-detection-data/processed/
