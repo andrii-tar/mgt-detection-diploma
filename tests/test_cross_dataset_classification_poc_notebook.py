@@ -465,3 +465,26 @@ def test_poc_notebook_excludes_removed_models_settings_and_processing_entry_poin
         "run_stage_2",
     ):
         assert fragment not in source
+
+
+def test_poc_notebook_skips_unavailable_source_caches() -> None:
+    source = _source()
+    assert "available_display_names = set()" in source
+    assert "except (FileNotFoundError, ValueError) as exc:" in source
+    assert 'display(f"Skipping {dataset_name}: {exc}")' in source
+    assert "available_display_names.add(dataset_name)" in source
+
+
+def test_poc_notebook_filters_regimes_by_available_sources() -> None:
+    source = _source()
+    assert "if not set(training_names).issubset(available_display_names):" in source
+    assert "if not set(evaluation_names).issubset(available_display_names):" in source
+    assert 'display(f"Skipping training regime {training_regime}: required sources are unavailable.")' in source
+    assert 'display(f"Skipping evaluation regime {evaluation_regime}: required sources are unavailable.")' in source
+
+
+def test_poc_notebook_handles_empty_result_frames() -> None:
+    source = _source()
+    assert "def concat_or_empty(frames, label):" in source
+    assert "No classification results are available." in source
+    assert "if metrics.empty:" in source
