@@ -32,10 +32,13 @@ def test_monitoring_notebook_is_output_free() -> None:
 def test_monitoring_notebook_contains_scan_and_display_contract() -> None:
     source = _source()
     for fragment in (
-        "from scripts.experiment_config import DATASETS, MODEL_IDS",
+        "from scripts.experiment_config import DATASETS, MODEL_IDS, build_datasets",
+        "from scripts.data_root import resolve_data_root",
         "scan_processing_counts(",
         "TEXT_DETECTION_DATA",
         "DATA_ROOT",
+        "DATA_ROOT = resolve_data_root()",
+        "build_datasets(DATA_ROOT)",
         "processing_counts",
         "stage_matrix",
         "pivot_table(",
