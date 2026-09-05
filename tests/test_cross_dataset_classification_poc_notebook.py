@@ -42,6 +42,23 @@ def _constant_tuple(node: ast.AST) -> tuple[str, ...] | None:
     return tuple(element.value for element in node.elts)
 
 
+def _named_assignment(tree: ast.AST, name: str) -> ast.Assign:
+    assignments = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == name
+    ]
+    assert len(assignments) == 1
+    return assignments[0]
+
+
+def _keyword_names(node: ast.Call) -> set[str]:
+    return {keyword.arg for keyword in node.keywords if keyword.arg is not None}
+
+
 def test_poc_notebook_is_output_free() -> None:
     notebook = _notebook()
     assert notebook["nbformat"] >= 4
@@ -125,6 +142,18 @@ def test_poc_notebook_splits_each_source_dataset_deterministically() -> None:
 
 def test_poc_notebook_executes_all_training_and_evaluation_regimes() -> None:
     tree = _tree()
+    training_assignment = _named_assignment(tree, "TRAINING_REGIMES")
+    assert isinstance(training_assignment.value, ast.Dict)
+    assert [key.value for key in training_assignment.value.keys] == ["Kaggle", "Outfox", "Mixed"]
+    assert [_constant_tuple(value) for value in training_assignment.value.values] == [
+        ("Kaggle",),
+        ("Outfox",),
+        ("Kaggle", "Outfox"),
+    ]
+    evaluation_assignment = _named_assignment(tree, "EVALUATION_REGIMES")
+    assert isinstance(evaluation_assignment.value, ast.Name)
+    assert evaluation_assignment.value.id == "TRAINING_REGIMES"
+
     training_loops = [
         node
         for node in ast.walk(tree)
@@ -191,6 +220,56 @@ def test_poc_notebook_propagates_classifiers_and_labels_every_result_frame() -> 
             and isinstance(node.targets[0].slice.value, str)
         }
         assert {"llm", "training_regime", "evaluation_regime"} <= assigned_labels
+
+    coverage_assignments = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "append"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "coverage_frames"
+    ]
+    assert len(coverage_assignments) == 3
+    source_coverage = next(
+        node for node in coverage_assignments
+        if any(
+            isinstance(child, ast.Constant) and child.value == "source"
+            for child in ast.walk(node)
+        )
+    )
+    source_assign = next(
+        child for child in ast.walk(source_coverage)
+        if isinstance(child, ast.Call)
+        and isinstance(child.func, ast.Attribute)
+        and child.func.attr == "assign"
+    )
+    assert {"llm", "source_dataset", "training_regime", "evaluation_regime"} <= _keyword_names(source_assign)
+
+    semeval_frames = {
+        "semeval_summary_frames": "summary",
+        "semeval_evaluation_frames": "evaluations",
+        "semeval_region_frames": "predicted_regions",
+        "semeval_scored_window_frames": "scored_windows",
+    }
+    for frame_list, result_name in semeval_frames.items():
+        append = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "append"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == frame_list
+        )
+        assign = next(
+            child for child in ast.walk(append)
+            if isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Attribute)
+            and child.func.attr == "assign"
+        )
+        assert isinstance(assign.func.value, ast.Attribute)
+        assert assign.func.value.attr == result_name
+        assert {"llm", "training_regime", "evaluation_regime"} <= _keyword_names(assign)
 
 
 def test_poc_notebook_reports_dataset_specific_transfer_results() -> None:
