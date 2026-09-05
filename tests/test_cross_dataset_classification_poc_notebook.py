@@ -59,20 +59,15 @@ def test_poc_notebook_uses_mixed_local_evidence_for_both_processing_models() -> 
         '"smollm2_360m"',
         "load_or_build_local_evidence_windows(",
         "split_local_evidence_texts(",
-        "run_local_evidence_model_comparison(",
-        "training_input_fingerprint(",
+        "train_local_evidence_models(",
+        "evaluate_local_evidence_datasets(",
         "logistic_regression",
         "gaussian_nb",
         "gaussian_mixture_nb",
         "pymc_bayesian_logistic",
         '"Mixed"',
         "pd.concat(",
-        '"test": partitions_by_dataset',
-        "collect_details=False",
-        "gc.collect()",
-        '"window_text"',
-        '"start_token"',
-        '"stop_token"',
+        '"test"',
     ):
         assert fragment in source
 
@@ -94,14 +89,7 @@ def test_poc_notebook_evaluates_mixed_models_on_semeval_regions() -> None:
     source = _source()
     for fragment in (
         '"semeval2024_task8_subtask_c_dev"',
-        "build_gold_mg_regions",
-        "evaluate_mg_regions",
-        "predict_mg_regions",
-        "summarize_mg_region_evaluations",
-        "load_token_labels(",
-        "score_local_evidence_classifier(",
-        "splits=(SEMEVAL_SPLIT,)",
-        "semeval_predicted_regions",
+        "evaluate_local_evidence_semeval(",
         "semeval_region_summary",
         "semeval_region_evaluations",
     ):

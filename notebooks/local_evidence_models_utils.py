@@ -62,6 +62,9 @@ class _FittedClassifier:
     estimator: Any
 
 
+FittedLocalEvidenceClassifier = _FittedClassifier
+
+
 @dataclass
 class _PymcEstimator:
     model: Any

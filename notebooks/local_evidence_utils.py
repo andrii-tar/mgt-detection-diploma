@@ -306,6 +306,48 @@ def load_or_build_local_evidence_windows(
     return windows
 
 
+def load_local_evidence_cohort(
+    processed_root: Path,
+    dataset: str,
+    model: str,
+    text_ids: pd.DataFrame,
+    *,
+    window_lengths: tuple[int, ...] = DEFAULT_WINDOW_LENGTHS,
+    stride: int = 16,
+    top_k: int = 20,
+    show_progress: bool = False,
+) -> pd.DataFrame:
+    """Load a requested parent-text cohort from the complete local-evidence cache."""
+    required = {"split", "text_id"}
+    missing = required.difference(text_ids.columns)
+    if missing:
+        raise ValueError(f"missing cohort columns: {', '.join(sorted(missing))}")
+    requested = text_ids[["split", "text_id"]].copy()
+    requested["text_id"] = requested["text_id"].astype("int64")
+    if requested.duplicated().any():
+        raise ValueError("cohort text ids must be unique")
+    splits = tuple(sorted(requested["split"].astype(str).unique()))
+    if not splits:
+        return pd.DataFrame()
+    windows = load_or_build_local_evidence_windows(
+        processed_root,
+        dataset,
+        model,
+        window_lengths=window_lengths,
+        stride=stride,
+        top_k=top_k,
+        splits=splits,
+    )
+    available = windows[["split", "text_id"]].drop_duplicates()
+    missing_ids = requested.merge(available, on=["split", "text_id"], how="left", indicator=True)
+    if missing_ids["_merge"].eq("left_only").any():
+        absent = missing_ids.loc[missing_ids["_merge"].eq("left_only"), ["split", "text_id"]]
+        raise KeyError(f"requested local-evidence texts are unavailable: {absent.to_dict('records')}")
+    return windows.merge(requested.assign(_requested=True), on=["split", "text_id"], how="inner", validate="many_to_one").drop(
+        columns="_requested"
+    )
+
+
 def split_local_evidence_texts(windows: pd.DataFrame, *, seed: int = 42) -> dict[str, pd.DataFrame]:
     parent_columns = ["split", "text_id", "label"]
     parents = windows[parent_columns].drop_duplicates().reset_index(drop=True)
