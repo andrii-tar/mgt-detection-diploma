@@ -32,9 +32,16 @@ def test_poc_notebook_is_output_free() -> None:
 def test_poc_notebook_contains_cross_dataset_matrix_contract() -> None:
     source = _source()
     for fragment in (
-        "smollm2_360m", "gemma_3_1b_it", "kaggle_train", "outfox_chatgpt_train", "mage_train",
+        'DATASETS = {"Kaggle": "kaggle_train", "Outfox": "outfox_chatgpt_train"}',
+        'LLM_MODELS = ["smollm2_360m"]',
+        '"Kaggle": ("Kaggle",)', '"Outfox": ("Outfox",)',
+        '"Mixed": ("Kaggle", "Outfox")',
+        "EVALUATION_REGIMES = TRAINING_REGIMES",
+        'CLASSIFIER_NAMES = ("logistic_regression",)',
+        "WINDOW_LENGTHS = (32, 64, 128)", "STRIDE = 16", "TOP_K = 20",
+        "SEED = 42", "RECOMPUTE_WINDOWS = False",
         "load_or_build_local_evidence_windows(", "split_local_evidence_texts(",
-        '"Kaggle"', '"Outfox"', '"MAGE"', '"Mixed"', "macro_f1", "sns.heatmap",
+        '"Kaggle"', '"Outfox"', '"Mixed"', "macro_f1", "sns.heatmap",
         "matrix.isna()", "mask=matrix.isna()",
     ):
         assert fragment in source
@@ -52,22 +59,19 @@ def test_poc_notebook_does_not_process_new_llm_outputs() -> None:
         assert entry_point not in source
 
 
-def test_poc_notebook_uses_mixed_local_evidence_for_both_processing_models() -> None:
+def test_poc_notebook_uses_only_supported_local_evidence_apis() -> None:
     source = _source()
     for fragment in (
-        '"gemma_3_1b_it"',
-        '"smollm2_360m"',
         "load_or_build_local_evidence_windows(",
         "split_local_evidence_texts(",
         "train_local_evidence_models(",
         "evaluate_local_evidence_datasets(",
+        "combine_local_evidence_dataset_results(",
+        "evaluate_local_evidence_semeval(",
         "logistic_regression",
-        "gaussian_nb",
-        "gaussian_mixture_nb",
-        "pymc_bayesian_logistic",
-        '"Mixed"',
         "pd.concat(",
-        '"test"',
+        '"training_regime"',
+        '"evaluation_regime"',
     ):
         assert fragment in source
 
@@ -76,21 +80,37 @@ def test_poc_notebook_reports_dataset_specific_transfer_results() -> None:
     source = _source()
     for fragment in (
         '"evaluation_dataset"',
-        '"processing_model"',
+        '"llm"',
+        '"training_regime"',
+        '"evaluation_regime"',
         '"window_length"',
         '"macro_f1"',
-        'pivot(index=["classifier", "window_length"]',
+        'pivot(index=["training_regime", "classifier", "window_length"]',
         "sns.heatmap",
     ):
         assert fragment in source
 
 
-def test_poc_notebook_evaluates_mixed_models_on_semeval_regions() -> None:
+def test_poc_notebook_evaluates_each_training_regime_on_semeval() -> None:
     source = _source()
     for fragment in (
         '"semeval2024_task8_subtask_c_dev"',
         "evaluate_local_evidence_semeval(",
         "semeval_region_summary",
         "semeval_region_evaluations",
+        '"training_regime"',
     ):
         assert fragment in source
+
+
+def test_poc_notebook_excludes_removed_models_settings_and_processing_entry_points() -> None:
+    source = _source()
+    for fragment in (
+        "gemma_3_1b_it", "mage_train", "MAGE", "BayesianConfig",
+        "GaussianMixtureNBConfig", "pymc", "REUSE_FITTED_MODELS",
+        "SAVE_FITTED_MODELS", "TRUST_FITTED_MODEL_CACHE", "PYMC_AVAILABLE",
+        "BAYESIAN_CONFIG", "GAUSSIAN_MIXTURE_CONFIG", "process_pipeline",
+        "token_similarity_stage2", "load_local_model", "score_texts_with_model",
+        "run_stage_2",
+    ):
+        assert fragment not in source
