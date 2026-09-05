@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -17,6 +18,28 @@ def _source() -> str:
         for cell in _notebook()["cells"]
         if cell["cell_type"] == "code"
     )
+
+
+def _tree() -> ast.Module:
+    return ast.parse(_source())
+
+
+def _calls(tree: ast.AST, function_name: str) -> list[ast.Call]:
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == function_name
+    ]
+
+
+def _constant_tuple(node: ast.AST) -> tuple[str, ...] | None:
+    if not isinstance(node, (ast.Tuple, ast.List)):
+        return None
+    if not all(isinstance(element, ast.Constant) and isinstance(element.value, str) for element in node.elts):
+        return None
+    return tuple(element.value for element in node.elts)
 
 
 def test_poc_notebook_is_output_free() -> None:
@@ -74,6 +97,100 @@ def test_poc_notebook_uses_only_supported_local_evidence_apis() -> None:
         '"evaluation_regime"',
     ):
         assert fragment in source
+
+
+def test_poc_notebook_splits_each_source_dataset_deterministically() -> None:
+    tree = _tree()
+    dataset_loops = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.For)
+        and isinstance(node.iter, ast.Call)
+        and isinstance(node.iter.func, ast.Attribute)
+        and node.iter.func.attr == "items"
+        and isinstance(node.iter.func.value, ast.Name)
+        and node.iter.func.value.id == "DATASETS"
+    ]
+
+    assert len(dataset_loops) == 1
+    split_calls = _calls(dataset_loops[0], "split_local_evidence_texts")
+    assert len(split_calls) == 1
+    assert any(
+        keyword.arg == "seed"
+        and isinstance(keyword.value, ast.Name)
+        and keyword.value.id == "SEED"
+        for keyword in split_calls[0].keywords
+    )
+
+
+def test_poc_notebook_executes_all_training_and_evaluation_regimes() -> None:
+    tree = _tree()
+    training_loops = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.For)
+        and isinstance(node.iter, ast.Call)
+        and isinstance(node.iter.func, ast.Attribute)
+        and node.iter.func.attr == "items"
+        and isinstance(node.iter.func.value, ast.Name)
+        and node.iter.func.value.id == "TRAINING_REGIMES"
+    ]
+    evaluation_loops = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.For)
+        and isinstance(node.iter, ast.Call)
+        and isinstance(node.iter.func, ast.Attribute)
+        and node.iter.func.attr == "items"
+        and isinstance(node.iter.func.value, ast.Name)
+        and node.iter.func.value.id == "EVALUATION_REGIMES"
+    ]
+
+    assert len(training_loops) == 1
+    assert len(evaluation_loops) == 1
+    assert _calls(evaluation_loops[0], "evaluate_local_evidence_datasets")
+    assert _calls(training_loops[0], "combine_local_evidence_dataset_results")
+    assert any(
+        isinstance(node, ast.Compare)
+        and any(isinstance(operator, ast.Eq) for operator in node.ops)
+        and any(
+            isinstance(comparator, ast.Constant) and comparator.value == "Mixed"
+            for comparator in node.comparators
+        )
+        for node in ast.walk(evaluation_loops[0])
+    )
+
+
+def test_poc_notebook_propagates_classifiers_and_labels_every_result_frame() -> None:
+    tree = _tree()
+    training_calls = _calls(tree, "train_local_evidence_models")
+    assert len(training_calls) == 1
+    assert any(
+        keyword.arg == "classifier_names"
+        and isinstance(keyword.value, ast.Name)
+        and keyword.value.id == "CLASSIFIER_NAMES"
+        for keyword in training_calls[0].keywords
+    )
+
+    result_loops = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.For)
+        and _constant_tuple(node.iter)
+        == ("metrics", "predictions", "scored_windows", "coverage")
+    ]
+    assert len(result_loops) == 2
+    for result_loop in result_loops:
+        assigned_labels = {
+            node.targets[0].slice.value
+            for node in ast.walk(result_loop)
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Subscript)
+            and isinstance(node.targets[0].slice, ast.Constant)
+            and isinstance(node.targets[0].slice.value, str)
+        }
+        assert {"llm", "training_regime", "evaluation_regime"} <= assigned_labels
 
 
 def test_poc_notebook_reports_dataset_specific_transfer_results() -> None:
