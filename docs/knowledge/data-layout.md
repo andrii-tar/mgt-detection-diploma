@@ -60,6 +60,19 @@ processed/{dataset}__{model}/{split}/token_similarities/*.parquet
 processed/{dataset}__{model}/{split}/similarity_state.json
 ```
 
+Postprocessing outputs created by `scripts/postprocess_pipeline.py`:
+
+```text
+processed/{dataset}__{model}/{split}/postprocessed/stage1.parquet
+processed/{dataset}__{model}/{split}/postprocessed/stage2.parquet
+processed/{dataset}__{model}/{split}/metrics/metrics.parquet
+processed/{dataset}__{model}/{split}/token_similarity_stats/token_similarity_stats.parquet
+processed/{dataset}__{model}/local_evidence/windows.parquet
+```
+
+The postprocessor preserves the original Stage 1 and Stage 2 batch files and
+only creates paired local-evidence outputs when HG and MG IDs match exactly.
+
 Local-evidence notebook experiment outputs:
 
 ```text

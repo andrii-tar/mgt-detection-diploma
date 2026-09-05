@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from notebooks.processing_monitoring_utils import STAGES, scan_processing_counts
+from notebooks.processing_monitoring_utils import (
+    STAGES,
+    scan_postprocessing_readiness,
+    scan_processing_counts,
+)
 
 
 def _datasets(tmp_path: Path) -> dict[str, dict[str, object]]:
@@ -67,3 +71,52 @@ def test_scan_counts_artifacts_and_distinct_local_evidence_ids(tmp_path: Path) -
     assert hg.loc["local_evidence", "processed_texts"] == 2
     assert mg.loc["logprobs", "status"] == "empty"
     assert mg.loc["local_evidence", "processed_texts"] == 1
+
+
+def test_scan_postprocessing_readiness_reports_ready_outputs(tmp_path: Path) -> None:
+    base = tmp_path / "processed" / "demo__model_a"
+    for split in ("HG", "MG"):
+        split_root = base / split
+        _write_parquet(split_root / "postprocessed" / "stage1.parquet", [{"id": 1}, {"id": 2}])
+        _write_parquet(split_root / "postprocessed" / "stage2.parquet", [{"id": 1}, {"id": 2}])
+        _write_parquet(split_root / "metrics" / "metrics.parquet", [{"id": 1}, {"id": 2}])
+        _write_parquet(
+            split_root / "token_similarity_stats" / "token_similarity_stats.parquet",
+            [{"id": 1}, {"id": 2}],
+        )
+    _write_parquet(
+        base / "local_evidence" / "windows.parquet",
+        [
+            {"split": "HG", "text_id": 1},
+            {"split": "HG", "text_id": 2},
+            {"split": "MG", "text_id": 1},
+            {"split": "MG", "text_id": 2},
+        ],
+    )
+
+    result = scan_postprocessing_readiness(tmp_path / "processed")
+
+    assert list(result["status"]) == ["READY", "READY"]
+    assert set(result["dataset"]) == {"demo"}
+    assert set(result["model"]) == {"model_a"}
+    assert (result["stage1_rows"] == 2).all()
+    assert (result["stage2_rows"] == 2).all()
+    assert (result["missing_stage2"] == 0).all()
+    assert (result["extra_stage2"] == 0).all()
+    assert (result["metrics_rows"] == 2).all()
+    assert (result["similarity_stats_rows"] == 2).all()
+
+
+def test_scan_postprocessing_readiness_reports_id_mismatch_and_missing_outputs(tmp_path: Path) -> None:
+    split_root = tmp_path / "processed" / "demo__model_a" / "HG"
+    _write_parquet(split_root / "postprocessed" / "stage1.parquet", [{"id": 1}, {"id": 2}, {"id": 2}])
+    _write_parquet(split_root / "postprocessed" / "stage2.parquet", [{"id": 2}, {"id": 3}])
+
+    result = scan_postprocessing_readiness(tmp_path / "processed").iloc[0]
+
+    assert result["status"] == "ID_MISMATCH"
+    assert result["missing_stage2"] == 1
+    assert result["extra_stage2"] == 1
+    assert result["duplicate_stage1"] == 1
+    assert result["metrics_rows"] == 0
+    assert result["similarity_stats_rows"] == 0

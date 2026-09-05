@@ -26,6 +26,25 @@ OUTPUT_COLUMNS = [
     "error",
 ]
 
+POSTPROCESSING_COLUMNS = [
+    "dataset",
+    "model",
+    "split",
+    "stage1_rows",
+    "stage1_unique",
+    "stage2_rows",
+    "stage2_unique",
+    "missing_stage2",
+    "extra_stage2",
+    "duplicate_stage1",
+    "duplicate_stage2",
+    "metrics_rows",
+    "similarity_stats_rows",
+    "local_evidence_rows",
+    "status",
+    "error",
+]
+
 
 def _experiment_name(dataset: str, model: str) -> str:
     slug = lambda value: re.sub(r"[^a-zA-Z0-9._-]+", "_", value).strip("_").lower()
@@ -158,3 +177,99 @@ def scan_processing_counts(
     result = pd.DataFrame(records, columns=OUTPUT_COLUMNS)
     result["stage"] = pd.Categorical(result["stage"], categories=STAGES, ordered=True)
     return result.sort_values(["dataset", "model", "split", "stage"]).reset_index(drop=True)
+
+
+def _postprocess_ids(path: Path) -> list[int]:
+    if not path.exists():
+        return []
+    return [int(value) for value in pd.read_parquet(path, columns=["id"])["id"].tolist()]
+
+
+def _postprocess_rows(path: Path) -> int:
+    if not path.exists():
+        return 0
+    return len(pd.read_parquet(path, columns=["id"]))
+
+
+def _postprocess_split_dirs(processed_root: Path) -> list[tuple[str, str, Path]]:
+    split_dirs: list[tuple[str, str, Path]] = []
+    ignored = {"local_evidence", "local_evidence_models", "local_evidence_windows"}
+    if not processed_root.exists():
+        return split_dirs
+    for experiment_root in sorted(path for path in processed_root.iterdir() if path.is_dir() and "__" in path.name):
+        dataset, model = experiment_root.name.split("__", 1)
+        for split_root in sorted(path for path in experiment_root.iterdir() if path.is_dir() and path.name not in ignored):
+            if split_root.name in {"HG", "MG"} or any(
+                (split_root / name).exists()
+                for name in ("data", "token_similarities", "postprocessed", "state.json", "similarity_state.json")
+            ):
+                split_dirs.append((dataset, model, split_root))
+    return split_dirs
+
+
+def scan_postprocessing_readiness(processed_root: Path) -> pd.DataFrame:
+    records: list[dict[str, Any]] = []
+    for dataset, model, split_root in _postprocess_split_dirs(processed_root):
+        stage1_path = split_root / "postprocessed" / "stage1.parquet"
+        stage2_path = split_root / "postprocessed" / "stage2.parquet"
+        metrics_path = split_root / "metrics" / "metrics.parquet"
+        stats_path = split_root / "token_similarity_stats" / "token_similarity_stats.parquet"
+        local_path = split_root.parent / "local_evidence" / "windows.parquet"
+        error = ""
+        try:
+            stage1_values = _postprocess_ids(stage1_path)
+            stage2_values = _postprocess_ids(stage2_path)
+            stage1_ids = set(stage1_values)
+            stage2_ids = set(stage2_values)
+            local_rows = 0
+            if local_path.exists():
+                local_frame = pd.read_parquet(local_path, columns=["split", "text_id"])
+                local_rows = len(local_frame[local_frame["split"] == split_root.name]["text_id"].unique())
+            if not stage1_values and not stage2_values:
+                status = "EMPTY"
+            elif not stage1_values:
+                status = "MISSING_STAGE1"
+            elif not stage2_values:
+                status = "MISSING_STAGE2"
+            elif len(stage1_values) != len(stage1_ids) or len(stage2_values) != len(stage2_ids):
+                status = "ID_MISMATCH"
+            elif stage1_ids != stage2_ids:
+                status = "ID_MISMATCH"
+            elif _postprocess_rows(metrics_path) != len(stage1_ids):
+                status = "MISSING_METRICS"
+            elif _postprocess_rows(stats_path) != len(stage2_ids):
+                status = "MISSING_SIMILARITY_STATS"
+            elif local_rows != len(stage1_ids):
+                status = "MISSING_LOCAL_EVIDENCE"
+            else:
+                status = "READY"
+        except Exception as exc:  # Keep malformed combinations visible in the report.
+            stage1_values = []
+            stage2_values = []
+            local_rows = 0
+            status = "ERROR"
+            error = f"{type(exc).__name__}: {exc}"
+
+        records.append(
+            {
+                "dataset": dataset,
+                "model": model,
+                "split": split_root.name,
+                "stage1_rows": len(stage1_values),
+                "stage1_unique": len(set(stage1_values)),
+                "stage2_rows": len(stage2_values),
+                "stage2_unique": len(set(stage2_values)),
+                "missing_stage2": len(set(stage1_values) - set(stage2_values)),
+                "extra_stage2": len(set(stage2_values) - set(stage1_values)),
+                "duplicate_stage1": len(stage1_values) - len(set(stage1_values)),
+                "duplicate_stage2": len(stage2_values) - len(set(stage2_values)),
+                "metrics_rows": _postprocess_rows(metrics_path) if not error else 0,
+                "similarity_stats_rows": _postprocess_rows(stats_path) if not error else 0,
+                "local_evidence_rows": local_rows,
+                "status": status,
+                "error": error,
+            }
+        )
+    return pd.DataFrame(records, columns=POSTPROCESSING_COLUMNS).sort_values(
+        ["dataset", "model", "split"]
+    ).reset_index(drop=True)

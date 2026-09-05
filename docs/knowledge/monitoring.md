@@ -54,4 +54,12 @@ The exporter preserves the last good output during transient filesystem errors a
 
 The exporter also serves `/datasets.json`, generated from `DATASETS` in `scripts/experiment_config.py`. Adding a configured dataset makes it selectable in Grafana without editing the dashboard.
 
+## Postprocessing Notebook
+
+`notebooks/processing_monitoring.ipynb` reads the canonical and derived files
+created by `scripts/postprocess_pipeline.py`. It reports classification
+readiness by dataset, model, and split, including bidirectional ID coverage,
+metrics, similarity statistics, and local-evidence outputs. The notebook is
+read-only and does not run inference or rebuild artifacts.
+
 Detailed Grafana setup lives in `monitoring/grafana/README.md`.

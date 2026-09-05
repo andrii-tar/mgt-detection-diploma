@@ -32,15 +32,13 @@ def test_monitoring_notebook_is_output_free() -> None:
 def test_monitoring_notebook_contains_scan_and_display_contract() -> None:
     source = _source()
     for fragment in (
-        "from scripts.experiment_config import DATASETS, MODEL_IDS, build_datasets",
         "from scripts.data_root import resolve_data_root",
-        "scan_processing_counts(",
-        "TEXT_DETECTION_DATA",
+        "scan_postprocessing_readiness(",
         "DATA_ROOT",
         "DATA_ROOT = resolve_data_root()",
-        "build_datasets(DATA_ROOT)",
-        "processing_counts",
-        "stage_matrix",
+        "PROCESSED_ROOT",
+        "readiness",
+        "summary",
         "pivot_table(",
         "display(",
     ):
@@ -61,43 +59,11 @@ def test_monitoring_notebook_does_not_process_model_outputs() -> None:
 def test_monitoring_notebook_preserves_split_counts_in_progress_plots() -> None:
     source = _source()
     for fragment in (
-        'processing_counts.groupby(["dataset", "model", "split", "stage"]',
-            "sns.catplot(",
-            'hue="split"',
-            "stage2_counts",
-            'x="dataset"',
+        "sns.catplot(",
+        'hue="split"',
+        "artifact_columns",
+        "local_evidence_rows",
     ):
         assert fragment in source
-    assert ".sum()" not in source
-    assert ".mean()" not in source
-
-
-def test_progress_plot_uses_a_four_column_grid_per_model() -> None:
-    source = _source()
-    progress_start = source.index("progress_plot = sns.catplot(")
-    progress_end = source.index("stage2_counts =", progress_start)
-    progress_source = source[progress_start:progress_end]
-    assert 'col="dataset"' in progress_source
-    assert "col_wrap=4" in progress_source
-
-
-def test_monitoring_notebook_renders_progress_charts_sequentially() -> None:
-    source = _source()
-    assert "for model in sorted(split_stage_counts[\"model\"].unique())" in source
-    assert "plt.close(progress_plot.fig)" in source
-    assert "for model in sorted(stage2_counts[\"model\"].unique())" in source
-
-
-def test_progress_charts_are_grouped_in_four_column_model_grids() -> None:
-    source = _source()
-    assert "for model in sorted(split_stage_counts[\"model\"].unique())" in source
-    assert 'col="dataset"' in source
-    assert "col_wrap=4" in source
-
-
-def test_stage2_summary_charts_are_grouped_by_model() -> None:
-    source = _source()
-    assert "for model in sorted(stage2_counts[\"model\"].unique())" in source
-    assert 'x="dataset"' in source
-    assert 'y="processed_texts"' in source
-    assert 'hue="split"' in source
+    assert "stage1_rows" in source
+    assert "stage2_rows" in source
