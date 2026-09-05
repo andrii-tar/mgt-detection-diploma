@@ -59,6 +59,10 @@ def _keyword_names(node: ast.Call) -> set[str]:
     return {keyword.arg for keyword in node.keywords if keyword.arg is not None}
 
 
+def _keyword(node: ast.Call, name: str) -> ast.keyword:
+    return next(keyword for keyword in node.keywords if keyword.arg == name)
+
+
 def test_poc_notebook_is_output_free() -> None:
     notebook = _notebook()
     assert notebook["nbformat"] >= 4
@@ -270,6 +274,131 @@ def test_poc_notebook_propagates_classifiers_and_labels_every_result_frame() -> 
         assert isinstance(assign.func.value, ast.Attribute)
         assert assign.func.value.attr == result_name
         assert {"llm", "training_regime", "evaluation_regime"} <= _keyword_names(assign)
+
+
+def test_poc_notebook_passes_training_aliases_from_dataset_mapping() -> None:
+    tree = _tree()
+    training_loop = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.For)
+        and isinstance(node.iter, ast.Call)
+        and isinstance(node.iter.func, ast.Attribute)
+        and node.iter.func.attr == "items"
+        and isinstance(node.iter.func.value, ast.Name)
+        and node.iter.func.value.id == "TRAINING_REGIMES"
+    )
+    alias_assign = next(
+        node for node in ast.walk(training_loop)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "training_aliases"
+    )
+    assert isinstance(alias_assign.value, ast.Call)
+    assert isinstance(alias_assign.value.func, ast.Name)
+    assert alias_assign.value.func.id == "tuple"
+    assert len(alias_assign.value.args) == 1
+    aliases = alias_assign.value.args[0]
+    assert isinstance(aliases, ast.GeneratorExp)
+    assert isinstance(aliases.elt, ast.Subscript)
+    assert isinstance(aliases.elt.value, ast.Name)
+    assert aliases.elt.value.id == "DATASETS"
+    assert isinstance(aliases.elt.slice, ast.Name)
+    assert aliases.elt.slice.id == "name"
+    assert len(aliases.generators) == 1
+    generator = aliases.generators[0]
+    assert isinstance(generator.target, ast.Name)
+    assert generator.target.id == "name"
+    assert isinstance(generator.iter, ast.Name)
+    assert generator.iter.id == "training_names"
+
+    training_call = _calls(training_loop, "train_local_evidence_models")
+    assert len(training_call) == 1
+    assert len(training_call[0].args) >= 2
+    assert isinstance(training_call[0].args[1], ast.Name)
+    assert training_call[0].args[1].id == "training_aliases"
+
+
+def test_poc_notebook_passes_dataset_alias_and_matching_test_cohort() -> None:
+    tree = _tree()
+    evaluation_loop = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.For)
+        and isinstance(node.iter, ast.Call)
+        and isinstance(node.iter.func, ast.Attribute)
+        and node.iter.func.attr == "items"
+        and isinstance(node.iter.func.value, ast.Name)
+        and node.iter.func.value.id == "EVALUATION_REGIMES"
+    )
+    evaluation_call = _calls(evaluation_loop, "evaluate_local_evidence_datasets")[0]
+    assert len(evaluation_call.args) == 4
+    datasets_arg = evaluation_call.args[2]
+    assert isinstance(datasets_arg, ast.Tuple)
+    assert len(datasets_arg.elts) == 1
+    dataset_alias = datasets_arg.elts[0]
+    assert isinstance(dataset_alias, ast.Subscript)
+    assert isinstance(dataset_alias.value, ast.Name)
+    assert dataset_alias.value.id == "DATASETS"
+    assert isinstance(dataset_alias.slice, ast.Name)
+    assert dataset_alias.slice.id == "evaluation_name"
+
+    cohorts_arg = evaluation_call.args[3]
+    assert isinstance(cohorts_arg, ast.Dict)
+    assert len(cohorts_arg.keys) == len(cohorts_arg.values) == 1
+    cohort_key = cohorts_arg.keys[0]
+    assert isinstance(cohort_key, ast.Subscript)
+    assert isinstance(cohort_key.value, ast.Name)
+    assert cohort_key.value.id == "DATASETS"
+    assert isinstance(cohort_key.slice, ast.Name)
+    assert cohort_key.slice.id == "evaluation_name"
+    cohort_value = cohorts_arg.values[0]
+    assert isinstance(cohort_value, ast.Subscript)
+    assert isinstance(cohort_value.value, ast.Name)
+    assert cohort_value.value.id == "test_ids"
+    assert isinstance(cohort_value.slice, ast.Name)
+    assert cohort_value.slice.id == "evaluation_name"
+
+
+def test_poc_notebook_combines_results_as_mixed() -> None:
+    calls = _calls(_tree(), "combine_local_evidence_dataset_results")
+    assert len(calls) == 1
+    evaluation_regime = _keyword(calls[0], "evaluation_regime")
+    assert isinstance(evaluation_regime.value, ast.Constant)
+    assert evaluation_regime.value.value == "Mixed"
+
+
+def test_poc_notebook_labels_per_dataset_and_mixed_output_frames() -> None:
+    tree = _tree()
+    result_loops = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.For) and _constant_tuple(node.iter)
+        == ("metrics", "predictions", "scored_windows", "coverage")
+    ]
+    assert len(result_loops) == 2
+    labels = []
+    for result_loop in result_loops:
+        assignment = next(
+            node for node in ast.walk(result_loop)
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Subscript)
+            and isinstance(node.targets[0].slice, ast.Constant)
+            and node.targets[0].slice.value == "evaluation_dataset"
+        )
+        labels.append(assignment.value)
+
+    assert any(
+        isinstance(label, ast.Subscript)
+        and isinstance(label.value, ast.Name)
+        and label.value.id == "DATASETS"
+        and isinstance(label.slice, ast.Name)
+        and label.slice.id == "evaluation_name"
+        for label in labels
+    )
+    assert any(
+        isinstance(label, ast.Constant) and label.value == "Mixed"
+        for label in labels
+    )
 
 
 def test_poc_notebook_reports_dataset_specific_transfer_results() -> None:
