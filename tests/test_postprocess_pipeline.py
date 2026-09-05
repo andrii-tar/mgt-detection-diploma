@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from scripts.postprocess_pipeline import _process_split, compare_ids, consolidate_parquet_files
+from scripts.postprocess_pipeline import _process_split, compare_ids, consolidate_parquet_files, run_postprocessing
 
 
 def _write_ids(path: Path, ids: list[int]) -> None:
@@ -54,3 +54,45 @@ def test_process_split_rebuilds_canonical_stage_outputs(tmp_path: Path, monkeypa
     assert rebuilt == ["metrics:stage1.parquet", "stats:stage2.parquet"]
     assert pd.read_parquet(split_dir / "postprocessed" / "stage1.parquet")["id"].tolist() == [0, 1]
     assert pd.read_parquet(split_dir / "postprocessed" / "stage2.parquet")["id"].tolist() == [0, 1]
+
+
+def test_run_postprocessing_reports_progress_per_dataset_model_pair(tmp_path, monkeypatch, capsys):
+    experiment = tmp_path / "demo__model_a"
+    for split in ("HG", "MG"):
+        (experiment / split / "data").mkdir(parents=True)
+
+    progress = {}
+
+    class RecordingBar:
+        def __init__(self, iterable, **kwargs):
+            progress.update(kwargs)
+            self.iterable = iterable
+            self.updates = 0
+            progress["bar"] = self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def __iter__(self):
+            return iter(self.iterable)
+
+        def update(self, amount):
+            self.updates += amount
+
+    monkeypatch.setattr("scripts.postprocess_pipeline.tqdm", RecordingBar)
+    monkeypatch.setattr(
+        "scripts.postprocess_pipeline._process_split",
+        lambda split_dir: ("COMPLETE", compare_ids([1], [1])),
+    )
+
+    assert run_postprocessing(tmp_path) == 0
+    assert {key: progress[key] for key in ("desc", "total", "unit")} == {
+        "desc": "demo/model_a",
+        "total": 2,
+        "unit": "split",
+    }
+    assert progress["bar"].updates == 2
+    assert "SUMMARY: splits=2 complete=2 invalid=0 local_evidence=0" in capsys.readouterr().out
