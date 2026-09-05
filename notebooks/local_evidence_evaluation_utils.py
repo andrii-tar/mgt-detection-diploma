@@ -39,6 +39,39 @@ class LocalEvidenceSemEvalEvaluationResult:
     scored_windows: pd.DataFrame
 
 
+def combine_local_evidence_dataset_results(
+    results: list[LocalEvidenceDatasetEvaluationResult] | tuple[LocalEvidenceDatasetEvaluationResult, ...],
+    *,
+    evaluation_regime: str,
+) -> LocalEvidenceDatasetEvaluationResult:
+    predictions = pd.concat([result.predictions for result in results], ignore_index=True)
+    scored_windows = pd.concat([result.scored_windows for result in results], ignore_index=True)
+    coverage = pd.concat([result.coverage for result in results], ignore_index=True)
+
+    rule_columns = [
+        "model", "window_length", "aggregation", "window_threshold",
+        "document_threshold", "score_direction",
+    ]
+    metric_rows: list[dict[str, object]] = []
+    for rule_values, documents in predictions.groupby(rule_columns, dropna=False, sort=False):
+        rule = dict(zip(rule_columns, rule_values, strict=True))
+        direction = str(rule["score_direction"])
+        decision_scores = documents["mg_score"] if direction == "higher_is_mg" else -documents["mg_score"]
+        threshold = float(rule["document_threshold"])
+        metric_rows.append({
+            "evaluation_dataset": evaluation_regime,
+            **rule,
+            "evaluation_regime": evaluation_regime,
+            **evaluate_scores(documents["label"], decision_scores, threshold),
+        })
+
+    for frame in (predictions, scored_windows, coverage):
+        frame["evaluation_regime"] = evaluation_regime
+    return LocalEvidenceDatasetEvaluationResult(
+        pd.DataFrame(metric_rows), predictions, scored_windows, coverage,
+    )
+
+
 def _namespace(windows: pd.DataFrame, dataset: str) -> pd.DataFrame:
     result = windows.copy()
     result["text_id"] = result.apply(

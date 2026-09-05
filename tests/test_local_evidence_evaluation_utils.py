@@ -3,7 +3,11 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from notebooks.local_evidence_evaluation_utils import evaluate_local_evidence_datasets
+from notebooks.local_evidence_evaluation_utils import (
+    LocalEvidenceDatasetEvaluationResult,
+    combine_local_evidence_dataset_results,
+    evaluate_local_evidence_datasets,
+)
 from notebooks.local_evidence_training_utils import train_local_evidence_models
 
 
@@ -51,3 +55,43 @@ def test_evaluation_uses_only_requested_test_texts(monkeypatch: pytest.MonkeyPat
 
     assert set(result.predictions["text_id"]) == {"target::HG::2", "target::MG::5"}
     assert result.metrics["evaluation_dataset"].tolist() == ["target", "target"]
+
+
+def test_combines_local_evidence_results_for_mixed_evaluation() -> None:
+    rule = {
+        "model": "classifier",
+        "window_length": 2,
+        "aggregation": "maximum_window",
+        "window_threshold": float("nan"),
+        "document_threshold": 0.5,
+        "score_direction": "higher_is_mg",
+    }
+    results = []
+    for dataset, text_id, label, mg_score in (
+        ("source", "source::HG::1", 0, 0.1),
+        ("target", "target::MG::2", 1, 0.9),
+    ):
+        prediction = pd.DataFrame([{
+            **rule, "evaluation_dataset": dataset,
+            "split": "HG" if label == 0 else "MG", "text_id": text_id,
+            "label": label, "mg_score": mg_score,
+            "prediction": int(mg_score >= 0.5),
+        }])
+        scored = pd.DataFrame([{
+            **rule, "evaluation_dataset": dataset,
+            "split": prediction.loc[0, "split"], "text_id": text_id,
+            "label": label, "start_token": 0, "stop_token": 2,
+            "mg_score": mg_score,
+        }])
+        coverage = pd.DataFrame([{
+            "evaluation_dataset": dataset, "texts": 1, "window_rows": 1,
+        }])
+        results.append(LocalEvidenceDatasetEvaluationResult(pd.DataFrame(), prediction, scored, coverage))
+
+    combined = combine_local_evidence_dataset_results(results, evaluation_regime="Mixed")
+
+    assert set(combined.predictions["text_id"]) == {"source::HG::1", "target::MG::2"}
+    assert len(combined.metrics) == 1
+    assert combined.metrics["evaluation_regime"].tolist() == ["Mixed"]
+    assert combined.predictions["evaluation_regime"].tolist() == ["Mixed", "Mixed"]
+    assert combined.coverage["evaluation_regime"].tolist() == ["Mixed", "Mixed"]
