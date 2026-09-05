@@ -18,6 +18,11 @@ def test_resolve_phi_model_aliases():
     assert resolve_model_id("phi_4_mini_reasoning") == "microsoft/Phi-4-mini-reasoning"
 
 
+def test_resolve_ministral_model_aliases():
+    assert resolve_model_id("ministral_3_3b") == "mistralai/Ministral-3-3B-Instruct-2512"
+    assert resolve_model_id("ministral_3_3b_reasoning") == "mistralai/Ministral-3-3B-Reasoning-2512"
+
+
 def test_resolve_custom_2025_dataset_splits(tmp_path: Path):
     assert resolve_dataset_splits("custom_2025", tmp_path) == {
         "HG": tmp_path / "raw/custom/samples_2025/custom_2025_HG.csv",
