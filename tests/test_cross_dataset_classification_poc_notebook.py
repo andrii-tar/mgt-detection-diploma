@@ -355,8 +355,34 @@ def test_poc_notebook_passes_dataset_alias_and_matching_test_cohort() -> None:
     assert isinstance(cohort_value, ast.Subscript)
     assert isinstance(cohort_value.value, ast.Name)
     assert cohort_value.value.id == "test_ids"
-    assert isinstance(cohort_value.slice, ast.Name)
-    assert cohort_value.slice.id == "evaluation_name"
+    assert isinstance(cohort_value.slice, ast.Subscript)
+    assert isinstance(cohort_value.slice.value, ast.Name)
+    assert cohort_value.slice.value.id == "DATASETS"
+    assert isinstance(cohort_value.slice.slice, ast.Name)
+    assert cohort_value.slice.slice.id == "evaluation_name"
+
+    training_loop = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.For)
+        and isinstance(node.iter, ast.Call)
+        and isinstance(node.iter.func, ast.Attribute)
+        and node.iter.func.attr == "items"
+        and isinstance(node.iter.func.value, ast.Name)
+        and node.iter.func.value.id == "TRAINING_REGIMES"
+    )
+    test_ids_assignment = next(
+        node for node in ast.walk(training_loop)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "test_ids"
+    )
+    assert isinstance(test_ids_assignment.value, ast.DictComp)
+    assert isinstance(test_ids_assignment.value.key, ast.Subscript)
+    assert isinstance(test_ids_assignment.value.key.value, ast.Name)
+    assert test_ids_assignment.value.key.value.id == "DATASETS"
+    assert isinstance(test_ids_assignment.value.key.slice, ast.Name)
+    assert test_ids_assignment.value.key.slice.id == "name"
 
 
 def test_poc_notebook_combines_results_as_mixed() -> None:
