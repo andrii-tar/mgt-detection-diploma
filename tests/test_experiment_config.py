@@ -5,7 +5,7 @@ from pathlib import Path
 os.environ.setdefault("TEXT_DETECTION_DATA", str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from experiment_config import resolve_dataset_splits, resolve_model_id
+from experiment_config import resolve_dataset_splits, resolve_model_id, resolve_model_name
 
 
 def test_resolve_llama_model_aliases():
@@ -21,6 +21,11 @@ def test_resolve_phi_model_aliases():
 def test_resolve_ministral_model_aliases():
     assert resolve_model_id("ministral_3_3b") == "unsloth/Ministral-3-3B-Instruct-2512-GGUF"
     assert resolve_model_id("ministral_3_3b_reasoning") == "unsloth/Ministral-3-3B-Reasoning-2512-GGUF"
+
+
+def test_resolve_model_name_uses_alias_for_known_huggingface_id():
+    assert resolve_model_name("google/gemma-2-2b-it") == "gemma_2_2b_it"
+    assert resolve_model_name("custom/model") == "custom/model"
 
 
 def test_resolve_custom_2025_dataset_splits(tmp_path: Path):

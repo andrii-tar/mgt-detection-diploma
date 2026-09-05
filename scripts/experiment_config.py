@@ -106,6 +106,15 @@ def resolve_model_id(model: str) -> str:
     return MODEL_IDS.get(model, model)
 
 
+def resolve_model_name(model: str) -> str:
+    if model in MODEL_IDS:
+        return model
+    for alias, model_id in MODEL_IDS.items():
+        if model_id == model:
+            return alias
+    return model
+
+
 def resolve_dataset_name(dataset: str) -> str:
     return DATASETS.get(dataset, {}).get("dataset_name", dataset)
 

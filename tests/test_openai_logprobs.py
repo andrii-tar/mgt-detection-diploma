@@ -42,11 +42,13 @@ class LoadLocalModelTest(unittest.TestCase):
 
                     load_local_model(model_id)
 
-        tokenizer_loader.assert_called_once_with(model_id, local_files_only=True)
+        tokenizer_loader.assert_called_once_with(
+            "mistralai/Ministral-3-3B-Instruct-2512", local_files_only=True, use_fast=False
+        )
         model_loader.assert_called_once_with(
             model_id,
             local_files_only=True,
-            gguf="Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
+            gguf_file="Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
         )
 
 

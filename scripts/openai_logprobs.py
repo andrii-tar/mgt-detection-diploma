@@ -14,6 +14,10 @@ MINISTRAL_Q4_FILES = {
     "unsloth/Ministral-3-3B-Instruct-2512-GGUF": "Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
     "unsloth/Ministral-3-3B-Reasoning-2512-GGUF": "Ministral-3-3B-Reasoning-2512-Q4_K_M.gguf",
 }
+MINISTRAL_TOKENIZER_IDS = {
+    model_id: model_id.replace("unsloth/", "mistralai/").replace("-GGUF", "")
+    for model_id in MINISTRAL_Q4_FILES
+}
 
 
 def _decode_token(tokenizer: Any, token_id: int) -> str:
@@ -46,10 +50,14 @@ def load_local_model(model_id: str = DEFAULT_MODEL_ID) -> tuple[Any, Any, torch.
     )
     load_kwargs = {"local_files_only": True} if local_files_only else {}
 
-    tokenizer = AutoTokenizer.from_pretrained(model_id, **load_kwargs)
+    tokenizer_kwargs = dict(load_kwargs)
+    if model_id in MINISTRAL_Q4_FILES:
+        tokenizer_kwargs["use_fast"] = False
+    tokenizer_id = MINISTRAL_TOKENIZER_IDS.get(model_id, model_id)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_id, **tokenizer_kwargs)
     model_kwargs = dict(load_kwargs)
     if gguf_file := MINISTRAL_Q4_FILES.get(model_id):
-        model_kwargs["gguf"] = gguf_file
+        model_kwargs["gguf_file"] = gguf_file
     model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
     model.eval()
 

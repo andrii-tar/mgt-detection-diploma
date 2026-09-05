@@ -13,12 +13,12 @@ import pandas as pd
 from tqdm import tqdm
 
 if __package__:
-    from .experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+    from .experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id, resolve_model_name
     from .data_root import resolve_data_root
     from .interactive_cli import input_int, select_key
     from .openai_logprobs import load_local_model
 else:
-    from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id
+    from experiment_config import DATASETS, DATA_ROOT, MODEL_IDS, resolve_dataset_name, resolve_dataset_splits, resolve_model_id, resolve_model_name
     from data_root import resolve_data_root
     from interactive_cli import input_int, select_key
     from openai_logprobs import load_local_model
@@ -267,6 +267,7 @@ def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
 def run_stage_2(dataset: str, model_name: str, model_id: str, count: int, splits: list[str] | None = None) -> None:
     global DATA_ROOT
     DATA_ROOT = resolve_data_root()
+    model_name = resolve_model_name(model_name)
     dataset_name = resolve_dataset_name(dataset)
     dataset_splits = resolve_dataset_splits(dataset)
     selected_splits = splits if splits is not None else list(dataset_splits)
@@ -286,7 +287,7 @@ def main() -> None:
     args = _resolve_args(_parse_args())
     count = args.count
     model_id = args.model_id if args.model_id is not None else resolve_model_id(args.model)
-    model_name = args.model if args.model_id is None else args.model_id
+    model_name = resolve_model_name(args.model if args.model_id is None else args.model_id)
     run_stage_2(args.dataset, model_name, model_id, count)
 
 

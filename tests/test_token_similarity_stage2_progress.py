@@ -79,9 +79,11 @@ def test_run_stage_2_resolves_runtime_data_root(tmp_path, monkeypatch):
     monkeypatch.setattr(token_similarity_stage2, "DATA_ROOT", Path("."))
     monkeypatch.setattr(token_similarity_stage2, "resolve_data_root", lambda: tmp_path)
     monkeypatch.setattr(token_similarity_stage2, "resolve_dataset_splits", lambda dataset: {"HG": tmp_path / "input.csv"})
+    monkeypatch.setattr(token_similarity_stage2, "resolve_model_name", lambda model: "canonical_model")
     monkeypatch.setattr(token_similarity_stage2, "load_local_model", lambda model_id: (None, DummyModel(), None))
     monkeypatch.setattr(token_similarity_stage2.F, "normalize", lambda weights, dim: weights)
-    monkeypatch.setattr(token_similarity_stage2, "_process_split", lambda *args: None)
+    stage2_args: list[object] = []
+    monkeypatch.setattr(token_similarity_stage2, "_process_split", lambda *args: stage2_args.extend(args))
 
     token_similarity_stage2.run_stage_2(
         dataset="demo",
@@ -92,3 +94,4 @@ def test_run_stage_2_resolves_runtime_data_root(tmp_path, monkeypatch):
     )
 
     assert token_similarity_stage2.DATA_ROOT == tmp_path
+    assert stage2_args[5] == "canonical_model"
