@@ -102,7 +102,7 @@ Expected: collection failure because `combine_local_evidence_dataset_results` do
 Implement `combine_local_evidence_dataset_results(results, *, evaluation_regime)` in `notebooks/local_evidence_evaluation_utils.py`:
 
 1. Concatenate each result’s `predictions` and `scored_windows`.
-2. Group predictions by `model`, `window_length`, `aggregation`, `window_threshold`, `document_threshold`, and `score_direction`.
+2. Group predictions by `model`, `window_length`, `aggregation`, `window_threshold`, `document_threshold`, and `score_direction` with `dropna=False` so `maximum_window` rows whose window threshold is `NaN` are retained.
 3. Recompute metrics from the concatenated document `label` and `mg_score`, negating scores for `higher_is_hg` exactly as the existing evaluator does.
 4. Add `evaluation_regime` to metrics and predictions.
 5. Concatenate coverage and add the same regime label.
