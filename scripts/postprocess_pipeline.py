@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
+from tqdm import tqdm
 
 from scripts import export_token_similarity_stats as similarity_stats
 from scripts import logprob_metrics
@@ -215,16 +216,23 @@ def run_postprocessing(
         if model is not None and model_name != model:
             continue
         valid_splits: set[str] = set()
-        for split_dir in _split_dirs(experiment_dir):
-            if split is not None and split_dir.name != split:
-                continue
-            status, _ = _process_split(split_dir)
-            total += 1
-            if status == "COMPLETE":
-                complete += 1
-                valid_splits.add(split_dir.name)
-            else:
-                invalid += 1
+        split_dirs = _split_dirs(experiment_dir)
+        if split is not None:
+            split_dirs = [split_dir for split_dir in split_dirs if split_dir.name == split]
+        with tqdm(
+            split_dirs,
+            total=len(split_dirs),
+            desc=f"{dataset_name}/{model_name}",
+            unit="split",
+        ) as progress:
+            for split_dir in progress:
+                status, _ = _process_split(split_dir)
+                total += 1
+                if status == "COMPLETE":
+                    complete += 1
+                    valid_splits.add(split_dir.name)
+                else:
+                    invalid += 1
         if split is None and valid_splits == {"HG", "MG"}:
             if _rebuild_local_evidence(experiment_dir, valid_splits, processed_root):
                 local_evidence += 1

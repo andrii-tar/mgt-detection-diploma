@@ -77,7 +77,9 @@ def test_run_postprocessing_reports_progress_per_dataset_model_pair(tmp_path, mo
             return False
 
         def __iter__(self):
-            return iter(self.iterable)
+            for item in self.iterable:
+                self.update(1)
+                yield item
 
         def update(self, amount):
             self.updates.append(amount)
@@ -87,6 +89,7 @@ def test_run_postprocessing_reports_progress_per_dataset_model_pair(tmp_path, mo
         "scripts.postprocess_pipeline._process_split",
         lambda split_dir: ("COMPLETE", compare_ids([1], [1])),
     )
+    monkeypatch.setattr("scripts.postprocess_pipeline._rebuild_local_evidence", lambda *args: False)
 
     assert run_postprocessing(tmp_path) == 0
     assert {key: progress[key] for key in ("desc", "total", "unit")} == {
