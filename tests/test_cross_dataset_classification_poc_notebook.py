@@ -166,7 +166,7 @@ def test_poc_notebook_executes_all_training_and_evaluation_regimes() -> None:
         and isinstance(node.iter.func, ast.Attribute)
         and node.iter.func.attr == "items"
         and isinstance(node.iter.func.value, ast.Name)
-        and node.iter.func.value.id == "TRAINING_REGIMES"
+        and node.iter.func.value.id == "available_training_regimes"
     ]
     evaluation_loops = [
         node
@@ -176,7 +176,7 @@ def test_poc_notebook_executes_all_training_and_evaluation_regimes() -> None:
         and isinstance(node.iter.func, ast.Attribute)
         and node.iter.func.attr == "items"
         and isinstance(node.iter.func.value, ast.Name)
-        and node.iter.func.value.id == "EVALUATION_REGIMES"
+        and node.iter.func.value.id == "available_evaluation_regimes"
     ]
 
     assert len(training_loops) == 1
@@ -285,7 +285,7 @@ def test_poc_notebook_passes_training_aliases_from_dataset_mapping() -> None:
         and isinstance(node.iter.func, ast.Attribute)
         and node.iter.func.attr == "items"
         and isinstance(node.iter.func.value, ast.Name)
-        and node.iter.func.value.id == "TRAINING_REGIMES"
+        and node.iter.func.value.id == "available_training_regimes"
     )
     alias_assign = next(
         node for node in ast.walk(training_loop)
@@ -328,7 +328,7 @@ def test_poc_notebook_passes_dataset_alias_and_matching_test_cohort() -> None:
         and isinstance(node.iter.func, ast.Attribute)
         and node.iter.func.attr == "items"
         and isinstance(node.iter.func.value, ast.Name)
-        and node.iter.func.value.id == "EVALUATION_REGIMES"
+        and node.iter.func.value.id == "available_evaluation_regimes"
     )
     evaluation_call = _calls(evaluation_loop, "evaluate_local_evidence_datasets")[0]
     assert len(evaluation_call.args) == 4
@@ -368,7 +368,7 @@ def test_poc_notebook_passes_dataset_alias_and_matching_test_cohort() -> None:
         and isinstance(node.iter.func, ast.Attribute)
         and node.iter.func.attr == "items"
         and isinstance(node.iter.func.value, ast.Name)
-        and node.iter.func.value.id == "TRAINING_REGIMES"
+        and node.iter.func.value.id == "available_training_regimes"
     )
     test_ids_assignment = next(
         node for node in ast.walk(training_loop)
@@ -470,17 +470,19 @@ def test_poc_notebook_excludes_removed_models_settings_and_processing_entry_poin
 def test_poc_notebook_skips_unavailable_source_caches() -> None:
     source = _source()
     assert "available_display_names = set()" in source
-    assert "except (FileNotFoundError, ValueError) as exc:" in source
-    assert 'display(f"Skipping {dataset_name}: {exc}")' in source
+    assert "except Exception as exc:" in source
+    assert "Deliberately catch all ordinary cache/data failures at this source boundary" in source
+    assert 'display(f"Skipping {llm}/{dataset_name}: {exc}")' in source
     assert "available_display_names.add(dataset_name)" in source
 
 
 def test_poc_notebook_filters_regimes_by_available_sources() -> None:
     source = _source()
-    assert "if not set(training_names).issubset(available_display_names):" in source
-    assert "if not set(evaluation_names).issubset(available_display_names):" in source
-    assert 'display(f"Skipping training regime {training_regime}: required sources are unavailable.")' in source
-    assert 'display(f"Skipping evaluation regime {evaluation_regime}: required sources are unavailable.")' in source
+    assert "available_training_regimes = {" in source
+    assert "available_evaluation_regimes = {" in source
+    assert "if set(names).issubset(available_display_names)" in source
+    assert "for training_regime, training_names in available_training_regimes.items()" in source
+    assert "for evaluation_regime, evaluation_names in available_evaluation_regimes.items()" in source
 
 
 def test_poc_notebook_handles_empty_result_frames() -> None:
@@ -488,3 +490,11 @@ def test_poc_notebook_handles_empty_result_frames() -> None:
     assert "def concat_or_empty(frames, label):" in source
     assert "No classification results are available." in source
     assert "if metrics.empty:" in source
+
+
+def test_poc_notebook_only_loads_semeval_when_a_training_regime_exists() -> None:
+    source = _source()
+    assert "available_training_regimes = {" in source
+    assert "semeval_annotations = pd.read_csv(SEMEVAL_PREPARED_PATH)" in source
+    assert "if not available_training_regimes:" in source
+    assert 'display("No training regimes are available; skipping SemEval evaluation.")' in source
