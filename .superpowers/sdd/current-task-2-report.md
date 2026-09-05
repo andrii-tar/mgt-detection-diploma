@@ -15,6 +15,52 @@ Concerns:
 - The notebook was not executed, as required. Runtime behavior against prepared data and model outputs remains unverified.
 - No processing jobs were run.
 
+## High-Severity Alias Fix
+
+Status: completed
+
+Commit hash: ea2def74aa687cf66505b0a0d6d46d13a3e9ac94
+
+Changes:
+
+- Changed `test_ids` to use `DATASETS[name]` aliases as keys.
+- Changed evaluation to index `test_ids` with `DATASETS[evaluation_name]`, eliminating the display-name/alias mismatch while preserving display names for labels and presentation.
+- Strengthened the notebook contract test to structurally assert alias-keyed `test_ids` construction and matching alias evaluation indexing.
+
+Tests and output:
+
+- `uv run pytest -q tests/test_cross_dataset_classification_poc_notebook.py`: `.............. [100%]`, `14 passed in 0.07s`
+- `git diff --check`: passed with no output
+
+Concerns:
+
+- The notebook was not executed, as required. Runtime behavior against prepared data and model outputs remains unverified.
+- No processing jobs were run.
+
+## Remaining Review Finding Fix
+
+Status: completed
+
+Commit hash: 833bd949b9f74a864725c119459565570d0f21ac
+
+Changes:
+
+- Added AST assertions that the training call receives `training_aliases`, defined as the tuple of `DATASETS` aliases selected by each training regime; the retained exact `Mixed` regime mapping proves the tuple is `("kaggle_train", "outfox_chatgpt_train")`.
+- Added AST assertions that evaluation passes the `DATASETS[evaluation_name]` alias and matching `test_ids[evaluation_name]` cohort mapping.
+- Added an assertion for keyword `evaluation_regime="Mixed"` on the combine helper call.
+- Added AST assertions for per-dataset and Mixed `evaluation_dataset` labels on output frames.
+- Retained the existing exact regime/configuration and output-label assertions.
+
+Tests and output:
+
+- `uv run pytest -q tests/test_cross_dataset_classification_poc_notebook.py`: `.............. [100%]`, `14 passed in 0.06s`
+- `git diff --check`: passed with no output before report update
+
+Concerns:
+
+- The notebook was not executed, as required. Runtime behavior against prepared data and model outputs remains unverified.
+- No processing jobs were run.
+
 ## Review Fix Report 2
 
 Status: completed
