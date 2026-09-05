@@ -67,7 +67,7 @@ def test_run_postprocessing_reports_progress_per_dataset_model_pair(tmp_path, mo
         def __init__(self, iterable, **kwargs):
             progress.update(kwargs)
             self.iterable = iterable
-            self.updates = 0
+            self.updates = []
             progress["bar"] = self
 
         def __enter__(self):
@@ -80,7 +80,7 @@ def test_run_postprocessing_reports_progress_per_dataset_model_pair(tmp_path, mo
             return iter(self.iterable)
 
         def update(self, amount):
-            self.updates += amount
+            self.updates.append(amount)
 
     monkeypatch.setattr("scripts.postprocess_pipeline.tqdm", RecordingBar)
     monkeypatch.setattr(
@@ -94,5 +94,5 @@ def test_run_postprocessing_reports_progress_per_dataset_model_pair(tmp_path, mo
         "total": 2,
         "unit": "split",
     }
-    assert progress["bar"].updates == 2
+    assert progress["bar"].updates == [1, 1]
     assert "SUMMARY: splits=2 complete=2 invalid=0 local_evidence=0" in capsys.readouterr().out
