@@ -74,7 +74,9 @@ def test_monitoring_notebook_contains_processed_text_heatmap() -> None:
     for fragment in (
         'values="stage1_rows"',
         "processed_texts = readiness.pivot_table",
+        'index=["dataset", "split"]',
+        'columns="model"',
         "annot=processed_texts",
-        "Processed text count by dataset, model, and split",
+        "Processed text count by dataset/split and model",
     ):
         assert fragment in source
