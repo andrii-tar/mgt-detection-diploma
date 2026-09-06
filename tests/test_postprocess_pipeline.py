@@ -119,3 +119,24 @@ def test_run_postprocessing_reports_progress_per_dataset_model_pair(tmp_path, mo
     assert progress["bar"].updates == [1, 1, 1, 1]
     assert progress["bar"].postfixes == ["read_ids", "metrics"] * 2
     assert "SUMMARY: splits=2 complete=2 invalid=0 local_evidence=0" in capsys.readouterr().out
+
+
+def test_run_postprocessing_rebuilds_local_evidence_for_one_complete_split(tmp_path, monkeypatch):
+    experiment = tmp_path / "demo__model_a"
+    (experiment / "HG" / "data").mkdir(parents=True)
+    observed: list[tuple[Path, set[str], Path]] = []
+
+    monkeypatch.setattr(
+        "scripts.postprocess_pipeline._process_split",
+        lambda split_dir, report_phase: ("COMPLETE", compare_ids([1], [1])),
+    )
+    monkeypatch.setattr(
+        "scripts.postprocess_pipeline._rebuild_local_evidence",
+        lambda experiment_dir, valid_splits, processed_root, report_phase=None: observed.append(
+            (experiment_dir, valid_splits, processed_root)
+        )
+        or True,
+    )
+
+    assert run_postprocessing(tmp_path) == 0
+    assert observed == [(experiment, {"HG"}, tmp_path)]

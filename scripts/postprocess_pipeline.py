@@ -203,7 +203,7 @@ def _rebuild_local_evidence(
     processed_root: Path,
     report_phase: Callable[[str], None] | None = None,
 ) -> bool:
-    if not {"HG", "MG"}.issubset(valid_splits):
+    if not valid_splits:
         return False
     from notebooks.local_evidence_utils import load_or_build_local_evidence_windows
 
@@ -212,7 +212,7 @@ def _rebuild_local_evidence(
         processed_root,
         dataset,
         model,
-        splits=("HG", "MG"),
+        splits=tuple(sorted(valid_splits)),
         recompute=True,
     )
     if report_phase is not None:
@@ -251,7 +251,7 @@ def run_postprocessing(
                     valid_splits.add(split_dir.name)
                 else:
                     invalid += 1
-            if split is None and valid_splits == {"HG", "MG"}:
+            if split is None and valid_splits:
                 if _rebuild_local_evidence(
                     experiment_dir,
                     valid_splits,
