@@ -24,6 +24,8 @@ sync:
       paths:
         - "*"
         - "!raw"
+        - "!raw/MAGE"
+        - "!raw/MAGE/train"
         - "!raw/kaggle_train"
         - "!raw/kaggle_train/**"
         - "!raw/MAGE/train/**"
