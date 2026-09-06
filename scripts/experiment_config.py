@@ -14,6 +14,7 @@ MODEL_IDS = {
     "opt_350m": "facebook/opt-350m",
     "phi_4_mini_instruct": "microsoft/Phi-4-mini-instruct",
     "phi_4_mini_reasoning": "microsoft/Phi-4-mini-reasoning",
+    "qwen3_5_0_8b": "Qwen/Qwen3.5-0.8B",
     "ministral_3_3b": "unsloth/Ministral-3-3B-Instruct-2512-GGUF",
     "ministral_3_3b_reasoning": "unsloth/Ministral-3-3B-Reasoning-2512-GGUF",
     "smollm2_360m": "HuggingFaceTB/SmolLM2-360M-Instruct",
