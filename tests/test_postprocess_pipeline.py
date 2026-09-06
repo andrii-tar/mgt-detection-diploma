@@ -56,6 +56,20 @@ def test_process_split_rebuilds_canonical_stage_outputs(tmp_path: Path, monkeypa
     assert pd.read_parquet(split_dir / "postprocessed" / "stage2.parquet")["id"].tolist() == [0, 1]
 
 
+def test_process_split_reports_completed_phases(tmp_path: Path, monkeypatch) -> None:
+    split_dir = tmp_path / "demo__model_a" / "HG"
+    _write_ids(split_dir / "data" / "batch.parquet", [0, 1])
+    _write_ids(split_dir / "token_similarities" / "batch.parquet", [0, 1])
+    monkeypatch.setattr("scripts.postprocess_pipeline._write_metrics", lambda *_: None)
+    monkeypatch.setattr("scripts.postprocess_pipeline._write_similarity_stats", lambda *_: None)
+    phases: list[str] = []
+
+    status, _ = _process_split(split_dir, report_phase=phases.append)
+
+    assert status == "COMPLETE"
+    assert phases == ["read_ids", "stage1", "metrics", "stage2", "similarity_stats"]
+
+
 def test_run_postprocessing_reports_progress_per_dataset_model_pair(tmp_path, monkeypatch, capsys):
     experiment = tmp_path / "demo__model_a"
     for split in ("HG", "MG"):
@@ -64,10 +78,11 @@ def test_run_postprocessing_reports_progress_per_dataset_model_pair(tmp_path, mo
     progress = {}
 
     class RecordingBar:
-        def __init__(self, iterable, **kwargs):
+        def __init__(self, iterable=None, **kwargs):
             progress.update(kwargs)
-            self.iterable = iterable
+            self.iterable = iterable or []
             self.updates = []
+            self.postfixes = []
             progress["bar"] = self
 
         def __enter__(self):
@@ -77,25 +92,30 @@ def test_run_postprocessing_reports_progress_per_dataset_model_pair(tmp_path, mo
             return False
 
         def __iter__(self):
-            for item in self.iterable:
-                self.update(1)
-                yield item
+            return iter(self.iterable)
 
         def update(self, amount):
             self.updates.append(amount)
 
+        def set_postfix_str(self, value):
+            self.postfixes.append(value)
+
     monkeypatch.setattr("scripts.postprocess_pipeline.tqdm", RecordingBar)
     monkeypatch.setattr(
         "scripts.postprocess_pipeline._process_split",
-        lambda split_dir: ("COMPLETE", compare_ids([1], [1])),
+        lambda split_dir, report_phase: (
+            report_phase("read_ids"),
+            report_phase("metrics"),
+            ("COMPLETE", compare_ids([1], [1])),
+        )[-1],
     )
-    monkeypatch.setattr("scripts.postprocess_pipeline._rebuild_local_evidence", lambda *args: False)
+    monkeypatch.setattr("scripts.postprocess_pipeline._rebuild_local_evidence", lambda *args, **kwargs: False)
 
     assert run_postprocessing(tmp_path) == 0
-    assert {key: progress[key] for key in ("desc", "total", "unit")} == {
+    assert {key: progress[key] for key in ("desc", "unit")} == {
         "desc": "demo/model_a",
-        "total": 2,
-        "unit": "split",
+        "unit": "phase",
     }
-    assert progress["bar"].updates == [1, 1]
+    assert progress["bar"].updates == [1, 1, 1, 1]
+    assert progress["bar"].postfixes == ["read_ids", "metrics"] * 2
     assert "SUMMARY: splits=2 complete=2 invalid=0 local_evidence=0" in capsys.readouterr().out

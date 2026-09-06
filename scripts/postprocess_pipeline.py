@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import pandas as pd
 from tqdm import tqdm
@@ -158,20 +158,32 @@ def _status(comparison: IdComparison, stage1_paths: list[Path], stage2_paths: li
     return "COMPLETE"
 
 
-def _process_split(split_dir: Path) -> tuple[str, IdComparison]:
+def _process_split(
+    split_dir: Path,
+    report_phase: Callable[[str], None] | None = None,
+) -> tuple[str, IdComparison]:
+    def report(name: str) -> None:
+        if report_phase is not None:
+            report_phase(name)
+
     stage1_paths = sorted((split_dir / "data").glob("*.parquet"))
     stage2_paths = sorted((split_dir / "token_similarities").glob("*.parquet"))
     comparison = compare_ids(_read_ids(stage1_paths), _read_ids(stage2_paths))
+    report("read_ids")
     status = _status(comparison, stage1_paths, stage2_paths)
 
     if stage1_paths and not comparison.duplicate_stage1:
         canonical = split_dir / "postprocessed" / "stage1.parquet"
         consolidate_parquet_files(stage1_paths, canonical)
+        report("stage1")
         _write_metrics(canonical, split_dir)
+        report("metrics")
     if stage2_paths and not comparison.duplicate_stage2:
         canonical = split_dir / "postprocessed" / "stage2.parquet"
         consolidate_parquet_files(stage2_paths, canonical)
+        report("stage2")
         _write_similarity_stats(canonical, split_dir)
+        report("similarity_stats")
 
     print(
         f"{split_dir.parent.name}/{split_dir.name}: "
@@ -185,7 +197,12 @@ def _process_split(split_dir: Path) -> tuple[str, IdComparison]:
     return status, comparison
 
 
-def _rebuild_local_evidence(experiment_dir: Path, valid_splits: set[str], processed_root: Path) -> bool:
+def _rebuild_local_evidence(
+    experiment_dir: Path,
+    valid_splits: set[str],
+    processed_root: Path,
+    report_phase: Callable[[str], None] | None = None,
+) -> bool:
     if not {"HG", "MG"}.issubset(valid_splits):
         return False
     from notebooks.local_evidence_utils import load_or_build_local_evidence_windows
@@ -198,6 +215,8 @@ def _rebuild_local_evidence(experiment_dir: Path, valid_splits: set[str], proces
         splits=("HG", "MG"),
         recompute=True,
     )
+    if report_phase is not None:
+        report_phase("local_evidence")
     return True
 
 
@@ -219,23 +238,27 @@ def run_postprocessing(
         split_dirs = _split_dirs(experiment_dir)
         if split is not None:
             split_dirs = [split_dir for split_dir in split_dirs if split_dir.name == split]
-        with tqdm(
-            split_dirs,
-            total=len(split_dirs),
-            desc=f"{dataset_name}/{model_name}",
-            unit="split",
-        ) as progress:
-            for split_dir in progress:
-                status, _ = _process_split(split_dir)
+        with tqdm(desc=f"{dataset_name}/{model_name}", unit="phase") as progress:
+            def report_phase(name: str) -> None:
+                progress.update(1)
+                progress.set_postfix_str(name)
+
+            for split_dir in split_dirs:
+                status, _ = _process_split(split_dir, report_phase=report_phase)
                 total += 1
                 if status == "COMPLETE":
                     complete += 1
                     valid_splits.add(split_dir.name)
                 else:
                     invalid += 1
-        if split is None and valid_splits == {"HG", "MG"}:
-            if _rebuild_local_evidence(experiment_dir, valid_splits, processed_root):
-                local_evidence += 1
+            if split is None and valid_splits == {"HG", "MG"}:
+                if _rebuild_local_evidence(
+                    experiment_dir,
+                    valid_splits,
+                    processed_root,
+                    report_phase=report_phase,
+                ):
+                    local_evidence += 1
 
     print(f"SUMMARY: splits={total} complete={complete} invalid={invalid} local_evidence={local_evidence}")
     return 1 if invalid else 0
