@@ -51,11 +51,15 @@ def load_local_model(model_id: str = DEFAULT_MODEL_ID) -> tuple[Any, Any, torch.
     load_kwargs = {"local_files_only": True} if local_files_only else {}
 
     tokenizer_kwargs = dict(load_kwargs)
+    if model_id == "nvidia/Hymba-1.5B-Instruct":
+        tokenizer_kwargs["trust_remote_code"] = True
     if model_id in MINISTRAL_Q4_FILES:
         tokenizer_kwargs["use_fast"] = False
     tokenizer_id = MINISTRAL_TOKENIZER_IDS.get(model_id, model_id)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_id, **tokenizer_kwargs)
     model_kwargs = dict(load_kwargs)
+    if model_id == "nvidia/Hymba-1.5B-Instruct":
+        model_kwargs["trust_remote_code"] = True
     if gguf_file := MINISTRAL_Q4_FILES.get(model_id):
         model_kwargs["gguf_file"] = gguf_file
     model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)

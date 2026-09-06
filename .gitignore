@@ -13,5 +13,5 @@ notebooks/.ipynb_checkpoints/
 uv.lock
 .opencode/plugins/emdash-notifications.js
 .worktrees/
-.superpowers/sdd/
+*/.superpowers/sdd/*
 docs/superpowers/
