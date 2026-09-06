@@ -67,3 +67,14 @@ def test_monitoring_notebook_preserves_split_counts_in_progress_plots() -> None:
         assert fragment in source
     assert "stage1_rows" in source
     assert "stage2_rows" in source
+
+
+def test_monitoring_notebook_contains_processed_text_heatmap() -> None:
+    source = _source()
+    for fragment in (
+        'values="stage1_rows"',
+        "processed_texts = readiness.pivot_table",
+        "annot=processed_texts",
+        "Processed text count by dataset, model, and split",
+    ):
+        assert fragment in source
