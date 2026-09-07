@@ -45,6 +45,7 @@ from notebooks.token_candidate_similarity_heatmaps_utils import (
 from notebooks.local_evidence_utils import (
     LOCAL_FEATURE_COLUMNS,
     build_local_evidence_windows,
+    limit_local_evidence_windows_by_words,
     load_local_evidence_windows,
     save_local_evidence_windows,
 )
@@ -101,6 +102,23 @@ def test_truncate_logprob_row_by_words_updates_text_and_tokens():
     assert result["text"] == "one two"
     assert len(result["tokens"]) == 2
     assert row["text"] == "one two three four"
+
+
+def test_limit_local_evidence_windows_by_words_excludes_crossing_windows():
+    windows = pd.DataFrame([
+        {"split": "HG", "text_id": 1, "start_token": start, "stop_token": start + 2}
+        for start in range(4)
+    ])
+    stage1_rows = {
+        ("HG", "1"): {
+            "text": "one two three four",
+            "tokens": [{"token": token} for token in ("one", " two", " three", " four")],
+        }
+    }
+
+    result = limit_local_evidence_windows_by_words(windows, stage1_rows, 3)
+
+    assert result["stop_token"].tolist() == [2, 3]
 
 
 def test_compute_prefix_metrics_matches_production_for_each_prefix():

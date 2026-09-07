@@ -3,12 +3,14 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 from types import SimpleNamespace
+from typing import Mapping
 
 from notebooks.local_evidence_evaluation_utils import (
     LocalEvidenceDatasetEvaluationResult,
     LocalEvidenceSemEvalEvaluationResult,
     combine_local_evidence_dataset_results,
     evaluate_local_evidence_datasets,
+    evaluate_local_evidence_validation_lengths,
     evaluate_local_evidence_semeval,
 )
 from notebooks.local_evidence_training_utils import train_local_evidence_models
@@ -69,6 +71,49 @@ def test_evaluation_uses_only_requested_test_texts(monkeypatch: pytest.MonkeyPat
 
     assert set(result.predictions["text_id"]) == {"target::HG::2", "target::MG::5"}
     assert result.metrics["evaluation_dataset"].tolist() == ["target", "target"]
+
+
+def test_short_validation_evaluation_adds_length_metadata_without_refitting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = SimpleNamespace(
+        llm_name="llm", window_lengths=(2,), stride=1, top_k=1,
+        classifiers={}, decision_rules=pd.DataFrame(), feature_columns=FEATURES,
+    )
+    validation_ids = {"source": _cohort(("HG", 1))}
+    windows = pd.DataFrame([{
+        "split": "HG", "text_id": 1, "label": 0, "window_length": 2,
+        "start_token": 0, "stop_token": 2, "feature_a": 0.1, "feature_b": 0.2,
+    }])
+    base_result = LocalEvidenceDatasetEvaluationResult(
+        pd.DataFrame([{"macro_f1": 1.0}]),
+        pd.DataFrame([{"prediction": 0}]),
+        windows,
+        pd.DataFrame([{"texts": 1, "window_rows": 1}]),
+    )
+    calls: list[Mapping[str, pd.DataFrame] | None] = []
+
+    def evaluate(*args, **kwargs):
+        calls.append(kwargs.get("windows_override"))
+        return base_result
+
+    monkeypatch.setattr("notebooks.local_evidence_evaluation_utils.evaluate_local_evidence_datasets", evaluate)
+    monkeypatch.setattr(
+        "notebooks.local_evidence_evaluation_utils.load_local_evidence_cohort",
+        lambda *args, **kwargs: windows,
+    )
+
+    result = evaluate_local_evidence_validation_lengths(
+        model, "data", ["source"], validation_ids,
+        {"source": [{"id": 1, "split": "HG", "text": "one two three", "tokens": [
+            {"token": "one"}, {"token": " two"}, {"token": " three"},
+        ]}]},
+        (2,),
+    )
+
+    assert len(calls) == 2
+    assert set(result.metrics["validation_variant"]) == {"original", "first_N_words"}
+    assert set(result.metrics["classifier_family"]) == {"local_evidence_agg_mg_score"}
 
 
 def test_combines_local_evidence_results_for_mixed_evaluation() -> None:

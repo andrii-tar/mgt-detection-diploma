@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import pandas as pd
 
@@ -13,6 +13,7 @@ from notebooks.local_evidence_utils import (
     aggregate_evidence_fraction,
     aggregate_maximum_window,
     load_local_evidence_cohort,
+    limit_local_evidence_windows_by_words,
 )
 from notebooks.semeval_boundary_utils import (
     add_gold_boundaries,
@@ -97,6 +98,7 @@ def evaluate_local_evidence_datasets(
     text_ids: Mapping[str, pd.DataFrame],
     *,
     show_progress: bool = False,
+    windows_override: Mapping[str, pd.DataFrame] | None = None,
 ) -> LocalEvidenceDatasetEvaluationResult:
     metric_rows: list[dict[str, object]] = []
     prediction_frames: list[pd.DataFrame] = []
@@ -104,10 +106,14 @@ def evaluate_local_evidence_datasets(
     coverage_rows: list[dict[str, object]] = []
     rules = model.decision_rules
     for dataset in datasets:
-        windows = load_local_evidence_cohort(
-            Path(processed_root), dataset, model.llm_name, text_ids[dataset],
-            window_lengths=model.window_lengths, stride=model.stride, top_k=model.top_k,
-            show_progress=show_progress,
+        windows = (
+            windows_override[dataset].copy()
+            if windows_override is not None
+            else load_local_evidence_cohort(
+                Path(processed_root), dataset, model.llm_name, text_ids[dataset],
+                window_lengths=model.window_lengths, stride=model.stride, top_k=model.top_k,
+                show_progress=show_progress,
+            )
         )
         windows = _select_requested(windows, text_ids[dataset])
         windows = _namespace(windows, dataset)
@@ -146,6 +152,81 @@ def evaluate_local_evidence_datasets(
         pd.concat(prediction_frames, ignore_index=True) if prediction_frames else pd.DataFrame(),
         pd.concat(scored_frames, ignore_index=True) if scored_frames else pd.DataFrame(),
         pd.DataFrame(coverage_rows),
+    )
+
+
+def _add_validation_length_metadata(
+    result: LocalEvidenceDatasetEvaluationResult,
+    *,
+    validation_variant: str,
+    word_limit: int | None,
+) -> LocalEvidenceDatasetEvaluationResult:
+    return LocalEvidenceDatasetEvaluationResult(
+        result.metrics.assign(
+            validation_variant=validation_variant,
+            word_limit=word_limit,
+            classifier_family="local_evidence_agg_mg_score",
+        ),
+        result.predictions.assign(
+            validation_variant=validation_variant,
+            word_limit=word_limit,
+            classifier_family="local_evidence_agg_mg_score",
+        ),
+        result.scored_windows.assign(validation_variant=validation_variant, word_limit=word_limit),
+        result.coverage.assign(validation_variant=validation_variant, word_limit=word_limit),
+    )
+
+
+def evaluate_local_evidence_validation_lengths(
+    model: LocalEvidenceModelBundle,
+    processed_root: Path | str,
+    datasets: Sequence[str],
+    validation_text_ids: Mapping[str, pd.DataFrame],
+    stage1_rows: Mapping[str, Sequence[Mapping[str, object]]],
+    word_limits: Sequence[int],
+    show_progress: bool = False,
+) -> LocalEvidenceDatasetEvaluationResult:
+    from notebooks.logprob_metrics_distributions_utils import validate_word_limits
+
+    limits = validate_word_limits(word_limits)
+    original = _add_validation_length_metadata(
+        evaluate_local_evidence_datasets(
+            model, processed_root, list(datasets), validation_text_ids, show_progress=show_progress
+        ),
+        validation_variant="original",
+        word_limit=None,
+    )
+    results = [original]
+    for word_limit in limits:
+        short_windows: dict[str, pd.DataFrame] = {}
+        for dataset in datasets:
+            base = load_local_evidence_cohort(
+                Path(processed_root), dataset, model.llm_name, validation_text_ids[dataset],
+                window_lengths=model.window_lengths, stride=model.stride, top_k=model.top_k,
+                show_progress=show_progress,
+            )
+            keyed_rows = {
+                (str(row.get("split")), str(row.get("id"))): row
+                for row in stage1_rows.get(dataset, ())
+            }
+            short_windows[dataset] = limit_local_evidence_windows_by_words(
+                base,
+                {
+                    (str(split), str(text_id)): keyed_rows[(str(split), str(text_id))]
+                    for split, text_id in validation_text_ids[dataset][["split", "text_id"]].itertuples(index=False)
+                },
+                word_limit,
+            )
+        short = evaluate_local_evidence_datasets(
+            model, processed_root, list(datasets), validation_text_ids,
+            show_progress=show_progress, windows_override=short_windows,
+        )
+        results.append(_add_validation_length_metadata(short, validation_variant="first_N_words", word_limit=word_limit))
+    return LocalEvidenceDatasetEvaluationResult(
+        pd.concat([result.metrics for result in results], ignore_index=True),
+        pd.concat([result.predictions for result in results], ignore_index=True),
+        pd.concat([result.scored_windows for result in results], ignore_index=True),
+        pd.concat([result.coverage for result in results], ignore_index=True),
     )
 
 

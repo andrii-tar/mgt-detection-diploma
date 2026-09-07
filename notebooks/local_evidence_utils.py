@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from itertools import zip_longest
 from pathlib import Path
 
@@ -19,6 +19,7 @@ from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
 from notebooks.classification_utils import evaluate_scores, fit_single_feature_threshold, limit_parent_texts, split_cohort
+from notebooks.logprob_metrics_distributions_utils import token_prefix_length_for_words, validate_word_limits
 from notebooks.token_candidate_similarity_heatmaps_utils import (
     split_dir,
     validated_text_summary,
@@ -347,6 +348,22 @@ def load_local_evidence_cohort(
     return windows.merge(requested.assign(_requested=True), on=["split", "text_id"], how="inner", validate="many_to_one").drop(
         columns="_requested"
     )
+
+
+def limit_local_evidence_windows_by_words(
+    windows: pd.DataFrame,
+    stage1_rows: Mapping[tuple[str, str], Mapping[str, object]],
+    word_limit: int,
+) -> pd.DataFrame:
+    validate_word_limits((word_limit,))
+    boundaries: dict[tuple[str, str], int] = {}
+    for key, row in stage1_rows.items():
+        boundaries[key] = token_prefix_length_for_words(
+            str(row.get("text") or ""), list(row.get("tokens", [])), word_limit
+        )
+    keys = list(zip(windows["split"].astype(str), windows["text_id"].astype(str), strict=True))
+    limits = pd.Series([boundaries.get(key, 0) for key in keys], index=windows.index)
+    return windows.loc[windows["stop_token"].le(limits)].reset_index(drop=True)
 
 
 def split_local_evidence_texts(
