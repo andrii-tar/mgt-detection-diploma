@@ -10,6 +10,9 @@ text length decreases.
 ## Scope
 
 - Reuse already-trained whole-text and local-evidence model bundles.
+- Evaluate both classifier families for every requested short-validation limit:
+  statistical whole-text classifiers using scalar features, and local-evidence
+  classifiers using aggregated `mg_score` features.
 - Do not retrain classifiers for each length.
 - Do not recalibrate thresholds for short validation variants.
 - Evaluate only validation data; existing train, test, BBC, and cross-dataset
@@ -47,12 +50,17 @@ windows/features only within that prefix. Reuse the trained local-evidence
 model registry and its validation-derived rules. Windows extending beyond the
 prefix are not included.
 
+The local-evidence result must use the existing aggregate-MG-score
+classification models/rules, not a newly fitted classifier or a whole-text
+scalar substitute.
+
 ## Results
 
 Produce one long-form comparison table containing:
 
 - scorer LLM
 - classifier or evaluation block
+- classifier family (`whole_text_statistical` or `local_evidence_agg_mg_score`)
 - `training_regime` (`Mixed`)
 - validation variant (`original` or `first_N_words`)
 - word limit (`NaN` for original)
