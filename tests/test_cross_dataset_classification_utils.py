@@ -9,6 +9,7 @@ from notebooks.cross_dataset_classification_utils import (
     build_deterministic_parent_cohorts,
     build_shared_parent_manifest,
     combine_whole_text_dataset_results,
+    summarize_bbc_false_positives,
     label_result_frame,
     prepare_matrix_frame,
     pivot_matrix,
@@ -210,3 +211,27 @@ def test_combine_whole_text_dataset_results_recomputes_pooled_metrics() -> None:
     assert set(combined.predictions["evaluation_dataset"]) == {"Mixed"}
     assert set(combined.coverage["dataset"]) == {"kaggle_train", "outfox_chatgpt_train"}
     assert set(combined.coverage["evaluation_dataset"]) == {"Mixed"}
+
+
+def test_summarize_bbc_false_positives_counts_hg_texts_predicted_as_mg() -> None:
+    predictions = pd.DataFrame([
+        {
+            "llm": "llm",
+            "training_regime": "Mixed",
+            "evaluation_regime": "BBC",
+            "evaluation_dataset": "BBC",
+            "partition": "test",
+            "classifier": "logistic_regression",
+            "feature_set": "all",
+            "label": 0,
+            "prediction": prediction,
+        }
+        for prediction in (0, 1, 1, 0)
+    ])
+
+    summary = summarize_bbc_false_positives(predictions, block="whole_text")
+
+    assert summary.loc[0, "hg_rows"] == 4
+    assert summary.loc[0, "false_hg_as_mg"] == 2
+    assert summary.loc[0, "error_rate"] == 0.5
+    assert summary.loc[0, "block"] == "whole_text"

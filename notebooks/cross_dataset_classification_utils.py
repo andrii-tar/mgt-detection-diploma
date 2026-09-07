@@ -218,3 +218,36 @@ def source_coverage_row(llm: str, source_dataset: str, error: Exception) -> dict
         "error": str(error),
         "rows": 0,
     }
+
+
+def summarize_bbc_false_positives(predictions: pd.DataFrame, *, block: str) -> pd.DataFrame:
+    """Count BBC human texts incorrectly classified as machine-generated."""
+    required = {"llm", "training_regime", "evaluation_regime", "partition", "label", "prediction"}
+    missing = sorted(required.difference(predictions.columns))
+    if missing:
+        raise ValueError(f"BBC predictions are missing columns: {missing}")
+    bbc = predictions.loc[
+        predictions["evaluation_regime"].eq("BBC")
+        & predictions["label"].eq(0)
+    ].copy()
+    configuration_columns = [
+        column for column in ("classifier", "model", "feature_set", "aggregation", "window_length")
+        if column in bbc.columns
+    ]
+    group_columns = ["llm", "training_regime", "partition", *configuration_columns]
+    output_columns = [*group_columns, "block", "hg_rows", "false_hg_as_mg", "error_rate"]
+    if bbc.empty:
+        return pd.DataFrame(columns=output_columns)
+    rows: list[dict[str, object]] = []
+    for values, group in bbc.groupby(group_columns, dropna=False, sort=True):
+        values = values if isinstance(values, tuple) else (values,)
+        hg_rows = len(group)
+        false_hg_as_mg = int(group["prediction"].eq(1).sum())
+        rows.append({
+            **dict(zip(group_columns, values, strict=True)),
+            "block": block,
+            "hg_rows": hg_rows,
+            "false_hg_as_mg": false_hg_as_mg,
+            "error_rate": false_hg_as_mg / hg_rows,
+        })
+    return pd.DataFrame(rows, columns=output_columns)
