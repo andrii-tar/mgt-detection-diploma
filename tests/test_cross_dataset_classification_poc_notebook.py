@@ -78,6 +78,11 @@ def test_notebook_exposes_three_matrix_blocks_and_exact_configuration() -> None:
         "boundary_exclusions",
         "sns.heatmap",
         "BBC one-class evaluation",
+        "VALIDATION_WORD_LIMITS",
+        "evaluate_whole_text_validation_lengths",
+        "evaluate_local_evidence_validation_lengths",
+        "whole_text_statistical",
+        "local_evidence_agg_mg_score",
     ):
         assert fragment in source
 
@@ -143,6 +148,7 @@ def test_notebook_appends_visualization_cell_without_replacing_result_tables() -
         "drop_duplicates([\"llm\", \"training_regime\", \"evaluation_dataset\", \"text_id\"])",
         "groupby([\"llm\", \"training_regime\", \"evaluation_dataset\"]",
         "{training_regime}",
+        "short_validation_comparison",
     ):
         assert fragment in source
 
