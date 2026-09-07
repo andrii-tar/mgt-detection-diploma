@@ -81,7 +81,8 @@ def truncate_logprob_row_by_words(row: Mapping[str, object], word_limit: int) ->
     end = token_prefix_length_for_words(text, tokens, word_limit)
     prefix = dict(row)
     prefix["tokens"] = tokens[:end]
-    prefix["text"] = " ".join(text.split()[:word_limit])
+    if len(text.split()) > word_limit:
+        prefix["text"] = " ".join(text.split()[:word_limit])
     if not any(token.get("logprob") is not None for token in prefix["tokens"]):
         raise ValueError("word prefix contains no valid token logprob")
     return prefix

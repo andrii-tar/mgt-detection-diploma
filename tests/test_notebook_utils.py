@@ -104,6 +104,20 @@ def test_truncate_logprob_row_by_words_updates_text_and_tokens():
     assert row["text"] == "one two three four"
 
 
+def test_truncate_logprob_row_keeps_short_text_exactly_unchanged():
+    row = _prefix_test_row()
+    row["text"] = "one  two three four"
+    row["tokens"] = [
+        {**token, "token": text}
+        for token, text in zip(row["tokens"], ("one", "  two", " three", " four"), strict=True)
+    ]
+
+    result = truncate_logprob_row_by_words(row, 10)
+
+    assert result["text"] == row["text"]
+    assert result["tokens"] == row["tokens"]
+
+
 def test_limit_local_evidence_windows_by_words_excludes_crossing_windows():
     windows = pd.DataFrame([
         {"split": "HG", "text_id": 1, "start_token": start, "stop_token": start + 2}
