@@ -99,6 +99,17 @@ def cohort(dataset: str, partition_offset: int = 0, rows_per_label: int = 4) -> 
     return pd.DataFrame(rows)
 
 
+def stage1_validation_rows(validation: pd.DataFrame) -> list[dict[str, object]]:
+    rows = []
+    for row in validation.itertuples(index=False):
+        tokens = [
+            {"token": token, "logprob": -0.1, "top_logprobs": [{"logprob": -0.1}]}
+            for token in ("one", " two", " three", " four")
+        ]
+        rows.append({"id": row.id, "split": row.split, "text": "one two three four", "tokens": tokens})
+    return rows
+
+
 def test_load_whole_text_cohort_filters_and_preserves_fixed_provenance(tmp_path: Path) -> None:
     utils = whole_text_utils()
     write_metrics(tmp_path, "source", "scorer", "HG", [metric_row(1, "HG", 1.0)])
@@ -122,6 +133,25 @@ def test_load_whole_text_cohort_filters_and_preserves_fixed_provenance(tmp_path:
         {"dataset": "source", "model": "scorer", "split": "MG", "id": 1, "label": 1},
     ]
     assert loaded["identity"].tolist() == [("source", "HG", "1"), ("source", "MG", "1")]
+
+
+def test_evaluate_whole_text_validation_lengths_reuses_bundle_and_adds_metadata() -> None:
+    utils = whole_text_utils()
+    validation = cohort("source", partition_offset=100)
+    fitted = utils.fit_whole_text_classifiers(
+        {"source": cohort("source")}, {"source": validation}, scorer_llm="scorer"
+    )
+
+    result = utils.evaluate_whole_text_validation_lengths(
+        fitted.bundle,
+        {"source": validation},
+        {"source": stage1_validation_rows(validation)},
+        (2, 4),
+    )
+
+    assert set(result.metrics["validation_variant"]) == {"original", "first_N_words"}
+    assert set(result.metrics.loc[result.metrics["validation_variant"].eq("first_N_words"), "word_limit"]) == {2, 4}
+    assert result.predictions["word_limit"].notna().any()
 
 
 def test_load_whole_text_cohort_rejects_missing_features_duplicates_and_empty_selection(tmp_path: Path) -> None:

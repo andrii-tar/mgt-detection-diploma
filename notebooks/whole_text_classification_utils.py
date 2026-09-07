@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -18,6 +18,11 @@ from notebooks.classification_utils import (
     evaluate_scores,
     load_metrics,
 )
+from notebooks.logprob_metrics_distributions_utils import (
+    truncate_logprob_row_by_words,
+    validate_word_limits,
+)
+from scripts.logprob_metrics import compute_logprob_metrics
 
 
 @dataclass(frozen=True)
@@ -326,4 +331,62 @@ def evaluate_whole_text_classifiers(
         metrics=pd.DataFrame(metrics),
         predictions=pd.concat(predictions, ignore_index=True),
         coverage=pd.DataFrame(coverage),
+    )
+
+
+def _validation_length_metadata(
+    result: WholeTextEvaluationResult,
+    *,
+    validation_variant: str,
+    word_limit: int | None,
+) -> WholeTextEvaluationResult:
+    return WholeTextEvaluationResult(
+        metrics=result.metrics.assign(validation_variant=validation_variant, word_limit=word_limit),
+        predictions=result.predictions.assign(validation_variant=validation_variant, word_limit=word_limit),
+        coverage=result.coverage.assign(validation_variant=validation_variant, word_limit=word_limit),
+    )
+
+
+def evaluate_whole_text_validation_lengths(
+    bundle: WholeTextClassifierBundle,
+    validation_cohorts: Mapping[str, pd.DataFrame],
+    stage1_rows: Mapping[str, Sequence[Mapping[str, object]]],
+    word_limits: Sequence[int],
+) -> WholeTextEvaluationResult:
+    limits = validate_word_limits(word_limits)
+    original = _validation_length_metadata(
+        evaluate_whole_text_classifiers(bundle, validation_cohorts, partition="validation"),
+        validation_variant="original",
+        word_limit=None,
+    )
+    results = [original]
+    for word_limit in limits:
+        short_cohorts: dict[str, pd.DataFrame] = {}
+        for dataset, cohort in validation_cohorts.items():
+            raw_rows = {
+                (str(row.get("split")), _normalized_id(row.get("id"))): row
+                for row in stage1_rows.get(dataset, ())
+            }
+            short_rows: list[dict[str, object]] = []
+            for source in cohort.itertuples(index=False):
+                key = (str(source.split), _normalized_id(source.id))
+                if key not in raw_rows:
+                    raise ValueError(f"missing Stage 1 row for validation text {dataset}/{key}")
+                prefix = truncate_logprob_row_by_words(raw_rows[key], word_limit)
+                metrics = compute_logprob_metrics(prefix)
+                short_rows.append({
+                    "dataset": dataset,
+                    "model": bundle.scorer_llm,
+                    "split": source.split,
+                    "id": source.id,
+                    "label": source.label,
+                    **{feature: metrics[feature] for feature in bundle.feature_columns},
+                })
+            short_cohorts[dataset] = pd.DataFrame(short_rows)
+        short = evaluate_whole_text_classifiers(bundle, short_cohorts, partition="validation")
+        results.append(_validation_length_metadata(short, validation_variant="first_N_words", word_limit=word_limit))
+    return WholeTextEvaluationResult(
+        metrics=pd.concat([result.metrics for result in results], ignore_index=True),
+        predictions=pd.concat([result.predictions for result in results], ignore_index=True),
+        coverage=pd.concat([result.coverage for result in results], ignore_index=True),
     )
