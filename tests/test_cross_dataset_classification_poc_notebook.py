@@ -65,6 +65,10 @@ def test_notebook_exposes_three_matrix_blocks_and_exact_configuration() -> None:
         "local_evidence_coverage",
         "semeval_region_summary",
         "semeval_boundary_summary",
+        "mixed_boundary",
+        "accuracy_tolerance",
+        'axis.axvspan(row[\"gold_token_boundary\"], row[\"token_count\"]',
+        'axis.axvspan(row[\"predicted_token_boundary\"], row[\"token_count\"]',
         "boundary_predictions",
         "boundary_exclusions",
         "sns.heatmap",
@@ -147,10 +151,31 @@ def test_notebook_evaluates_only_individual_configured_dataset_targets() -> None
     )
     assert isinstance(assignment.value, ast.Dict)
     keys = [key.value if isinstance(key, ast.Constant) else None for key in assignment.value.keys]
-    assert keys == ["Kaggle", "MAGE", "Outfox", "BBC"]
+    assert keys == ["Kaggle", "MAGE", "Outfox", "BBC", "Mixed"]
     assert all(
         isinstance(value, (ast.Tuple, ast.List))
-        and len(value.elts) == 1
-        and isinstance(value.elts[0], ast.Constant)
+        and len(value.elts) in (1, 3)
+        and all(isinstance(element, ast.Constant) for element in value.elts)
         for value in assignment.value.values
     )
+
+
+def test_notebook_includes_mixed_evaluation_bbc_partitions_and_llm_comparison() -> None:
+    source = _source()
+    for fragment in (
+        '"Mixed": ("Kaggle", "MAGE", "Outfox")',
+        '"BBC": ("BBC",)',
+        'for partition in ("train", "validation", "test")',
+        'frame["training_regime"].eq("Mixed")',
+        "SCORER_LLMS",
+        "whole_text_metrics",
+        "local_evidence_metrics",
+        "semeval_boundary_summary",
+    ):
+        assert fragment in source
+
+
+def test_notebook_comments_out_single_feature_threshold_models_and_plots() -> None:
+    source = _source()
+    assert "single_feature_threshold" not in source
+    assert "fit_single_feature_threshold" not in source

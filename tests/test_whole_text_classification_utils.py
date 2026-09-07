@@ -11,7 +11,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from notebooks.classification_utils import SCALAR_FEATURE_COLUMNS, _single_feature_score, evaluate_scores
+from notebooks.classification_utils import SCALAR_FEATURE_COLUMNS, evaluate_scores
 
 
 METRIC_COLUMNS = {
@@ -227,7 +227,6 @@ def test_fit_whole_text_classifiers_records_bundle_metrics_and_coverage() -> Non
     assert result.bundle.scorer_llm == "scorer"
     assert result.bundle.source_datasets == ("alpha",)
     assert result.bundle.feature_columns == SCALAR_FEATURE_COLUMNS
-    assert tuple(result.bundle.threshold_rules) == SCALAR_FEATURE_COLUMNS
     assert isinstance(result.bundle.logistic_pipeline, Pipeline)
     assert isinstance(result.bundle.logistic_pipeline.named_steps["impute"], SimpleImputer)
     assert result.bundle.logistic_pipeline.named_steps["impute"].strategy == "median"
@@ -238,15 +237,15 @@ def test_fit_whole_text_classifiers_records_bundle_metrics_and_coverage() -> Non
     assert logistic.max_iter == 1000
     assert logistic.random_state == 42
     assert set(result.metrics["partition"]) == {"train", "validation"}
-    assert set(result.metrics["classifier"]) == {"single_feature_threshold", "logistic_regression"}
-    assert len(result.metrics) == 2 * (len(SCALAR_FEATURE_COLUMNS) + 1)
+    assert set(result.metrics["classifier"]) == {"logistic_regression"}
+    assert len(result.metrics) == 2
     assert result.coverage[["dataset", "partition", "rows", "hg_rows", "mg_rows"]].to_dict("records") == [
         {"dataset": "alpha", "partition": "train", "rows": 8, "hg_rows": 4, "mg_rows": 4},
         {"dataset": "alpha", "partition": "validation", "rows": 8, "hg_rows": 4, "mg_rows": 4},
     ]
 
 
-def test_fit_uses_only_training_rows_for_logistic_and_only_validation_for_thresholds() -> None:
+def test_fit_uses_only_training_rows_for_logistic() -> None:
     utils = whole_text_utils()
     train = cohort("source")
     validation = cohort("source", partition_offset=100)
@@ -264,8 +263,6 @@ def test_fit_uses_only_training_rows_for_logistic_and_only_validation_for_thresh
         original.bundle.logistic_pipeline.predict_proba(train[list(SCALAR_FEATURE_COLUMNS)]),
         mutated.bundle.logistic_pipeline.predict_proba(train[list(SCALAR_FEATURE_COLUMNS)]),
     )
-    assert {rule["direction"] for rule in original.bundle.threshold_rules.values()} == {"higher_is_mg"}
-    assert {rule["direction"] for rule in mutated.bundle.threshold_rules.values()} == {"lower_is_mg"}
 
 
 def test_fit_rejects_overlap_empty_missing_features_and_one_class_training() -> None:
@@ -322,7 +319,6 @@ def test_evaluate_frozen_bundle_retains_dataset_identity_and_required_outputs() 
         scorer_llm="scorer",
     )
     coefficients = fitted.bundle.logistic_pipeline.named_steps["model"].coef_.copy()
-    rules = {feature: dict(rule) for feature, rule in fitted.bundle.threshold_rules.items()}
     targets = {"target_a": cohort("target_a", rows_per_label=2), "target_b": cohort("target_b", rows_per_label=2)}
 
     result = utils.evaluate_whole_text_classifiers(fitted.bundle, targets, partition="test")
@@ -331,6 +327,7 @@ def test_evaluate_frozen_bundle_retains_dataset_identity_and_required_outputs() 
     assert set(result.metrics["partition"]) == {"test"}
     assert set(result.predictions["dataset"]) == {"target_a", "target_b"}
     assert result.predictions.groupby(["dataset", "classifier", "feature_set"]).size().eq(4).all()
+    assert set(result.predictions["classifier"]) == {"logistic_regression"}
     assert {
         "scorer_llm",
         "source_datasets",
@@ -354,10 +351,9 @@ def test_evaluate_frozen_bundle_retains_dataset_identity_and_required_outputs() 
         ("target_b", "MG", "0"),
     }
     np.testing.assert_array_equal(coefficients, fitted.bundle.logistic_pipeline.named_steps["model"].coef_)
-    assert fitted.bundle.threshold_rules == rules
 
 
-def test_emitted_scores_equal_direct_frozen_model_and_rule_scores() -> None:
+def test_emitted_scores_equal_direct_frozen_model_scores() -> None:
     utils = whole_text_utils()
     fitted = utils.fit_whole_text_classifiers(
         {"source": cohort("source")},
@@ -373,16 +369,6 @@ def test_emitted_scores_equal_direct_frozen_model_and_rule_scores() -> None:
         logistic_rows["mg_score"],
         fitted.bundle.logistic_pipeline.predict_proba(target[list(SCALAR_FEATURE_COLUMNS)])[:, 1],
     )
-    for feature, rule in fitted.bundle.threshold_rules.items():
-        threshold_rows = result.predictions[
-            result.predictions["classifier"].eq("single_feature_threshold")
-            & result.predictions["feature_set"].eq(feature)
-        ]
-        direct_scores = _single_feature_score(target[feature], str(rule["direction"]))
-        np.testing.assert_allclose(threshold_rows["mg_score"], direct_scores)
-        assert threshold_rows["prediction"].tolist() == (
-            direct_scores >= float(rule["threshold"])
-        ).astype("int64").tolist()
 
 
 def test_evaluation_metrics_and_coverage_have_required_schema_and_values() -> None:
@@ -403,8 +389,8 @@ def test_evaluation_metrics_and_coverage_have_required_schema_and_values() -> No
         "hg_rows",
         "mg_rows",
     }
-    assert len(result.metrics) == len(SCALAR_FEATURE_COLUMNS) + 1
-    assert len(result.coverage) == len(SCALAR_FEATURE_COLUMNS) + 1
+    assert len(result.metrics) == 1
+    assert len(result.coverage) == 1
     assert result.coverage["requested_rows"].eq(4).all()
     assert result.coverage["rows"].eq(4).all()
     assert result.coverage["hg_rows"].eq(2).all()

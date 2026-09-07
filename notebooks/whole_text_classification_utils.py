@@ -15,9 +15,7 @@ from sklearn.preprocessing import StandardScaler
 from notebooks.classification_utils import (
     LABELS,
     SCALAR_FEATURE_COLUMNS,
-    _single_feature_score,
     evaluate_scores,
-    fit_single_feature_threshold,
     load_metrics,
 )
 
@@ -27,7 +25,6 @@ class WholeTextClassifierBundle:
     scorer_llm: str
     source_datasets: tuple[str, ...]
     feature_columns: tuple[str, ...]
-    threshold_rules: dict[str, dict[str, float | str]]
     logistic_pipeline: Pipeline
 
 
@@ -191,41 +188,6 @@ def _score_partition(
     metric_rows: list[dict[str, object]] = []
     prediction_frames: list[pd.DataFrame] = []
     coverage_rows: list[dict[str, object]] = []
-    for feature in bundle.feature_columns:
-        rule = bundle.threshold_rules[feature]
-        available = frame[feature].notna()
-        metadata = _result_metadata(
-            bundle,
-            dataset=dataset,
-            partition=partition,
-            classifier="single_feature_threshold",
-            feature_set=feature,
-            threshold=float(rule["threshold"]),
-            direction=str(rule["direction"]),
-        )
-        coverage_rows.append(
-            {
-                **metadata,
-                "requested_rows": len(frame),
-                "rows": int(available.sum()),
-                "hg_rows": int(frame.loc[available, "label"].eq(0).sum()),
-                "mg_rows": int(frame.loc[available, "label"].eq(1).sum()),
-            }
-        )
-        if not available.any():
-            continue
-        scored = frame.loc[available]
-        scores = _single_feature_score(scored[feature], str(rule["direction"]))
-        metric_rows.append({**metadata, **evaluate_scores(scored["label"], scores, float(rule["threshold"]))})
-        prediction_frames.append(
-            scored[["split", "id", "identity", "label"]]
-            .assign(
-                **metadata,
-                mg_score=scores.to_numpy(),
-                prediction=(scores >= float(rule["threshold"])).astype("int64").to_numpy(),
-            )
-        )
-
     feature_set = ", ".join(bundle.feature_columns)
     metadata = _result_metadata(
         bundle,
@@ -313,20 +275,10 @@ def fit_whole_text_classifiers(
         ]
     )
     pipeline.fit(train[list(features)], train["label"])
-    threshold_rules: dict[str, dict[str, float | str]] = {}
-    for feature in features:
-        available = validation[feature].notna()
-        if not available.any():
-            raise ValueError(f"validation data has no finite values for feature={feature!r}")
-        threshold_rules[feature] = fit_single_feature_threshold(
-            validation.loc[available, "label"], validation.loc[available, feature]
-        )
-
     bundle = WholeTextClassifierBundle(
         scorer_llm=scorer_llm,
         source_datasets=tuple(train_cohorts),
         feature_columns=features,
-        threshold_rules=threshold_rules,
         logistic_pipeline=pipeline,
     )
     metrics: list[dict[str, object]] = []
