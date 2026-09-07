@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from itertools import islice
+from numbers import Integral
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Mapping, Sequence
+import re
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,6 +33,58 @@ TOKEN_DERIVED_METRICS = [
     "d_score_top20",
     "d_score_top20_coverage",
 ]
+
+
+def validate_word_limits(word_limits: Sequence[int]) -> tuple[int, ...]:
+    limits = tuple(word_limits)
+    if not limits:
+        raise ValueError("word_limits must not be empty")
+    if any(isinstance(limit, bool) or not isinstance(limit, Integral) or limit <= 0 for limit in limits):
+        raise ValueError("word_limits must contain positive integers")
+    return tuple(int(limit) for limit in limits)
+
+
+def _normalized_words(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def token_prefix_length_for_words(
+    text: str,
+    tokens: Sequence[Mapping[str, object]],
+    word_limit: int,
+) -> int:
+    validate_word_limits((word_limit,))
+    source_words = text.split()
+    if not source_words:
+        raise ValueError("cannot truncate empty text")
+    if len(source_words) <= word_limit:
+        return len(tokens)
+
+    target = " ".join(source_words[:word_limit])
+    reconstructed = ""
+    for index, token in enumerate(tokens, start=1):
+        token_text = token.get("token")
+        if token_text is None:
+            raise ValueError("token is missing text")
+        reconstructed += str(token_text)
+        normalized = _normalized_words(reconstructed)
+        if normalized == target:
+            return index
+        if not target.startswith(normalized) and not normalized.startswith(target):
+            raise ValueError("tokens cannot reconstruct the source text")
+    raise ValueError("tokens do not contain the requested word prefix")
+
+
+def truncate_logprob_row_by_words(row: Mapping[str, object], word_limit: int) -> dict[str, object]:
+    tokens = list(row.get("tokens", []))
+    text = str(row.get("text") or "")
+    end = token_prefix_length_for_words(text, tokens, word_limit)
+    prefix = dict(row)
+    prefix["tokens"] = tokens[:end]
+    prefix["text"] = " ".join(text.split()[:word_limit])
+    if not any(token.get("logprob") is not None for token in prefix["tokens"]):
+        raise ValueError("word prefix contains no valid token logprob")
+    return prefix
 
 
 def iter_token_lengths(token_count: int, step: int = 50) -> range:

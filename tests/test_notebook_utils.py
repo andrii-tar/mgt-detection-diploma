@@ -23,6 +23,9 @@ from notebooks.logprob_metrics_distributions_utils import (
     load_logprob_rows,
     plot_length_metric_distributions,
     save_length_metric_table,
+    token_prefix_length_for_words,
+    truncate_logprob_row_by_words,
+    validate_word_limits,
 )
 from notebooks.token_candidate_similarity_heatmaps_utils import (
     TextHeatmapMatrices,
@@ -66,6 +69,38 @@ def test_compute_prefix_metrics_uses_only_complete_prefix_lengths():
 
     assert [record["token_length"] for record in result] == [2, 4]
     assert [record["num_tokens"] for record in result] == [2, 4]
+
+
+def test_token_prefix_length_for_words_stops_at_requested_word():
+    tokens = [{"token": token} for token in ("One", " two", " three", " four")]
+
+    assert token_prefix_length_for_words("One two three four", tokens, 3) == 3
+
+
+def test_token_prefix_keeps_short_text_unchanged():
+    tokens = [{"token": token} for token in ("One", " two")]
+
+    assert token_prefix_length_for_words("One two", tokens, 10) == 2
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5])
+def test_validate_word_limits_rejects_invalid_values(limit):
+    with pytest.raises(ValueError):
+        validate_word_limits((limit,))
+
+
+def test_truncate_logprob_row_by_words_updates_text_and_tokens():
+    row = _prefix_test_row()
+    row["tokens"] = [
+        {**token, "token": text}
+        for token, text in zip(row["tokens"], ("one", " two", " three", " four"), strict=True)
+    ]
+
+    result = truncate_logprob_row_by_words(row, 2)
+
+    assert result["text"] == "one two"
+    assert len(result["tokens"]) == 2
+    assert row["text"] == "one two three four"
 
 
 def test_compute_prefix_metrics_matches_production_for_each_prefix():
