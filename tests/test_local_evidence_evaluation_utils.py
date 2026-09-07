@@ -87,8 +87,14 @@ def test_short_validation_evaluation_adds_length_metadata_without_refitting(
     }])
     base_result = LocalEvidenceDatasetEvaluationResult(
         pd.DataFrame([{"macro_f1": 1.0}]),
-        pd.DataFrame([{"prediction": 0}]),
-        windows,
+        pd.DataFrame([{
+            "model": "classifier", "window_length": 2,
+            "aggregation": "maximum_window", "window_threshold": float("nan"),
+            "document_threshold": 0.5, "score_direction": "higher_is_mg",
+            "evaluation_dataset": "source", "split": "HG", "text_id": "source::HG::1",
+            "label": 0, "mg_score": 0.1, "prediction": 0,
+        }]),
+        windows.assign(model="classifier", mg_score=0.1),
         pd.DataFrame([{"texts": 1, "window_rows": 1}]),
     )
     calls: list[Mapping[str, pd.DataFrame] | None] = []

@@ -190,8 +190,11 @@ def evaluate_local_evidence_validation_lengths(
 
     limits = validate_word_limits(word_limits)
     original = _add_validation_length_metadata(
-        evaluate_local_evidence_datasets(
-            model, processed_root, list(datasets), validation_text_ids, show_progress=show_progress
+        combine_local_evidence_dataset_results(
+            [evaluate_local_evidence_datasets(
+                model, processed_root, list(datasets), validation_text_ids, show_progress=show_progress
+            )],
+            evaluation_regime="Mixed",
         ),
         validation_variant="original",
         word_limit=None,
@@ -217,10 +220,10 @@ def evaluate_local_evidence_validation_lengths(
                 },
                 word_limit,
             )
-        short = evaluate_local_evidence_datasets(
+        short = combine_local_evidence_dataset_results([evaluate_local_evidence_datasets(
             model, processed_root, list(datasets), validation_text_ids,
             show_progress=show_progress, windows_override=short_windows,
-        )
+        )], evaluation_regime="Mixed")
         results.append(_add_validation_length_metadata(short, validation_variant="first_N_words", word_limit=word_limit))
     return LocalEvidenceDatasetEvaluationResult(
         pd.concat([result.metrics for result in results], ignore_index=True),
