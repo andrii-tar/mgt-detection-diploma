@@ -170,22 +170,19 @@ git commit -m "feat: evaluate whole-text models on short validation"
 - Test: `tests/test_local_evidence_evaluation_utils.py` and `tests/test_local_evidence_models_utils.py`
 
 **Interfaces:**
-- Produces `truncate_paired_token_rows_by_words(logprob_row: Mapping[str, object], similarity_row: Mapping[str, object], word_limit: int) -> tuple[dict[str, object], dict[str, object], int]`.
-- Produces `build_local_evidence_windows_from_rows(pairs: Iterable[tuple[Mapping[str, object], Mapping[str, object]]], window_lengths: Sequence[int], stride: int, top_k: int) -> pd.DataFrame`.
-- Produces `evaluate_local_evidence_validation_lengths(model: LocalEvidenceModelBundle, processed_root: Path | str, datasets: Sequence[str], validation_text_ids: Mapping[str, pd.DataFrame], word_limits: Sequence[int], show_progress: bool = False) -> LocalEvidenceDatasetEvaluationResult` using the existing aggregate-MG-score model registry and rules.
+- Produces `limit_local_evidence_windows_by_words(windows: pd.DataFrame, stage1_rows: Mapping[tuple[str, str], Mapping[str, object]], word_limit: int) -> pd.DataFrame`.
+- Produces `evaluate_local_evidence_validation_lengths(model: LocalEvidenceModelBundle, processed_root: Path | str, datasets: Sequence[str], validation_text_ids: Mapping[str, pd.DataFrame], stage1_rows: Mapping[str, Sequence[Mapping[str, object]]], word_limits: Sequence[int], show_progress: bool = False) -> LocalEvidenceDatasetEvaluationResult` using the existing aggregate-MG-score model registry and rules.
 
 - [ ] **Step 1: Write failing tests for prefix-window boundaries**
 
-Use paired synthetic Stage 1/Stage 2 rows with six tokens and a window length
-of two. Assert that a short prefix produces only windows with
+Use synthetic Stage 1 rows with six tokens and a window-length-two local cache.
+Assert that a short prefix produces only windows with
 `stop_token <= prefix_token_count`, preserves the original text ID and label,
 and does not include a window that crosses the prefix.
 
 ```python
 def test_short_local_windows_do_not_cross_word_prefix():
-    logprob, similarity, prefix_length = truncate_paired_token_rows_by_words(logprob_row, similarity_row, 3)
-    windows = build_local_evidence_windows_from_rows([(logprob, similarity)], window_lengths=(2,), stride=1, top_k=20)
-    assert prefix_length == 3
+    windows = limit_local_evidence_windows_by_words(windows, stage1_rows, 3)
     assert windows["stop_token"].le(3).all()
 ```
 
@@ -197,16 +194,15 @@ Run:
 uv run pytest tests/test_local_evidence_evaluation_utils.py -k "short or prefix" -q
 ```
 
-Expected: FAIL because the paired-prefix helper and row-based window builder
-do not exist.
+Expected: FAIL because the local window prefix filter does not exist.
 
 - [ ] **Step 3: Implement paired truncation and window reconstruction**
 
-Apply the same token boundary to Stage 1 tokens and Stage 2 similarity tokens,
-verify their IDs and lengths still match, and pass the truncated pair through
-the existing `validated_text_summary` and local feature-pooling logic. Filter
-windows to the prefix before fitting or scoring. Keep all existing local model
-rules and aggregate-MG-score thresholds unchanged.
+Map each validation text to a Stage 1 token boundary and filter the existing
+local-evidence cache to windows whose `stop_token` is within that boundary.
+This is sufficient because cached local features are window-local and avoids
+recomputing the unchanged Stage 2 token similarities. Keep all existing local
+model rules and aggregate-MG-score thresholds unchanged.
 
 - [ ] **Step 4: Add the trained-bundle evaluator and verify it does not fit**
 
