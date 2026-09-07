@@ -13,11 +13,12 @@ import pyarrow.parquet as pq
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
-from notebooks.classification_utils import evaluate_scores, fit_single_feature_threshold, split_cohort
+from notebooks.classification_utils import evaluate_scores, fit_single_feature_threshold, limit_parent_texts, split_cohort
 from notebooks.token_candidate_similarity_heatmaps_utils import (
     split_dir,
     validated_text_summary,
@@ -348,13 +349,31 @@ def load_local_evidence_cohort(
     )
 
 
-def split_local_evidence_texts(windows: pd.DataFrame, *, seed: int = 42) -> dict[str, pd.DataFrame]:
+def split_local_evidence_texts(
+    windows: pd.DataFrame,
+    *,
+    seed: int = 42,
+    max_per_split: int | None = None,
+) -> dict[str, pd.DataFrame]:
     parent_columns = ["split", "text_id", "label"]
     parents = windows[parent_columns].drop_duplicates().reset_index(drop=True)
     label_counts = parents.groupby(["split", "text_id"])["label"].nunique()
     if (label_counts > 1).any():
         raise ValueError("each parent text must have exactly one label")
-    return split_cohort(parents, seed=seed)
+    if max_per_split is not None:
+        parents = limit_parent_texts(parents, id_column="text_id", max_per_split=max_per_split)
+    if parents["label"].nunique() == 2:
+        return split_cohort(parents, seed=seed)
+    if parents.empty or not (parents["split"].eq("HG") & parents["label"].eq(0)).all():
+        raise ValueError("one-class cohort must use the HG split with label 0")
+
+    development, test = train_test_split(parents, test_size=0.2, random_state=seed)
+    train, validation = train_test_split(development, test_size=0.25, random_state=seed)
+    return {
+        "train": train.reset_index(drop=True),
+        "validation": validation.reset_index(drop=True),
+        "test": test.reset_index(drop=True),
+    }
 
 
 def aggregate_maximum_window(scored_windows: pd.DataFrame) -> pd.DataFrame:

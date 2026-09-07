@@ -2,16 +2,30 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
+from types import SimpleNamespace
 
 from notebooks.local_evidence_evaluation_utils import (
     LocalEvidenceDatasetEvaluationResult,
+    LocalEvidenceSemEvalEvaluationResult,
     combine_local_evidence_dataset_results,
     evaluate_local_evidence_datasets,
+    evaluate_local_evidence_semeval,
 )
 from notebooks.local_evidence_training_utils import train_local_evidence_models
 
 
 FEATURES = ("feature_a", "feature_b")
+
+
+def _semeval_model() -> SimpleNamespace:
+    return SimpleNamespace(
+        llm_name="llm",
+        classifiers={("classifier", 2): object()},
+        feature_columns=FEATURES,
+        window_lengths=(2,),
+        stride=1,
+        top_k=1,
+    )
 
 
 def _windows(dataset: str) -> pd.DataFrame:
@@ -95,3 +109,135 @@ def test_combines_local_evidence_results_for_mixed_evaluation() -> None:
     assert combined.metrics["evaluation_regime"].tolist() == ["Mixed"]
     assert combined.predictions["evaluation_regime"].tolist() == ["Mixed", "Mixed"]
     assert combined.coverage["evaluation_regime"].tolist() == ["Mixed", "Mixed"]
+
+
+def test_semeval_evaluation_reuses_scored_windows_for_regions_and_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    annotations = pd.DataFrame([
+        {"id": 7, "text": "human text machine text", "boundary_word_index": 2},
+    ])
+    score_calls: list[pd.DataFrame] = []
+    boundary_options: dict[str, int] = {}
+
+    monkeypatch.setattr(
+        "notebooks.local_evidence_evaluation_utils.load_token_labels",
+        lambda *args, **kwargs: {7: ["human", " text", " machine", " text"]},
+    )
+
+    def load_cohort(*args, **kwargs):
+        requested = args[3]
+        assert requested["text_id"].tolist() == [7]
+        return pd.DataFrame([{
+            "split": "MG", "text_id": 7, "label": 1, "window_length": 2,
+            "start_token": start, "stop_token": start + 2,
+            "feature_a": 0.9, "feature_b": 0.1,
+        } for start in (0, 2)])
+
+    monkeypatch.setattr("notebooks.local_evidence_evaluation_utils.load_local_evidence_cohort", load_cohort)
+
+    def score(fitted, windows, feature_columns):
+        score_calls.append(windows.copy())
+        return windows.assign(model="classifier", mg_score=0.9)
+
+    monkeypatch.setattr("notebooks.local_evidence_evaluation_utils.score_local_evidence_classifier", score)
+    def predict_boundaries(scored, counts, **kwargs):
+        boundary_options["sustained_length"] = kwargs["sustained_length"]
+        return pd.DataFrame([{
+            "model": "classifier", "window_length": 2, "text_id": 7,
+            "predicted_token_boundary": 2, "token_count": 4, "no_crossing": False,
+        }])
+    monkeypatch.setattr(
+        "notebooks.local_evidence_evaluation_utils.predict_boundary_positions",
+        predict_boundaries,
+    )
+
+    result = evaluate_local_evidence_semeval(
+        _semeval_model(), "data", annotations, smoothing_window=1, sustained_length=4,
+    )
+
+    assert isinstance(result, LocalEvidenceSemEvalEvaluationResult)
+    assert len(score_calls) == 1
+    assert boundary_options["sustained_length"] == 4
+    assert set(result.summary["model"]) == {"classifier"}
+    assert set(result.boundary_summary["model"]) == {"classifier"}
+    assert result.boundary_predictions["gold_token_boundary"].tolist() == [2]
+
+
+def test_semeval_omits_unavailable_and_misaligned_texts_without_aborting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    annotations = pd.DataFrame([
+        {"id": 7, "text": "human text machine text", "boundary_word_index": 2},
+        {"id": 8, "text": "not represented", "boundary_word_index": 1},
+        {"id": 9, "text": "wrong text machine text", "boundary_word_index": 2},
+    ])
+    monkeypatch.setattr(
+        "notebooks.local_evidence_evaluation_utils.load_token_labels",
+        lambda *args, **kwargs: {
+            7: ["human", " text", " machine", " text"],
+            9: ["different", " labels", " only", " here"],
+        },
+    )
+    requested_ids: list[int] = []
+
+    def load_cohort(*args, **kwargs):
+        requested_ids.extend(args[3]["text_id"].tolist())
+        return pd.DataFrame([
+            {
+                "split": "MG", "text_id": text_id, "label": 1, "window_length": 2,
+                "start_token": start, "stop_token": start + 2,
+                "feature_a": 0.9, "feature_b": 0.1,
+            }
+            for text_id in (7, 9)
+            for start in (0, 2)
+        ])
+
+    monkeypatch.setattr("notebooks.local_evidence_evaluation_utils.load_local_evidence_cohort", load_cohort)
+    monkeypatch.setattr(
+        "notebooks.local_evidence_evaluation_utils.score_local_evidence_classifier",
+        lambda fitted, windows, feature_columns: windows.assign(model="classifier", mg_score=0.9),
+    )
+
+    result = evaluate_local_evidence_semeval(_semeval_model(), "data", annotations, smoothing_window=1)
+
+    assert requested_ids == [7, 9]
+    assert result.boundary_predictions["text_id"].tolist() == [7]
+    assert result.boundary_exclusions.to_dict("records") == [
+        {"text_id": 8, "reason": "missing processed token labels"},
+        {"text_id": 9, "reason": "token labels do not reconstruct the annotated text for text id 9"},
+    ]
+
+
+def test_semeval_propagates_unrelated_boundary_value_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    annotations = pd.DataFrame([
+        {"id": 7, "text": "human text machine text", "boundary_word_index": 2},
+    ])
+    monkeypatch.setattr(
+        "notebooks.local_evidence_evaluation_utils.load_token_labels",
+        lambda *args, **kwargs: {7: ["human", " text", " machine", " text"]},
+    )
+    monkeypatch.setattr(
+        "notebooks.local_evidence_evaluation_utils.load_local_evidence_cohort",
+        lambda *args, **kwargs: pd.DataFrame([
+            {
+                "split": "MG", "text_id": 7, "label": 1, "window_length": 2,
+                "start_token": start, "stop_token": start + 2,
+                "feature_a": 0.9, "feature_b": 0.1,
+            }
+            for start in (0, 2)
+        ]),
+    )
+    monkeypatch.setattr(
+        "notebooks.local_evidence_evaluation_utils.score_local_evidence_classifier",
+        lambda fitted, windows, feature_columns: windows.assign(model="classifier", mg_score=0.9),
+    )
+    monkeypatch.setattr(
+        "notebooks.local_evidence_evaluation_utils.add_gold_boundaries",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("missing prediction columns: boom")),
+    )
+
+    with pytest.raises(ValueError, match="missing prediction columns: boom"):
+        evaluate_local_evidence_semeval(_semeval_model(), "data", annotations, smoothing_window=1)

@@ -7,6 +7,7 @@ import pytest
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
+import notebooks.classification_utils as classification_utils
 import notebooks.local_evidence_utils as local_evidence_utils
 from notebooks.classification_utils import (
     build_canonical_cohort,
@@ -138,6 +139,72 @@ def test_build_canonical_cohort_rejects_missing_features() -> None:
         build_canonical_cohort(pd.DataFrame([metric_row(1, "HG")]), ["not_a_metric"])
 
 
+def test_limit_parent_texts_selects_numeric_ids_per_split_and_preserves_provenance() -> None:
+    frame = pd.DataFrame(
+        [
+            {"split": "MG", "text_id": 11, "label": 1, "dataset": "source", "window": "mg-11"},
+            {"split": "HG", "text_id": 10, "label": 0, "dataset": "source", "window": "hg-10"},
+            {"split": "HG", "text_id": 2, "label": 0, "dataset": "source", "window": "hg-2-first"},
+            {"split": "MG", "text_id": 3, "label": 1, "dataset": "source", "window": "mg-3"},
+            {"split": "HG", "text_id": 2, "label": 0, "dataset": "source", "window": "hg-2-second"},
+            {"split": "MG", "text_id": 1, "label": 1, "dataset": "source", "window": "mg-1"},
+        ]
+    )
+
+    limited = classification_utils.limit_parent_texts(frame, id_column="text_id", max_per_split=2)
+
+    assert list(limited.columns) == list(frame.columns)
+    assert limited.loc[limited["split"].eq("HG"), "text_id"].tolist() == [2, 10]
+    assert limited.loc[limited["split"].eq("MG"), "text_id"].tolist() == [1, 3]
+    assert limited.loc[limited["text_id"].eq(2), "window"].tolist() == ["hg-2-first"]
+    assert limited["dataset"].eq("source").all()
+
+
+def test_limit_parent_texts_rejects_non_positive_limits_and_conflicting_labels() -> None:
+    frame = pd.DataFrame(
+        [
+            {"split": "HG", "id": 1, "label": 0},
+            {"split": "HG", "id": 1, "label": 1},
+        ]
+    )
+
+    with pytest.raises(ValueError, match="max_per_split must be greater than 0"):
+        classification_utils.limit_parent_texts(frame, id_column="id", max_per_split=0)
+    with pytest.raises(ValueError, match="each parent text must have exactly one label"):
+        classification_utils.limit_parent_texts(frame, id_column="id")
+
+
+def test_limit_parent_texts_preserves_existing_numeric_parent_id_provenance() -> None:
+    frame = pd.DataFrame(
+        {
+            "split": ["HG", "HG"],
+            "text_id": [10, 2],
+            "label": [0, 0],
+            "_numeric_parent_id": ["source-10", "source-2"],
+        }
+    )
+
+    limited = classification_utils.limit_parent_texts(frame, id_column="text_id")
+
+    assert limited["text_id"].tolist() == [2, 10]
+    assert limited["_numeric_parent_id"].tolist() == ["source-2", "source-10"]
+
+
+def test_limit_parent_texts_retains_numeric_parent_id_when_it_is_the_requested_id() -> None:
+    frame = pd.DataFrame(
+        {
+            "split": ["MG", "MG"],
+            "_numeric_parent_id": ["10", "2"],
+            "label": [1, 1],
+        }
+    )
+
+    limited = classification_utils.limit_parent_texts(frame, id_column="_numeric_parent_id")
+
+    assert list(limited.columns) == list(frame.columns)
+    assert limited["_numeric_parent_id"].tolist() == ["2", "10"]
+
+
 def labeled_cohort(rows_per_label: int = 20) -> pd.DataFrame:
     rows = []
     for label, split in ((0, "HG"), (1, "MG")):
@@ -225,6 +292,44 @@ def test_evaluate_scores_reports_required_binary_metrics() -> None:
     assert result["mg_support"] == 2
     assert result["tn"] == 2
     assert result["tp"] == 2
+    assert result["false_positive_rate"] == pytest.approx(0.0)
+    assert result["predicted_mg_rate"] == pytest.approx(0.5)
+
+
+def test_evaluate_scores_reports_bbc_safe_metrics_for_hg_only_cohort() -> None:
+    result = evaluate_scores(
+        y_true=pd.Series([0, 0, 0]),
+        mg_score=pd.Series([0.1, 0.8, 0.2]),
+        threshold=0.5,
+    )
+
+    assert pd.isna(result["roc_auc"])
+    assert pd.isna(result["pr_auc"])
+    assert pd.isna(result["balanced_accuracy"])
+    assert result["accuracy"] == pytest.approx(2 / 3)
+    assert result["hg_precision"] == pytest.approx(1.0)
+    assert result["hg_recall"] == pytest.approx(2 / 3)
+    assert result["hg_f1"] == pytest.approx(0.8)
+    assert result["hg_support"] == 3
+    assert result["mg_precision"] == pytest.approx(0.0)
+    assert result["mg_recall"] == pytest.approx(0.0)
+    assert result["mg_f1"] == pytest.approx(0.0)
+    assert result["mg_support"] == 0
+    assert (result["tn"], result["fp"], result["fn"], result["tp"]) == (2, 1, 0, 0)
+    assert result["false_positive_rate"] == pytest.approx(1 / 3)
+    assert result["predicted_mg_rate"] == pytest.approx(1 / 3)
+
+
+def test_evaluate_scores_uses_all_binary_hg_rows_as_the_fpr_denominator() -> None:
+    result = evaluate_scores(
+        y_true=pd.Series([0, 0, 0, 1, 1]),
+        mg_score=pd.Series([0.1, 0.7, 0.8, 0.2, 0.9]),
+        threshold=0.5,
+    )
+
+    assert (result["tn"], result["fp"]) == (1, 2)
+    assert result["false_positive_rate"] == pytest.approx(2 / 3)
+    assert result["predicted_mg_rate"] == pytest.approx(3 / 5)
 
 
 def test_run_baseline_experiments_returns_single_and_multi_feature_test_results() -> None:
@@ -268,6 +373,69 @@ def test_split_local_evidence_texts_keeps_parent_texts_disjoint() -> None:
     parent_sets = [{(row.split, row.text_id) for row in partition.itertuples()} for partition in partitions.values()]
     assert not (parent_sets[0] & parent_sets[1] or parent_sets[0] & parent_sets[2] or parent_sets[1] & parent_sets[2])
     assert all(set(partition["label"]) == {0, 1} for partition in partitions.values())
+
+
+def test_split_local_evidence_texts_limits_binary_parent_cohorts_before_partitioning() -> None:
+    windows = local_evidence_windows(texts_per_label=10)
+
+    partitions = split_local_evidence_texts(windows, seed=42, max_per_split=5)
+
+    assert {name: len(partition) for name, partition in partitions.items()} == {
+        "train": 6,
+        "validation": 2,
+        "test": 2,
+    }
+    selected = pd.concat(partitions.values(), ignore_index=True)
+    assert all(set(partition["label"]) == {0, 1} for partition in partitions.values())
+    assert selected.groupby("split")["text_id"].apply(set).to_dict() == {
+        "HG": {0, 1, 2, 3, 4},
+        "MG": {0, 1, 2, 3, 4},
+    }
+
+
+def test_split_local_evidence_texts_reproducibly_partitions_hg_only_cohort() -> None:
+    windows = local_evidence_windows().loc[lambda frame: frame["split"].eq("HG")]
+
+    first = split_local_evidence_texts(windows, seed=42)
+    second = split_local_evidence_texts(windows, seed=42)
+
+    assert {name: len(partition) for name, partition in first.items()} == {
+        "train": 6,
+        "validation": 2,
+        "test": 2,
+    }
+    assert all(partition["label"].eq(0).all() for partition in first.values())
+    assert {
+        name: partition["text_id"].tolist()
+        for name, partition in first.items()
+    } == {
+        name: partition["text_id"].tolist()
+        for name, partition in second.items()
+    }
+
+
+def test_split_local_evidence_texts_limits_hg_only_parent_cohort_before_partitioning() -> None:
+    windows = local_evidence_windows().loc[lambda frame: frame["split"].eq("HG")]
+
+    partitions = split_local_evidence_texts(windows, seed=42, max_per_split=5)
+
+    assert {name: len(partition) for name, partition in partitions.items()} == {
+        "train": 3,
+        "validation": 1,
+        "test": 1,
+    }
+    selected = pd.concat(partitions.values(), ignore_index=True)
+    assert set(selected["text_id"]) == {0, 1, 2, 3, 4}
+    assert selected["split"].eq("HG").all()
+    assert selected["label"].eq(0).all()
+
+
+def test_split_local_evidence_texts_rejects_label_zero_with_non_hg_provenance() -> None:
+    windows = local_evidence_windows().loc[lambda frame: frame["split"].eq("HG")].copy()
+    windows["split"] = "bbc_news_content"
+
+    with pytest.raises(ValueError, match="HG split with label 0"):
+        split_local_evidence_texts(windows, seed=42)
 
 
 def test_local_evidence_aggregation_uses_maximum_and_evidence_fraction() -> None:

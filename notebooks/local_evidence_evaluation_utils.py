@@ -15,9 +15,12 @@ from notebooks.local_evidence_utils import (
     load_local_evidence_cohort,
 )
 from notebooks.semeval_boundary_utils import (
+    add_gold_boundaries,
     build_gold_mg_regions,
     evaluate_mg_regions,
+    predict_boundary_positions,
     predict_mg_regions,
+    summarize_boundary_predictions,
     summarize_mg_region_evaluations,
 )
 from notebooks.token_candidate_similarity_heatmaps_utils import load_token_labels
@@ -37,6 +40,9 @@ class LocalEvidenceSemEvalEvaluationResult:
     evaluations: pd.DataFrame
     predicted_regions: pd.DataFrame
     scored_windows: pd.DataFrame
+    boundary_summary: pd.DataFrame
+    boundary_predictions: pd.DataFrame
+    boundary_exclusions: pd.DataFrame
 
 
 def combine_local_evidence_dataset_results(
@@ -154,19 +160,29 @@ def evaluate_local_evidence_semeval(
     threshold: float = 0.5,
     smoothing_window: int = 5,
     minimum_region_length: int = 3,
+    sustained_length: int = 3,
 ) -> LocalEvidenceSemEvalEvaluationResult:
     requested = annotations[["id"]].rename(columns={"id": "text_id"}).copy()
     if text_ids is not None:
         requested = requested.loc[requested["text_id"].isin(text_ids)]
     requested = requested.assign(split=split)
+    token_labels = load_token_labels(Path(processed_root), dataset, model.llm_name, split)
+    available_ids = set(token_labels).intersection(requested["text_id"])
+    missing_ids = sorted(set(requested["text_id"]) - available_ids)
+    exclusions = [
+        {"text_id": int(text_id), "reason": "missing processed token labels"}
+        for text_id in missing_ids
+    ]
+    available_requested = requested.loc[requested["text_id"].isin(available_ids)]
+    available_annotations = annotations.loc[annotations["id"].isin(available_ids)].copy()
+    empty = pd.DataFrame()
+    if available_requested.empty:
+        return LocalEvidenceSemEvalEvaluationResult(empty, empty, empty, empty, empty, empty, pd.DataFrame(exclusions))
     windows = load_local_evidence_cohort(
-        Path(processed_root), dataset, model.llm_name, requested,
+        Path(processed_root), dataset, model.llm_name, available_requested,
         window_lengths=model.window_lengths, stride=model.stride, top_k=model.top_k,
     )
-    token_labels = load_token_labels(Path(processed_root), dataset, model.llm_name, split)
-    available_annotations = annotations.loc[annotations["id"].isin(token_labels)].copy()
-    if text_ids is not None:
-        available_annotations = available_annotations.loc[available_annotations["id"].isin(text_ids)]
+    windows = _select_requested(windows, available_requested)
     token_counts = {text_id: len(labels) for text_id, labels in token_labels.items()}
     scored_frames = []
     for (classifier_name, window_length), fitted in model.classifiers.items():
@@ -176,14 +192,41 @@ def evaluate_local_evidence_semeval(
         scored_frames.append(score_local_evidence_classifier(fitted, selected, model.feature_columns))
     scored = pd.concat(scored_frames, ignore_index=True) if scored_frames else pd.DataFrame()
     if scored.empty:
-        empty = pd.DataFrame()
-        return LocalEvidenceSemEvalEvaluationResult(empty, empty, empty, empty)
+        return LocalEvidenceSemEvalEvaluationResult(empty, empty, empty, empty, empty, empty, pd.DataFrame(exclusions))
+    boundary_candidates = predict_boundary_positions(
+        scored, token_counts, threshold=threshold, smoothing_window=smoothing_window,
+        sustained_length=sustained_length,
+    )
+    valid_ids: set[int] = set()
+    boundary_frames: list[pd.DataFrame] = []
+    annotation_by_id = available_annotations.set_index("id")
+    for text_id, predictions_for_text in boundary_candidates.groupby("text_id", sort=True):
+        annotation = annotation_by_id.loc[[text_id]].reset_index()
+        try:
+            labeled = add_gold_boundaries(predictions_for_text, annotation, token_labels)
+        except ValueError as error:
+            reason = str(error)
+            if not reason.startswith((
+                "token labels do not reconstruct the annotated text",
+                "word boundary does not map to a decoded token",
+                "boundary_word_index is outside the text word range",
+            )):
+                raise
+            exclusions.append({"text_id": int(text_id), "reason": str(error)})
+            continue
+        valid_ids.add(int(text_id))
+        boundary_frames.append(labeled)
+    boundary_predictions = pd.concat(boundary_frames, ignore_index=True) if boundary_frames else empty
+    scored = scored.loc[scored["text_id"].isin(valid_ids)].copy()
     predicted = predict_mg_regions(
         scored, token_counts, threshold=threshold,
         smoothing_window=smoothing_window, minimum_region_length=minimum_region_length,
-    )
-    gold = build_gold_mg_regions(available_annotations, token_labels)
-    evaluations = evaluate_mg_regions(predicted, gold)
+    ) if not scored.empty else empty
+    gold = build_gold_mg_regions(available_annotations.loc[available_annotations["id"].isin(valid_ids)], token_labels)
+    evaluations = evaluate_mg_regions(predicted, gold) if not predicted.empty else empty
     return LocalEvidenceSemEvalEvaluationResult(
-        summarize_mg_region_evaluations(evaluations), evaluations, predicted, scored,
+        summarize_mg_region_evaluations(evaluations) if not evaluations.empty else empty,
+        evaluations, predicted, scored,
+        summarize_boundary_predictions(boundary_predictions) if not boundary_predictions.empty else empty,
+        boundary_predictions, pd.DataFrame(exclusions),
     )

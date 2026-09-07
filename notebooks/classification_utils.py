@@ -43,6 +43,40 @@ def available_scalar_features(metrics_df: pd.DataFrame) -> list[str]:
     return [column for column in SCALAR_FEATURE_COLUMNS if column in metrics_df.columns]
 
 
+def limit_parent_texts(
+    frame: pd.DataFrame,
+    *,
+    id_column: str,
+    max_per_split: int = 500,
+) -> pd.DataFrame:
+    if max_per_split <= 0:
+        raise ValueError("max_per_split must be greater than 0")
+    required_columns = {"split", "label", id_column}
+    missing_columns = required_columns.difference(frame.columns)
+    if missing_columns:
+        raise ValueError(f"missing parent columns: {', '.join(sorted(missing_columns))}")
+
+    parents = frame.reset_index(drop=True).copy()
+    numeric_ids = pd.to_numeric(parents[id_column], errors="raise")
+    label_counts = parents["label"].groupby([parents["split"], numeric_ids]).nunique()
+    if (label_counts > 1).any():
+        raise ValueError("each parent text must have exactly one label")
+
+    order = pd.DataFrame({"split": parents["split"], "numeric_id": numeric_ids}).sort_values(
+        ["split", "numeric_id"],
+        kind="stable",
+    ).index
+    parents = parents.loc[order]
+    numeric_ids = numeric_ids.loc[order]
+    unique_parent = ~pd.MultiIndex.from_arrays([parents["split"], numeric_ids]).duplicated()
+    return (
+        parents.loc[unique_parent]
+        .groupby("split", sort=False, group_keys=False)
+        .head(max_per_split)
+        .reset_index(drop=True)
+    )
+
+
 def select_model_by_coverage(
     metrics_df: pd.DataFrame,
     dataset: str,
@@ -173,11 +207,13 @@ def evaluate_scores(y_true: pd.Series, mg_score: pd.Series, threshold: float) ->
         zero_division=0,
     )
     tn, fp, fn, tp = confusion_matrix(labels, predictions, labels=[0, 1]).ravel()
+    has_both_labels = set(np.unique(labels)) == {0, 1}
+    hg_support = tn + fp
     return {
-        "roc_auc": float(roc_auc_score(labels, scores)),
-        "pr_auc": float(average_precision_score(labels, scores)),
+        "roc_auc": float(roc_auc_score(labels, scores)) if has_both_labels else np.nan,
+        "pr_auc": float(average_precision_score(labels, scores)) if has_both_labels else np.nan,
         "accuracy": float(accuracy_score(labels, predictions)),
-        "balanced_accuracy": float(balanced_accuracy_score(labels, predictions)),
+        "balanced_accuracy": float(balanced_accuracy_score(labels, predictions)) if has_both_labels else np.nan,
         "macro_f1": float(f1_score(labels, predictions, average="macro", zero_division=0)),
         "weighted_f1": float(f1_score(labels, predictions, average="weighted", zero_division=0)),
         "hg_precision": float(precision[0]),
@@ -192,6 +228,8 @@ def evaluate_scores(y_true: pd.Series, mg_score: pd.Series, threshold: float) ->
         "fp": int(fp),
         "fn": int(fn),
         "tp": int(tp),
+        "false_positive_rate": float(fp / hg_support) if hg_support else np.nan,
+        "predicted_mg_rate": float(predictions.mean()),
     }
 
 
