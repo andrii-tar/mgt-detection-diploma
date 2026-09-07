@@ -108,8 +108,8 @@ def combine_whole_text_dataset_results(
             **rule,
             **evaluate_scores(documents["label"], scores, float(rule["threshold"])),
         })
-    predictions = predictions.assign(dataset=evaluation_regime, evaluation_dataset=evaluation_regime, evaluation_regime=evaluation_regime)
-    coverage = coverage.assign(dataset=evaluation_regime, evaluation_dataset=evaluation_regime, evaluation_regime=evaluation_regime)
+    predictions = predictions.assign(evaluation_dataset=evaluation_regime, evaluation_regime=evaluation_regime)
+    coverage = coverage.assign(evaluation_dataset=evaluation_regime, evaluation_regime=evaluation_regime)
     return WholeTextEvaluationResult(pd.DataFrame(metric_rows), predictions, coverage)
 
 

@@ -206,3 +206,7 @@ def test_combine_whole_text_dataset_results_recomputes_pooled_metrics() -> None:
     assert combined.metrics.loc[0, "evaluation_dataset"] == "Mixed"
     assert combined.metrics.loc[0, "macro_f1"] == 0.5
     assert len(combined.predictions) == 4
+    assert set(combined.predictions["dataset"]) == {"kaggle_train", "outfox_chatgpt_train"}
+    assert set(combined.predictions["evaluation_dataset"]) == {"Mixed"}
+    assert set(combined.coverage["dataset"]) == {"kaggle_train", "outfox_chatgpt_train"}
+    assert set(combined.coverage["evaluation_dataset"]) == {"Mixed"}
