@@ -65,6 +65,7 @@ def test_notebook_exposes_three_matrix_blocks_and_exact_configuration() -> None:
         "local_evidence_coverage",
         "semeval_region_summary",
         "semeval_boundary_summary",
+        "combine_whole_text_dataset_results",
         "mixed_boundary",
         "accuracy_tolerance",
         'axis.axvspan(row[\"gold_token_boundary\"], row[\"token_count\"]',

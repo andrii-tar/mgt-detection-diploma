@@ -8,12 +8,14 @@ from notebooks.cross_dataset_classification_utils import (
     TRAINING_REGIMES,
     build_deterministic_parent_cohorts,
     build_shared_parent_manifest,
+    combine_whole_text_dataset_results,
     label_result_frame,
     prepare_matrix_frame,
     pivot_matrix,
     source_coverage_row,
     select_scalar_partition,
 )
+from notebooks.whole_text_classification_utils import WholeTextEvaluationResult
 
 
 def test_matrix_configuration_has_required_models_datasets_and_regimes() -> None:
@@ -175,3 +177,32 @@ def test_matrix_preparation_supports_region_and_boundary_outputs() -> None:
 
     assert region_matrix.iloc[0, 0] == 0.8
     assert boundary_matrix.iloc[0, 0] == 2.0
+
+
+def test_combine_whole_text_dataset_results_recomputes_pooled_metrics() -> None:
+    def result(dataset: str, labels: list[int], scores: list[float]) -> WholeTextEvaluationResult:
+        predictions = pd.DataFrame({
+            "dataset": dataset,
+            "label": labels,
+            "mg_score": scores,
+            "prediction": [int(score >= 0.5) for score in scores],
+            "classifier": "logistic_regression",
+            "feature_set": "all",
+            "threshold": 0.5,
+            "direction": "higher_is_mg",
+        })
+        return WholeTextEvaluationResult(
+            metrics=pd.DataFrame([{"dataset": dataset, "macro_f1": 1.0}]),
+            predictions=predictions,
+            coverage=pd.DataFrame([{"dataset": dataset, "rows": len(labels)}]),
+        )
+
+    combined = combine_whole_text_dataset_results(
+        [result("kaggle_train", [0, 1], [0.1, 0.9]), result("outfox_chatgpt_train", [0, 1], [0.9, 0.1])],
+        evaluation_regime="Mixed",
+    )
+
+    assert len(combined.metrics) == 1
+    assert combined.metrics.loc[0, "evaluation_dataset"] == "Mixed"
+    assert combined.metrics.loc[0, "macro_f1"] == 0.5
+    assert len(combined.predictions) == 4

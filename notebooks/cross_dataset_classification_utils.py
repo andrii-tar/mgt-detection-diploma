@@ -5,8 +5,10 @@ from typing import Mapping, Sequence
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+from notebooks.classification_utils import evaluate_scores
 from notebooks.classification_utils import limit_parent_texts, split_cohort
 from notebooks.whole_text_classification_utils import (
+    WholeTextEvaluationResult,
     WholeTextEvaluationResult,
     WholeTextTrainingResult,
     evaluate_whole_text_classifiers,
@@ -81,6 +83,34 @@ def evaluate_whole_text_datasets(
     partition: str,
 ) -> WholeTextEvaluationResult:
     return evaluate_whole_text_classifiers(bundle, target_cohorts, partition=partition)
+
+
+def combine_whole_text_dataset_results(
+    results: list[WholeTextEvaluationResult] | tuple[WholeTextEvaluationResult, ...],
+    *,
+    evaluation_regime: str,
+) -> WholeTextEvaluationResult:
+    """Pool document predictions from several datasets before calculating metrics."""
+    if not results:
+        raise ValueError("whole-text results must not be empty")
+    predictions = pd.concat([result.predictions for result in results], ignore_index=True)
+    coverage = pd.concat([result.coverage for result in results], ignore_index=True)
+    rule_columns = ["classifier", "feature_set", "threshold", "direction"]
+    metric_rows: list[dict[str, object]] = []
+    for rule_values, documents in predictions.groupby(rule_columns, dropna=False, sort=False):
+        rule = dict(zip(rule_columns, rule_values, strict=True))
+        scores = documents["mg_score"] if rule["direction"] == "higher_is_mg" else -documents["mg_score"]
+        metric_rows.append({
+            **{column: documents.iloc[0][column] for column in ("scorer_llm", "source_datasets", "partition") if column in documents},
+            "dataset": evaluation_regime,
+            "evaluation_dataset": evaluation_regime,
+            "evaluation_regime": evaluation_regime,
+            **rule,
+            **evaluate_scores(documents["label"], scores, float(rule["threshold"])),
+        })
+    predictions = predictions.assign(dataset=evaluation_regime, evaluation_dataset=evaluation_regime, evaluation_regime=evaluation_regime)
+    coverage = coverage.assign(dataset=evaluation_regime, evaluation_dataset=evaluation_regime, evaluation_regime=evaluation_regime)
+    return WholeTextEvaluationResult(pd.DataFrame(metric_rows), predictions, coverage)
 
 
 def build_shared_parent_manifest(
