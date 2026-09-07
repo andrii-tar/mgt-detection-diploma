@@ -99,6 +99,45 @@ def test_notebook_reuses_shared_manifests_and_local_bundles_for_semeval() -> Non
     assert "train_local_evidence_models(" in "".join(block_two["source"])
 
 
+def test_notebook_evaluates_train_validation_and_test_partitions() -> None:
+    notebook = _notebook()
+    for cell_id in ("block-one-whole-text", "block-two-local-evidence"):
+        cell = next(cell for cell in notebook["cells"] if cell.get("id") == cell_id)
+        assert 'for partition in ("train", "validation", "test")' in "".join(cell["source"])
+
+
+def test_notebook_appends_visualization_cell_without_replacing_result_tables() -> None:
+    notebook = _notebook()
+    cell_ids = [cell.get("id") for cell in notebook["cells"]]
+    assert cell_ids.index("matrix-displays") < cell_ids.index("matrix-visualizations")
+    visualization = next(cell for cell in notebook["cells"] if cell.get("id") == "matrix-visualizations")
+    assert visualization["cell_type"] == "code"
+    source = "".join(visualization["source"])
+    for fragment in (
+        "whole_text_metrics",
+        "local_evidence_metrics",
+        "train",
+        "validation",
+        "test",
+        "macro_f1",
+        "sns.heatmap",
+        "configuration_columns",
+        'aggfunc=\"mean\"',
+        "semeval_boundary_summary",
+        "exact_accuracy",
+        "within_1_accuracy",
+        "within_3_accuracy",
+        "within_5_accuracy",
+        "boundary_predictions",
+        "gold_token_boundary",
+        "predicted_token_boundary",
+        "drop_duplicates([\"llm\", \"training_regime\", \"evaluation_dataset\", \"text_id\"])",
+        "groupby([\"llm\", \"training_regime\", \"evaluation_dataset\"]",
+        "{training_regime}",
+    ):
+        assert fragment in source
+
+
 def test_notebook_evaluates_only_individual_configured_dataset_targets() -> None:
     tree = ast.parse(_source())
     assignment = next(
