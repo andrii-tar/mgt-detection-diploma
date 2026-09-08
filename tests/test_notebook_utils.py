@@ -162,6 +162,39 @@ def test_load_logprob_rows_adds_experiment_metadata(tmp_path):
     assert rows[0]["split"] == "HG"
 
 
+def test_load_logprob_rows_filters_requested_split_parent_ids(tmp_path: Path) -> None:
+    for split, row_id in (("HG", 1), ("HG", 2), ("MG", 1)):
+        data_dir = tmp_path / "demo__model" / split / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([{**_prefix_test_row(split), "id": row_id}]).to_parquet(
+            data_dir / f"{row_id}.parquet", index=False
+        )
+
+    rows = metric_utils.load_logprob_rows(
+        tmp_path,
+        selected_datasets=["demo"],
+        selected_models=["model"],
+        selected_parent_ids={"HG": {2}},
+    )
+
+    assert [(row["split"], row["id"]) for row in rows] == [("HG", 2)]
+
+
+def test_load_metrics_uses_directory_split_when_file_has_no_split_column(tmp_path: Path) -> None:
+    metrics_dir = tmp_path / "demo__model" / "HG" / "metrics"
+    metrics_dir.mkdir(parents=True)
+    pd.DataFrame([{"id": 1, "perplexity": 2.0}]).to_parquet(metrics_dir / "metrics.parquet", index=False)
+
+    metrics = metric_utils.load_metrics(
+        tmp_path,
+        selected_datasets=["demo"],
+        selected_models=["model"],
+        columns=["id", "perplexity"],
+    )
+
+    assert metrics["split"].tolist() == ["HG"]
+
+
 def test_compute_length_metric_table_keeps_token_metrics_only(tmp_path):
     data_dir = tmp_path / "demo__model" / "HG" / "data"
     data_dir.mkdir(parents=True)
@@ -1285,6 +1318,28 @@ def test_local_evidence_windows_parquet_round_trip(tmp_path: Path) -> None:
     pd.testing.assert_frame_equal(
         load_local_evidence_windows(path, dataset="demo", model="model", splits=("HG", "MG")), windows
     )
+
+
+def test_local_evidence_cache_reads_requested_columns_and_parents(tmp_path: Path) -> None:
+    path = tmp_path / "windows.parquet"
+    windows = pd.DataFrame([
+        {"split": "HG", "text_id": 1, "label": 0, "window_text": "keep", "feature": 1.0},
+        {"split": "HG", "text_id": 2, "label": 0, "window_text": "drop", "feature": 2.0},
+    ])
+    save_local_evidence_windows(windows, path, dataset="demo", model="model", splits=("HG",))
+
+    selected = load_local_evidence_windows(
+        path,
+        dataset="demo",
+        model="model",
+        splits=("HG",),
+        text_ids=pd.DataFrame({"split": ["HG"], "text_id": [1]}),
+        columns=["split", "text_id", "label", "feature"],
+    )
+
+    assert selected.to_dict("records") == [
+        {"split": "HG", "text_id": 1, "label": 0, "feature": 1.0}
+    ]
 
 
 def test_local_evidence_cache_persists_and_validates_schema_configuration(tmp_path: Path) -> None:

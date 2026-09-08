@@ -9,6 +9,7 @@ import re
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 import seaborn as sns
 from tqdm import tqdm
 
@@ -116,14 +117,16 @@ def load_logprob_rows(
     processed_root: Path,
     selected_datasets: list[str] | None = None,
     selected_models: list[str] | None = None,
+    selected_parent_ids: Mapping[str, set[int]] | None = None,
 ) -> list[dict]:
-    return list(iter_logprob_rows(processed_root, selected_datasets, selected_models))
+    return list(iter_logprob_rows(processed_root, selected_datasets, selected_models, selected_parent_ids))
 
 
 def iter_logprob_rows(
     processed_root: Path,
     selected_datasets: list[str] | None = None,
     selected_models: list[str] | None = None,
+    selected_parent_ids: Mapping[str, set[int]] | None = None,
 ) -> Iterator[dict]:
     for path in sorted(processed_root.glob("*/*/data/*.parquet")):
         experiment_name = path.parents[2].name
@@ -133,7 +136,13 @@ def iter_logprob_rows(
             continue
         if selected_models is not None and model not in selected_models:
             continue
-        for row in pd.read_parquet(path).to_dict(orient="records"):
+        parent_ids = None if selected_parent_ids is None else selected_parent_ids.get(split)
+        if selected_parent_ids is not None and parent_ids is None:
+            continue
+        if parent_ids is not None and not parent_ids:
+            continue
+        read_kwargs = {} if parent_ids is None else {"filters": [("id", "in", sorted(parent_ids))]}
+        for row in pd.read_parquet(path, **read_kwargs).to_dict(orient="records"):
             row["dataset"] = dataset
             row["model"] = model
             if row.get("split") is None or pd.isna(row.get("split")):
@@ -190,17 +199,36 @@ def discover_metric_files(processed_root: Path) -> list[Path]:
     return sorted(processed_root.glob("*/*/metrics/metrics.parquet"))
 
 
-def load_metrics(processed_root: Path) -> pd.DataFrame:
+def load_metrics(
+    processed_root: Path,
+    *,
+    selected_datasets: Sequence[str] | None = None,
+    selected_models: Sequence[str] | None = None,
+    columns: Sequence[str] | None = None,
+) -> pd.DataFrame:
     frames = []
     for path in discover_metric_files(processed_root):
         experiment_name = path.parents[2].name
         split = path.parents[1].name
         dataset, model = parse_experiment_name(experiment_name)
-        frame = pd.read_parquet(path)
+        if selected_datasets is not None and dataset not in selected_datasets:
+            continue
+        if selected_models is not None and model not in selected_models:
+            continue
+        requested_columns = None if columns is None else list(dict.fromkeys([*columns, "split"]))
+        read_columns = (
+            None
+            if requested_columns is None
+            else [column for column in requested_columns if column in pq.ParquetFile(path).schema.names]
+        )
+        frame = pd.read_parquet(path, columns=read_columns)
         frame.insert(0, "dataset", dataset)
         frame.insert(1, "model", model)
         frame.insert(2, "experiment_name", experiment_name)
-        frame["split"] = frame.get("split", split).fillna(split)
+        if "split" in frame:
+            frame["split"] = frame["split"].fillna(split)
+        else:
+            frame["split"] = split
         frame["metrics_path"] = str(path)
         frames.append(frame)
     if not frames:

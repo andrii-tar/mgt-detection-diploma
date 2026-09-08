@@ -92,3 +92,20 @@ def test_cohort_loader_filters_complete_cache_and_rejects_missing_text(monkeypat
     assert calls[0][1]["splits"] == ("HG", "MG")
     with pytest.raises(KeyError, match="unavailable"):
         load_local_evidence_cohort("data", "source", "llm", _cohort(("HG", 99)))
+
+
+def test_cohort_loader_forwards_requested_parents(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def load(*args: object, **kwargs: object) -> pd.DataFrame:
+        calls.append(kwargs)
+        return _windows("source")
+
+    monkeypatch.setattr("notebooks.local_evidence_utils.load_or_build_local_evidence_windows", load)
+
+    load_local_evidence_cohort("data", "source", "llm", _cohort(("HG", 0), ("MG", 3)))
+
+    assert calls[0]["text_ids"].to_dict("records") == [
+        {"split": "HG", "text_id": 0},
+        {"split": "MG", "text_id": 3},
+    ]

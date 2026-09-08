@@ -47,8 +47,8 @@ def test_notebook_exposes_three_matrix_blocks_and_exact_configuration() -> None:
         "outfox_chatgpt_train",
         "bbc_news_content",
         "Mixed",
-        "split_local_evidence_texts(",
-        "max_per_split=500",
+        "load_local_evidence_parent_metadata(",
+        "MAX_PER_SPLIT = 16, 20, 42, 500",
         "train_whole_text_models(",
         "evaluate_whole_text_datasets(",
         "train_local_evidence_models(",
@@ -111,6 +111,18 @@ def test_notebook_reuses_shared_manifests_and_local_bundles_for_semeval() -> Non
 
     block_two = next(cell for cell in notebook["cells"] if cell.get("id") == "block-two-local-evidence")
     assert "train_local_evidence_models(" in "".join(block_two["source"])
+
+
+def test_notebook_stages_capped_cohorts_and_defers_logprob_rows() -> None:
+    notebook = _notebook()
+    cohorts = next(cell for cell in notebook["cells"] if cell.get("id") == "matrix-cohorts")
+    source = "".join(cohorts["source"])
+
+    assert "load_local_evidence_parent_metadata(" in source
+    assert '"stage1_rows"' not in source
+    assert '"windows"' not in source
+    assert '"scalar"' not in source
+    assert "selected_parent_ids=" in _source()
 
 
 def test_notebook_evaluates_train_validation_and_test_partitions() -> None:

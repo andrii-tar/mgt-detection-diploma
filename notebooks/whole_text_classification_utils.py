@@ -128,7 +128,15 @@ def load_whole_text_cohort(
     feature_columns: tuple[str, ...] = SCALAR_FEATURE_COLUMNS,
 ) -> pd.DataFrame:
     features = _validated_feature_columns(feature_columns)
-    metrics = load_metrics(processed_root)
+    try:
+        metrics = load_metrics(
+            processed_root,
+            selected_datasets=(dataset,),
+            selected_models=(scorer_llm,),
+            columns=("id", "split", *features),
+        )
+    except FileNotFoundError as error:
+        raise ValueError(f"empty cohort for dataset={dataset!r}, scorer_llm={scorer_llm!r}") from error
     selected = metrics.loc[
         metrics["dataset"].eq(dataset) & metrics["model"].eq(scorer_llm) & metrics["split"].isin(LABELS)
     ].copy()

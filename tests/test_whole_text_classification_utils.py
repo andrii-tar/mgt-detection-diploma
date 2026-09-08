@@ -135,6 +135,26 @@ def test_load_whole_text_cohort_filters_and_preserves_fixed_provenance(tmp_path:
     assert loaded["identity"].tolist() == [("source", "HG", "1"), ("source", "MG", "1")]
 
 
+def test_load_whole_text_cohort_reads_only_requested_metric_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    utils = whole_text_utils()
+    write_metrics(tmp_path, "source", "scorer", "HG", [metric_row(1, "HG", 1.0)])
+    write_metrics(tmp_path, "other", "scorer", "HG", [metric_row(2, "HG", 2.0)])
+    calls: list[Path] = []
+    original = pd.read_parquet
+
+    def read_parquet(path: Path, *args: object, **kwargs: object) -> pd.DataFrame:
+        calls.append(Path(path))
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(pd, "read_parquet", read_parquet)
+
+    utils.load_whole_text_cohort(tmp_path, dataset="source", scorer_llm="scorer")
+
+    assert {path.parents[2].name for path in calls} == {"source__scorer"}
+
+
 def test_evaluate_whole_text_validation_lengths_reuses_bundle_and_adds_metadata() -> None:
     utils = whole_text_utils()
     validation = cohort("source", partition_offset=100)

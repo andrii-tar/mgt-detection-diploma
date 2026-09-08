@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from itertools import zip_longest
 from pathlib import Path
 
@@ -240,6 +240,8 @@ def load_local_evidence_windows(
     window_lengths: tuple[int, ...] = DEFAULT_WINDOW_LENGTHS,
     stride: int = 16,
     top_k: int = 20,
+    text_ids: pd.DataFrame | None = None,
+    columns: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     try:
         metadata = pq.read_schema(path).metadata or {}
@@ -256,7 +258,29 @@ def load_local_evidence_windows(
     )
     if actual != expected:
         raise ValueError("local-evidence cache configuration is incompatible")
-    return pd.read_parquet(path)
+    requested = None
+    if text_ids is not None:
+        required = {"split", "text_id"}
+        missing = required.difference(text_ids.columns)
+        if missing:
+            raise ValueError(f"missing cohort columns: {', '.join(sorted(missing))}")
+        requested = text_ids[["split", "text_id"]].copy()
+        requested["text_id"] = requested["text_id"].astype("int64")
+        if requested.duplicated().any():
+            raise ValueError("cohort text ids must be unique")
+
+    read_columns = None if columns is None else list(dict.fromkeys([*columns, "split", "text_id"]))
+    read_kwargs = (
+        {}
+        if requested is None
+        else {"filters": [("text_id", "in", sorted(requested["text_id"].unique()))]}
+    )
+    windows = pd.read_parquet(path, columns=read_columns, **read_kwargs)
+    if requested is not None:
+        windows = windows.merge(requested, on=["split", "text_id"], how="inner", validate="many_to_one")
+    if columns is not None:
+        windows = windows.loc[:, list(columns)]
+    return windows
 
 
 def load_or_build_local_evidence_windows(
@@ -270,6 +294,8 @@ def load_or_build_local_evidence_windows(
     top_k: int = 20,
     splits: tuple[str, ...] = ("HG", "MG"),
     recompute: bool = False,
+    text_ids: pd.DataFrame | None = None,
+    columns: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     path = default_local_evidence_path(processed_root, dataset, model) if path is None else path
     normalized_splits = tuple(sorted(set(splits)))
@@ -283,6 +309,8 @@ def load_or_build_local_evidence_windows(
                 window_lengths=window_lengths,
                 stride=stride,
                 top_k=top_k,
+                text_ids=text_ids,
+                columns=columns,
             )
         except (FileNotFoundError, ValueError):
             pass
@@ -305,7 +333,44 @@ def load_or_build_local_evidence_windows(
         stride=stride,
         top_k=top_k,
     )
+    if text_ids is not None or columns is not None:
+        del windows
+        return load_local_evidence_windows(
+            path,
+            dataset=dataset,
+            model=model,
+            splits=normalized_splits,
+            window_lengths=window_lengths,
+            stride=stride,
+            top_k=top_k,
+            text_ids=text_ids,
+            columns=columns,
+        )
     return windows
+
+
+def load_local_evidence_parent_metadata(
+    processed_root: Path,
+    dataset: str,
+    model: str,
+    *,
+    window_lengths: tuple[int, ...] = DEFAULT_WINDOW_LENGTHS,
+    stride: int = 16,
+    top_k: int = 20,
+    splits: tuple[str, ...] = ("HG", "MG"),
+) -> pd.DataFrame:
+    """Load the distinct parent identities needed to build a shared cohort."""
+    windows = load_or_build_local_evidence_windows(
+        processed_root,
+        dataset,
+        model,
+        window_lengths=window_lengths,
+        stride=stride,
+        top_k=top_k,
+        splits=splits,
+        columns=("split", "text_id", "label"),
+    )
+    return windows.drop_duplicates().reset_index(drop=True)
 
 
 def load_local_evidence_cohort(
@@ -339,6 +404,7 @@ def load_local_evidence_cohort(
         stride=stride,
         top_k=top_k,
         splits=splits,
+        text_ids=requested,
     )
     available = windows[["split", "text_id"]].drop_duplicates()
     missing_ids = requested.merge(available, on=["split", "text_id"], how="left", indicator=True)
