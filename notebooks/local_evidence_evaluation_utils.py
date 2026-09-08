@@ -120,6 +120,8 @@ def evaluate_local_evidence_datasets(
         coverage_rows.append({"evaluation_dataset": dataset, "texts": windows["text_id"].nunique(), "window_rows": len(windows)})
         for (classifier_name, window_length), fitted in model.classifiers.items():
             selected = windows.loc[windows["window_length"].eq(window_length)]
+            if selected.empty:
+                continue
             scored = score_local_evidence_classifier(fitted, selected, model.feature_columns)
             scored_frames.append(scored.assign(evaluation_dataset=dataset))
             for rule in rules.loc[

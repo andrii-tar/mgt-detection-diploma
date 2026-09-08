@@ -78,6 +78,12 @@ def test_token_prefix_length_for_words_stops_at_requested_word():
     assert token_prefix_length_for_words("One two three four", tokens, 3) == 3
 
 
+def test_token_prefix_treats_replacement_tokens_for_nonbreaking_space_as_whitespace():
+    tokens = [{"token": token} for token in ("One", "\ufffd", "\ufffd", " two", " three")]
+
+    assert token_prefix_length_for_words("One\u00a0 two three", tokens, 2) == 4
+
+
 def test_token_prefix_keeps_short_text_unchanged():
     tokens = [{"token": token} for token in ("One", " two")]
 

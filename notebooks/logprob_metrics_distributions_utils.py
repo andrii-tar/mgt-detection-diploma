@@ -46,7 +46,7 @@ def validate_word_limits(word_limits: Sequence[int]) -> tuple[int, ...]:
 
 
 def _normalized_words(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", text.replace("\ufffd", " ")).strip()
 
 
 def token_prefix_length_for_words(

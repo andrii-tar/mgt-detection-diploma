@@ -73,6 +73,43 @@ def test_evaluation_uses_only_requested_test_texts(monkeypatch: pytest.MonkeyPat
     assert result.metrics["evaluation_dataset"].tolist() == ["target", "target"]
 
 
+def test_evaluation_skips_window_lengths_without_short_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = SimpleNamespace(
+        llm_name="llm",
+        classifiers={("classifier", 2): object(), ("classifier", 4): object()},
+        feature_columns=FEATURES,
+        window_lengths=(2, 4),
+        stride=1,
+        top_k=1,
+        decision_rules=pd.DataFrame([
+            {
+                "model": "classifier", "window_length": length,
+                "aggregation": "maximum_window", "window_threshold": float("nan"),
+                "document_threshold": 0.5, "score_direction": "higher_is_mg",
+            }
+            for length in (2, 4)
+        ]),
+    )
+    score_calls: list[int] = []
+
+    def score(fitted: object, windows: pd.DataFrame, feature_columns: tuple[str, ...]) -> pd.DataFrame:
+        score_calls.append(int(windows["window_length"].iloc[0]))
+        return windows.assign(model="classifier", mg_score=0.9)
+
+    monkeypatch.setattr("notebooks.local_evidence_evaluation_utils.score_local_evidence_classifier", score)
+
+    result = evaluate_local_evidence_datasets(
+        model,
+        processed_root="data",
+        datasets=["target"],
+        text_ids={"target": _cohort(("MG", 5))},
+        windows_override={"target": _windows("target").query("text_id == 5")},
+    )
+
+    assert score_calls == [2]
+    assert result.metrics["window_length"].tolist() == [2]
+
+
 def test_short_validation_evaluation_adds_length_metadata_without_refitting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
