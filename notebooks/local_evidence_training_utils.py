@@ -16,6 +16,7 @@ from notebooks.local_evidence_models_utils import (
     FittedLocalEvidenceClassifier,
     fit_local_evidence_classifier,
     score_local_evidence_classifier,
+    training_input_fingerprint,
 )
 from notebooks.local_evidence_utils import (
     _fit_document_threshold,
@@ -43,6 +44,7 @@ class LocalEvidenceTrainingResult:
     model: LocalEvidenceModelBundle
     metrics: pd.DataFrame
     coverage: pd.DataFrame
+    training_input_fingerprint: str
 
 
 def _cohort_key(frame: pd.DataFrame) -> set[tuple[str, int]]:
@@ -150,6 +152,19 @@ def train_local_evidence_models(
     root = Path(processed_root)
     train_windows, train_coverage = _load_cohorts(root, datasets, llm_name, train_text_ids, window_lengths, stride, top_k, tuple(feature_columns))
     validation_windows, validation_coverage = _load_cohorts(root, datasets, llm_name, validation_text_ids, window_lengths, stride, top_k, tuple(feature_columns))
+    fingerprint = training_input_fingerprint(
+        pd.concat([train_windows, validation_windows], ignore_index=True),
+        {
+            "train": pd.concat(
+                [_namespace(train_text_ids[dataset], dataset) for dataset in datasets],
+                ignore_index=True,
+            ),
+            "validation": pd.concat(
+                [_namespace(validation_text_ids[dataset], dataset) for dataset in datasets],
+                ignore_index=True,
+            ),
+        },
+    )
     registry: dict[tuple[str, int], FittedLocalEvidenceClassifier] = {}
     rule_rows: list[dict[str, object]] = []
     metric_rows: list[dict[str, object]] = []
@@ -193,4 +208,5 @@ def train_local_evidence_models(
         LocalEvidenceModelBundle(llm_name, registry, pd.DataFrame(rule_rows), tuple(feature_columns), tuple(window_lengths), stride, top_k, tuple(datasets)),
         pd.DataFrame(metric_rows),
         pd.concat([train_coverage.assign(partition="train"), validation_coverage.assign(partition="validation")], ignore_index=True),
+        fingerprint,
     )

@@ -899,7 +899,7 @@ def test_classification_notebook_is_thin_and_output_free() -> None:
     )
 
 
-def test_local_evidence_classification_notebook_is_thin_and_output_free() -> None:
+def _legacy_local_evidence_classification_notebook_contract() -> None:
     import ast
     import json
 
@@ -971,7 +971,7 @@ def test_local_evidence_classification_notebook_is_thin_and_output_free() -> Non
     )
 
 
-def test_local_evidence_classification_notebook_supports_custom_local_inspection() -> None:
+def _legacy_local_evidence_classification_notebook_custom_inspection_contract() -> None:
     import ast
     import json
 

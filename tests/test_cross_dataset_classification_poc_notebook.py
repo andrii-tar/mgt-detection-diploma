@@ -6,16 +6,17 @@ from pathlib import Path
 
 
 NOTEBOOK_PATH = Path(__file__).parents[1] / "notebooks" / "cross_dataset_classification_poc.ipynb"
+NOTEBOOKS_DIRECTORY = NOTEBOOK_PATH.parent
 
 
-def _notebook() -> dict:
-    return json.loads(NOTEBOOK_PATH.read_text(encoding="utf-8"))
+def _notebook(name: str = "cross_dataset_classification_poc.ipynb") -> dict:
+    return json.loads((NOTEBOOKS_DIRECTORY / name).read_text(encoding="utf-8"))
 
 
-def _source() -> str:
+def _source(name: str = "cross_dataset_classification_poc.ipynb") -> str:
     return "\n".join(
         "".join(cell["source"])
-        for cell in _notebook()["cells"]
+        for cell in _notebook(name)["cells"]
         if cell["cell_type"] == "code"
     )
 
@@ -217,3 +218,36 @@ def test_notebook_comments_out_single_feature_threshold_models_and_plots() -> No
     source = _source()
     assert "single_feature_threshold" not in source
     assert "fit_single_feature_threshold" not in source
+
+
+def test_focused_local_evidence_notebooks_are_output_free() -> None:
+    for name in ("local_evidence_classification.ipynb", "local_evidence_segmentation.ipynb"):
+        notebook = _notebook(name)
+        assert notebook["nbformat"] >= 4
+        code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
+        assert code_cells
+        assert all(cell["execution_count"] is None and cell["outputs"] == [] for cell in code_cells)
+
+
+def test_local_evidence_classification_notebook_saves_artifact_without_semeval_segmentation() -> None:
+    source = _source("local_evidence_classification.ipynb")
+
+    assert "train_local_evidence_models(" in source
+    assert "evaluate_local_evidence_datasets(" in source
+    assert "save_local_evidence_artifact(" in source
+    assert "Mixed+BBC" in source
+    assert "SOURCE_SPLITS = {\"BBC\": (\"HG\",)}" in source
+    assert "evaluate_local_evidence_semeval(" not in source
+    assert "predict_mg_regions(" not in source
+
+
+def test_local_evidence_segmentation_notebook_loads_trusted_artifact_without_training() -> None:
+    source = _source("local_evidence_segmentation.ipynb")
+
+    assert "load_local_evidence_artifact(" in source
+    assert "trust_artifact=True" in source
+    assert "evaluate_local_evidence_semeval(" in source
+    assert "SEMEVAL_DATASETS" in source
+    assert "train_local_evidence_models(" not in source
+    assert "evaluate_local_evidence_datasets(" not in source
+    assert "save_local_evidence_artifact(" not in source

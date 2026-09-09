@@ -54,6 +54,7 @@ def test_training_returns_bundle_with_fitted_models_and_validation_rules(monkeyp
     assert ("logistic_regression", 2) in result.model.classifiers
     assert set(result.model.decision_rules["aggregation"]) == {"maximum_window", "evidence_fraction"}
     assert {"partition", "aggregation", "macro_f1"} <= set(result.metrics.columns)
+    assert len(result.training_input_fingerprint) == 64
 
 
 def test_training_rejects_overlapping_train_and_validation_texts(monkeypatch: pytest.MonkeyPatch) -> None:
