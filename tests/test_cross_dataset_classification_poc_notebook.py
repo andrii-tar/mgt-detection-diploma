@@ -87,6 +87,13 @@ def test_notebook_exposes_three_matrix_blocks_and_exact_configuration() -> None:
         assert fragment in source
 
 
+def test_notebook_defines_mixed_bbc_training_regime() -> None:
+    source = _source()
+
+    assert '"Mixed": ("Kaggle", "MAGE", "Outfox")' in source
+    assert '"Mixed+BBC": ("Kaggle", "MAGE", "Outfox", "BBC")' in source
+
+
 def test_notebook_does_not_run_processing_entrypoints() -> None:
     source = _source()
     for entry_point in ("process_pipeline", "token_similarity_stage2", "load_local_model", "run_stage_2"):

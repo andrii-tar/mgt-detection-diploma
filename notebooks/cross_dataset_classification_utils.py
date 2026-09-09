@@ -33,6 +33,7 @@ TRAINING_REGIMES = {
     "MAGE": ("MAGE",),
     "Outfox": ("Outfox",),
     "Mixed": ("Kaggle", "MAGE", "Outfox"),
+    "Mixed+BBC": ("Kaggle", "MAGE", "Outfox", "BBC"),
 }
 EVALUATION_REGIMES = {
     **TRAINING_REGIMES,

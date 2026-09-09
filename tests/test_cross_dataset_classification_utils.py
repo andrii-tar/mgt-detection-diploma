@@ -37,6 +37,7 @@ def test_matrix_configuration_has_required_models_datasets_and_regimes() -> None
         "MAGE": ("MAGE",),
         "Outfox": ("Outfox",),
         "Mixed": ("Kaggle", "MAGE", "Outfox"),
+        "Mixed+BBC": ("Kaggle", "MAGE", "Outfox", "BBC"),
     }
 
 
@@ -76,6 +77,22 @@ def test_parent_cohorts_support_bbc_style_human_only_sources() -> None:
         "test": 1,
     }
     assert all(partition["label"].eq(0).all() for partition in cohorts.values())
+
+
+def test_bbc_parent_partition_keeps_train_validation_and_test_disjoint() -> None:
+    frame = pd.DataFrame({
+        "split": ["HG"] * 10,
+        "text_id": list(range(10)),
+        "label": [0] * 10,
+    })
+
+    partitions = build_deterministic_parent_cohorts(frame, id_column="text_id", seed=42)
+    ids = {name: set(partition["text_id"]) for name, partition in partitions.items()}
+
+    assert ids["train"].isdisjoint(ids["validation"])
+    assert ids["train"].isdisjoint(ids["test"])
+    assert ids["validation"].isdisjoint(ids["test"])
+    assert all(partition["label"].eq(0).all() for partition in partitions.values())
 
 
 def test_shared_manifest_intersects_scalar_and_local_ids_before_partitioning() -> None:
