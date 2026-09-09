@@ -1,5 +1,13 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "compaction": {
+      "auto": true,
+      "max_tokens": 120000,
+      "strategy": "summarize",
+      "keep": {
+        "tokens": 5000
+      }
+    },
   "mcp": {
     "local-git": {
       "type": "local",
