@@ -234,4 +234,5 @@ def test_summarize_bbc_false_positives_counts_hg_texts_predicted_as_mg() -> None
     assert summary.loc[0, "hg_rows"] == 4
     assert summary.loc[0, "false_hg_as_mg"] == 2
     assert summary.loc[0, "error_rate"] == 0.5
+    assert summary.loc[0, "predicted_mg_rate"] == 0.5
     assert summary.loc[0, "block"] == "whole_text"

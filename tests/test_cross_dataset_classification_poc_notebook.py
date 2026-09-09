@@ -198,6 +198,14 @@ def test_notebook_includes_mixed_evaluation_bbc_partitions_and_llm_comparison() 
         assert fragment in source
 
 
+def test_notebook_requests_only_hg_for_bbc_source_loading() -> None:
+    source = _source()
+
+    assert 'SOURCE_SPLITS = {"BBC": ("HG",)}' in source
+    assert 'SOURCE_SPLITS.get(source_name, ("HG", "MG"))' in source
+    assert "splits=source_splits" in source
+
+
 def test_notebook_comments_out_single_feature_threshold_models_and_plots() -> None:
     source = _source()
     assert "single_feature_threshold" not in source

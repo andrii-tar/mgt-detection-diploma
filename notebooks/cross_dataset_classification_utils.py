@@ -235,7 +235,7 @@ def summarize_bbc_false_positives(predictions: pd.DataFrame, *, block: str) -> p
         if column in bbc.columns
     ]
     group_columns = ["llm", "training_regime", "partition", *configuration_columns]
-    output_columns = [*group_columns, "block", "hg_rows", "false_hg_as_mg", "error_rate"]
+    output_columns = [*group_columns, "block", "hg_rows", "false_hg_as_mg", "error_rate", "predicted_mg_rate"]
     if bbc.empty:
         return pd.DataFrame(columns=output_columns)
     rows: list[dict[str, object]] = []
@@ -249,5 +249,6 @@ def summarize_bbc_false_positives(predictions: pd.DataFrame, *, block: str) -> p
             "hg_rows": hg_rows,
             "false_hg_as_mg": false_hg_as_mg,
             "error_rate": false_hg_as_mg / hg_rows,
+            "predicted_mg_rate": false_hg_as_mg / hg_rows,
         })
     return pd.DataFrame(rows, columns=output_columns)
