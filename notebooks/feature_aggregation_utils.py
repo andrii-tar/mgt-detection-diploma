@@ -56,6 +56,15 @@ def _window_configuration(value: WindowConfiguration) -> str:
     return str(int(value))
 
 
+def _metadata_window_configuration(value: object) -> str:
+    if value == "whole_text":
+        return value
+    if (isinstance(value, str) and value.isdigit() and int(value) > 0 and
+            str(int(value)) == value):
+        return value
+    raise ValueError("prepared metadata window configuration is invalid")
+
+
 def _validate_stride(stride: int) -> None:
     if isinstance(stride, bool) or not isinstance(stride, Integral) or stride <= 0:
         raise ValueError("stride must be a positive integer")
@@ -159,7 +168,28 @@ def prepared_partition_path(
 
 
 def _identity_columns() -> list[str]:
-    return ["split", "text_id", "start_token", "stop_token"]
+    return ["split", "text_id", "start_token", "stop_token", "window_configuration"]
+
+
+def _validate_feature_columns(feature_columns: object) -> list[str]:
+    if (not isinstance(feature_columns, list) or not feature_columns or
+            not all(isinstance(column, str) and column for column in feature_columns) or
+            len(set(feature_columns)) != len(feature_columns)):
+        raise ValueError("feature columns must be a non-empty ordered list of unique names")
+    reserved = {"split", "text_id", "label", "start_token", "stop_token", "window_configuration"}
+    if reserved.intersection(feature_columns):
+        raise ValueError("feature columns must not contain partition identity columns")
+    return feature_columns
+
+
+def _validate_partition_rows(frame: pd.DataFrame, *, split: str, window_configuration: str) -> None:
+    missing = set(_identity_columns()).difference(frame.columns)
+    if missing:
+        raise ValueError(f"missing prepared partition identity columns: {sorted(missing)}")
+    if not frame["split"].eq(split).all():
+        raise ValueError(f"prepared rows do not match requested split {split}")
+    if not frame["window_configuration"].eq(window_configuration).all():
+        raise ValueError("prepared rows do not match requested window configuration")
 
 
 def save_prepared_partition(
@@ -171,8 +201,10 @@ def save_prepared_partition(
     missing = {"split", "text_id", "label"}.difference(frame.columns) | set(feature_set.source_columns).difference(frame.columns)
     if missing:
         raise ValueError(f"missing prepared columns: {sorted(missing)}")
+    _validate_partition_rows(frame, split=split, window_configuration=configuration)
     _validate_frame_labels(frame)
-    if set(_identity_columns()).issubset(frame.columns) and frame.duplicated(_identity_columns()).any():
+    _validate_feature_columns(list(feature_set.source_columns))
+    if frame.duplicated(_identity_columns()).any():
         raise ValueError("duplicate prepared partition identity")
     destination = prepared_partition_path(data_root, scorer_llm=scorer_llm, dataset=dataset, split=split,
                                           feature_set=feature_set, window_configuration=window_configuration)
@@ -221,18 +253,31 @@ def load_prepared_partition(path: Path | str, *, expected: Mapping[str, object])
         raise ValueError("prepared metadata schema version is unsupported")
     if not isinstance(metadata["row_count"], int) or isinstance(metadata["row_count"], bool):
         raise ValueError("prepared metadata row count must be an integer")
+    feature_columns = _validate_feature_columns(metadata["feature_columns"])
+    configuration = _metadata_window_configuration(metadata["window_configuration"])
+    if configuration == "whole_text":
+        if metadata["stride"] is not None or metadata["aggregation_rules"] != "whole_text":
+            raise ValueError("prepared metadata has invalid whole-text semantics")
+    elif (metadata["stride"] is None or metadata["aggregation_rules"] != "deterministic sliding token windows"):
+        raise ValueError("prepared metadata has invalid sliding-window semantics")
+    else:
+        _validate_stride(metadata["stride"])
     for key, value in expected.items():
         if metadata.get(key) != value:
             label = key.replace("_", " ")
             raise ValueError(f"prepared metadata mismatch for {label}")
     frame = pd.read_parquet(data_path)
-    missing = {"split", "text_id", "label"}.difference(frame.columns) | set(metadata.get("feature_columns", ())).difference(frame.columns)
+    missing_identity = set(_identity_columns()).difference(frame.columns)
+    if missing_identity:
+        raise ValueError(f"missing prepared partition identity columns: {sorted(missing_identity)}")
+    missing = {"split", "text_id", "label"}.difference(frame.columns) | set(feature_columns).difference(frame.columns)
     if missing:
         raise ValueError(f"missing prepared columns: {sorted(missing)}")
     if len(frame) != metadata["row_count"]:
         raise ValueError("prepared metadata row count does not match data")
+    _validate_partition_rows(frame, split=metadata["split"], window_configuration=configuration)
     _validate_frame_labels(frame)
-    if set(_identity_columns()).issubset(frame.columns) and frame.duplicated(_identity_columns()).any():
+    if frame.duplicated(_identity_columns()).any():
         raise ValueError("duplicate prepared partition identity")
     return frame
 

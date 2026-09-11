@@ -107,8 +107,8 @@ def test_preparation_preserves_source_labels_and_rejects_inconsistent_parent_lab
         )
 
     inconsistent = pd.DataFrame([
-        {"split": "HG", "text_id": 3, "label": 0, "start_token": 0, "stop_token": 1, "d_score_top20": 1.0},
-        {"split": "HG", "text_id": 3, "label": 1, "start_token": 1, "stop_token": 2, "d_score_top20": 1.0},
+        {"split": "HG", "text_id": 3, "label": 0, "start_token": 0, "stop_token": 1, "window_configuration": "1", "d_score_top20": 1.0},
+        {"split": "HG", "text_id": 3, "label": 1, "start_token": 1, "stop_token": 2, "window_configuration": "1", "d_score_top20": 1.0},
     ])
     with pytest.raises(ValueError, match="inconsistent labels per parent"):
         save_prepared_partition(
@@ -118,7 +118,11 @@ def test_preparation_preserves_source_labels_and_rejects_inconsistent_parent_lab
 
 
 def test_prepared_partition_round_trip_requires_matching_metadata(tmp_path: Path) -> None:
-    frame = pd.DataFrame([{"split": "HG", "text_id": 1, "label": 0, "d_score_top20": 1.0}])
+    frame = pd.DataFrame([{
+        "split": "HG", "text_id": 1, "label": 0,
+        "start_token": 0, "stop_token": 1, "window_configuration": "whole_text",
+        "d_score_top20": 1.0,
+    }])
     path = save_prepared_partition(
         tmp_path, frame, scorer_llm="scorer", dataset="source", split="HG",
         feature_set=FEATURE_SET, window_configuration="whole_text", stride=2,
@@ -134,7 +138,11 @@ def test_prepared_partition_round_trip_requires_matching_metadata(tmp_path: Path
 
 
 def test_load_validates_required_metadata_and_row_count_without_expected_mapping(tmp_path: Path) -> None:
-    frame = pd.DataFrame([{"split": "HG", "text_id": 1, "label": 0, "d_score_top20": 1.0}])
+    frame = pd.DataFrame([{
+        "split": "HG", "text_id": 1, "label": 0,
+        "start_token": 0, "stop_token": 2, "window_configuration": "2",
+        "d_score_top20": 1.0,
+    }])
     path = save_prepared_partition(
         tmp_path, frame, scorer_llm="scorer", dataset="source", split="HG",
         feature_set=FEATURE_SET, window_configuration=2, stride=2,
@@ -168,8 +176,8 @@ def test_validation_rejects_invalid_feature_and_window_configuration() -> None:
 
 def test_load_rejects_duplicate_identity_and_changed_feature_order(tmp_path: Path) -> None:
     frame = pd.DataFrame([
-        {"split": "HG", "text_id": 1, "label": 0, "start_token": 0, "stop_token": 2, "a": 1.0, "b": 2.0},
-        {"split": "HG", "text_id": 1, "label": 0, "start_token": 0, "stop_token": 2, "a": 1.0, "b": 2.0},
+        {"split": "HG", "text_id": 1, "label": 0, "start_token": 0, "stop_token": 2, "window_configuration": "2", "a": 1.0, "b": 2.0},
+        {"split": "HG", "text_id": 1, "label": 0, "start_token": 0, "stop_token": 2, "window_configuration": "2", "a": 1.0, "b": 2.0},
     ])
     feature_set = FeatureSet("two", ("a", "b"))
     with pytest.raises(ValueError, match="duplicate"):
@@ -195,7 +203,11 @@ def test_ensure_unavailable_does_not_publish_partition(tmp_path: Path) -> None:
 
 
 def test_ensure_rejects_existing_partition_with_changed_stride_or_schema(tmp_path: Path) -> None:
-    frame = pd.DataFrame([{"split": "HG", "text_id": 1, "label": 0, "d_score_top20": 1.0}])
+    frame = pd.DataFrame([{
+        "split": "HG", "text_id": 1, "label": 0,
+        "start_token": 0, "stop_token": 2, "window_configuration": "2",
+        "d_score_top20": 1.0,
+    }])
     path = save_prepared_partition(
         tmp_path, frame, scorer_llm="scorer", dataset="source", split="HG",
         feature_set=FEATURE_SET, window_configuration=2, stride=2,
@@ -223,7 +235,11 @@ def test_ensure_rejects_existing_partition_with_changed_stride_or_schema(tmp_pat
 
 
 def test_save_cleans_temporary_partition_after_persistence_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    frame = pd.DataFrame([{"split": "HG", "text_id": 1, "label": 0, "d_score_top20": 1.0}])
+    frame = pd.DataFrame([{
+        "split": "HG", "text_id": 1, "label": 0,
+        "start_token": 0, "stop_token": 2, "window_configuration": "2",
+        "d_score_top20": 1.0,
+    }])
     original = pd.DataFrame.to_parquet
 
     def fail_after_write(self: pd.DataFrame, path: object, *args: object, **kwargs: object) -> None:
@@ -237,3 +253,66 @@ def test_save_cleans_temporary_partition_after_persistence_failure(tmp_path: Pat
             feature_set=FEATURE_SET, window_configuration=2, stride=1,
         )
     assert not list((tmp_path / "experiment-results").rglob("*.tmp"))
+
+
+def test_save_rejects_rows_from_a_different_requested_split(tmp_path: Path) -> None:
+    frame = pd.DataFrame([{
+        "split": "MG", "text_id": 1, "label": 1,
+        "start_token": 0, "stop_token": 2, "window_configuration": "2",
+        "d_score_top20": 1.0,
+    }])
+
+    with pytest.raises(ValueError, match="requested split"):
+        save_prepared_partition(
+            tmp_path, frame, scorer_llm="scorer", dataset="source", split="HG",
+            feature_set=FEATURE_SET, window_configuration=2, stride=1,
+        )
+
+
+def test_save_requires_all_partition_identity_columns(tmp_path: Path) -> None:
+    frame = pd.DataFrame([{"split": "HG", "text_id": 1, "label": 0, "d_score_top20": 1.0}])
+
+    with pytest.raises(ValueError, match="identity"):
+        save_prepared_partition(
+            tmp_path, frame, scorer_llm="scorer", dataset="source", split="HG",
+            feature_set=FEATURE_SET, window_configuration="whole_text", stride=1,
+        )
+
+
+def test_load_rejects_malformed_partition_identity_and_feature_metadata(tmp_path: Path) -> None:
+    frame = pd.DataFrame([{
+        "split": "HG", "text_id": 1, "label": 0,
+        "start_token": 0, "stop_token": 2, "window_configuration": "2",
+        "d_score_top20": 1.0,
+    }])
+    path = save_prepared_partition(
+        tmp_path, frame, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=FEATURE_SET, window_configuration=2, stride=1,
+    )
+
+    data = pd.read_parquet(path / "data.parquet")
+    data.loc[0, "split"] = "MG"
+    data.to_parquet(path / "data.parquet", index=False)
+    with pytest.raises(ValueError, match="requested split"):
+        load_prepared_partition(path, expected={"split": "HG"})
+
+    data.loc[0, "split"] = "HG"
+    data = data.drop(columns=["window_configuration"])
+    data.to_parquet(path / "data.parquet", index=False)
+    with pytest.raises(ValueError, match="identity"):
+        load_prepared_partition(path, expected={})
+
+    data["window_configuration"] = "2"
+    data.loc[0, "window_configuration"] = "whole_text"
+    data.to_parquet(path / "data.parquet", index=False)
+    with pytest.raises(ValueError, match="window configuration"):
+        load_prepared_partition(path, expected={})
+
+    data.loc[0, "window_configuration"] = "2"
+    data.to_parquet(path / "data.parquet", index=False)
+    metadata_path = path / "metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["feature_columns"] = ["d_score_top20", "d_score_top20"]
+    metadata_path.write_text(json.dumps(metadata))
+    with pytest.raises(ValueError, match="feature columns"):
+        load_prepared_partition(path, expected={})
