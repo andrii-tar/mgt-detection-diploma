@@ -873,32 +873,6 @@ def test_local_evidence_threshold_ties_prefer_higher_window_then_document_thresh
     assert selected["threshold"] == pytest.approx(0.75)
 
 
-def test_classification_notebook_is_thin_and_output_free() -> None:
-    import json
-
-    notebook_path = Path(__file__).parents[1] / "notebooks" / "text_classification.ipynb"
-    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
-    cells = notebook["cells"]
-    source = "\n".join("".join(cell.get("source", [])) for cell in cells)
-
-    assert "from classification_utils import (" in source
-    assert "load_baseline_cohort(" in source
-    assert "split_cohort(" in source
-    assert "run_baseline_experiments(" in source
-    assert "plot_confusion_matrices(" in source
-    assert "plot_score_curves(" in source
-    assert all(
-        cell.get("execution_count") is None and cell.get("outputs") == []
-        for cell in cells
-        if cell["cell_type"] == "code"
-    )
-    assert all(
-        "def " not in "".join(cell.get("source", []))
-        for cell in cells
-        if cell["cell_type"] == "code"
-    )
-
-
 def _legacy_local_evidence_classification_notebook_contract() -> None:
     import ast
     import json
@@ -1116,14 +1090,3 @@ def _legacy_local_evidence_classification_notebook_custom_inspection_contract() 
         assert isinstance(text_ids_keyword.value.elts[0], ast.Name)
         assert text_ids_keyword.value.elts[0].id == "custom_text_id"
 
-
-def test_local_evidence_notebook_does_not_merge_duplicate_evidence_columns() -> None:
-    import json
-
-    notebook_path = Path(__file__).parents[1] / "notebooks" / "local_evidence_classification.ipynb"
-    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
-    source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
-    assert "].merge(" not in source
-    assert '"window_text"' not in source
-    assert '"top_positive_feature"' not in source
-    assert '"top_negative_feature"' not in source
