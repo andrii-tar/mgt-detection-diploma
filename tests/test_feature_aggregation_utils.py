@@ -25,6 +25,8 @@ def _write_processed_text(
     scorer: str,
     split: str,
     token_count: int,
+    text_id: int = 1,
+    label: int | None = None,
 ) -> None:
     tokens = [
         {
@@ -36,7 +38,10 @@ def _write_processed_text(
     ]
     path = root / f"{dataset}__{scorer}" / split / "data" / "part-0.parquet"
     path.parent.mkdir(parents=True)
-    pd.DataFrame([{"id": 1, "split": split, "text": "text", "tokens": tokens}]).to_parquet(
+    row = {"id": text_id, "split": split, "text": "text", "tokens": tokens}
+    if label is not None:
+        row["label"] = label
+    pd.DataFrame([row]).to_parquet(
         path, index=False
     )
 
@@ -62,6 +67,56 @@ def test_preparation_computes_d_score_over_each_requested_token_window(tmp_path:
     ]
 
 
+def test_whole_text_emits_zero_length_rows_for_empty_and_none_tokens(tmp_path: Path) -> None:
+    path = tmp_path / "source__scorer" / "HG" / "data" / "part-0.parquet"
+    path.parent.mkdir(parents=True)
+    pd.DataFrame([
+        {"id": 1, "split": "HG", "text": "empty", "tokens": []},
+        {"id": 2, "split": "HG", "text": "none", "tokens": None},
+    ]).to_parquet(path, index=False)
+
+    frame = prepare_feature_partition(
+        tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=FEATURE_SET, window_configuration="whole_text", stride=1,
+    )
+
+    assert frame[["text_id", "start_token", "stop_token"]].to_dict("records") == [
+        {"text_id": 1, "start_token": 0, "stop_token": 0},
+        {"text_id": 2, "start_token": 0, "stop_token": 0},
+    ]
+    assert frame["d_score_top20"].isna().all()
+
+
+def test_preparation_preserves_source_labels_and_rejects_inconsistent_parent_labels(tmp_path: Path) -> None:
+    _write_processed_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=1, label=0)
+    frame = prepare_feature_partition(
+        tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=FEATURE_SET, window_configuration=1, stride=1,
+    )
+    assert frame["label"].tolist() == [0]
+
+    path = tmp_path / "source__scorer" / "HG" / "data" / "part-1.parquet"
+    pd.DataFrame([{"id": 2, "split": "HG", "text": "text", "label": 1,
+                   "tokens": [{"logprob": -0.1, "top_logprobs": [{"logprob": -0.2}]}]}]).to_parquet(
+        path, index=False
+    )
+    with pytest.raises(ValueError, match="label"):
+        prepare_feature_partition(
+            tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+            feature_set=FEATURE_SET, window_configuration=1, stride=1,
+        )
+
+    inconsistent = pd.DataFrame([
+        {"split": "HG", "text_id": 3, "label": 0, "start_token": 0, "stop_token": 1, "d_score_top20": 1.0},
+        {"split": "HG", "text_id": 3, "label": 1, "start_token": 1, "stop_token": 2, "d_score_top20": 1.0},
+    ])
+    with pytest.raises(ValueError, match="inconsistent labels per parent"):
+        save_prepared_partition(
+            tmp_path, inconsistent, scorer_llm="scorer", dataset="inconsistent", split="HG",
+            feature_set=FEATURE_SET, window_configuration=1, stride=1,
+        )
+
+
 def test_prepared_partition_round_trip_requires_matching_metadata(tmp_path: Path) -> None:
     frame = pd.DataFrame([{"split": "HG", "text_id": 1, "label": 0, "d_score_top20": 1.0}])
     path = save_prepared_partition(
@@ -76,6 +131,26 @@ def test_prepared_partition_round_trip_requires_matching_metadata(tmp_path: Path
     )
 
     pd.testing.assert_frame_equal(loaded, frame)
+
+
+def test_load_validates_required_metadata_and_row_count_without_expected_mapping(tmp_path: Path) -> None:
+    frame = pd.DataFrame([{"split": "HG", "text_id": 1, "label": 0, "d_score_top20": 1.0}])
+    path = save_prepared_partition(
+        tmp_path, frame, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=FEATURE_SET, window_configuration=2, stride=2,
+    )
+    metadata_path = path / "metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    del metadata["schema_version"]
+    metadata_path.write_text(json.dumps(metadata))
+    with pytest.raises(ValueError, match="schema version"):
+        load_prepared_partition(path, expected={})
+
+    metadata["schema_version"] = 1
+    metadata["row_count"] = 2
+    metadata_path.write_text(json.dumps(metadata))
+    with pytest.raises(ValueError, match="row count"):
+        load_prepared_partition(path, expected={})
 
 
 def test_validation_rejects_invalid_feature_and_window_configuration() -> None:
@@ -117,3 +192,48 @@ def test_ensure_unavailable_does_not_publish_partition(tmp_path: Path) -> None:
     assert result["status"] == "unavailable"
     assert result["error"]
     assert not (tmp_path / "experiment-results").exists()
+
+
+def test_ensure_rejects_existing_partition_with_changed_stride_or_schema(tmp_path: Path) -> None:
+    frame = pd.DataFrame([{"split": "HG", "text_id": 1, "label": 0, "d_score_top20": 1.0}])
+    path = save_prepared_partition(
+        tmp_path, frame, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=FEATURE_SET, window_configuration=2, stride=2,
+    )
+    metadata_path = path / "metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["stride"] = 1
+    metadata_path.write_text(json.dumps(metadata))
+    result = ensure_prepared_partition(
+        tmp_path, tmp_path / "missing", scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=FEATURE_SET, window_configuration=2, stride=2,
+    )
+    assert result["status"] == "unavailable"
+    assert "stride" in result["error"]
+
+    metadata["stride"] = 2
+    metadata["schema_version"] = 999
+    metadata_path.write_text(json.dumps(metadata))
+    result = ensure_prepared_partition(
+        tmp_path, tmp_path / "missing", scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=FEATURE_SET, window_configuration=2, stride=2,
+    )
+    assert result["status"] == "unavailable"
+    assert "schema version" in result["error"]
+
+
+def test_save_cleans_temporary_partition_after_persistence_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    frame = pd.DataFrame([{"split": "HG", "text_id": 1, "label": 0, "d_score_top20": 1.0}])
+    original = pd.DataFrame.to_parquet
+
+    def fail_after_write(self: pd.DataFrame, path: object, *args: object, **kwargs: object) -> None:
+        original(self, path, *args, **kwargs)
+        raise RuntimeError("write failed")
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", fail_after_write)
+    with pytest.raises(RuntimeError, match="write failed"):
+        save_prepared_partition(
+            tmp_path, frame, scorer_llm="scorer", dataset="source", split="HG",
+            feature_set=FEATURE_SET, window_configuration=2, stride=1,
+        )
+    assert not list((tmp_path / "experiment-results").rglob("*.tmp"))

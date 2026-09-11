@@ -61,6 +61,32 @@ def _validate_stride(stride: int) -> None:
         raise ValueError("stride must be a positive integer")
 
 
+def _expected_label(split: str) -> int:
+    if split == "HG":
+        return 0
+    if split == "MG":
+        return 1
+    raise ValueError("split must be HG or MG")
+
+
+def _validate_frame_labels(frame: pd.DataFrame) -> None:
+    labels = pd.to_numeric(frame["label"], errors="coerce")
+    if labels.isna().any() or not labels.isin([0, 1]).all():
+        raise ValueError("labels must be 0 or 1")
+    if frame.groupby(["split", "text_id"], dropna=False)["label"].nunique().gt(1).any():
+        raise ValueError("inconsistent labels per parent")
+    for split, group in frame.groupby("split", dropna=False):
+        expected = _expected_label(str(split))
+        if not labels.loc[group.index].eq(expected).all():
+            raise ValueError(f"label is inconsistent with split {split}")
+
+
+REQUIRED_METADATA = (
+    "schema_version", "scorer_llm", "dataset", "split", "feature_set",
+    "feature_columns", "window_configuration", "stride", "aggregation_rules", "row_count",
+)
+
+
 def _processed_paths(processed_root: Path, dataset: str, scorer_llm: str, split: str) -> list[Path]:
     paths = sorted((processed_root / f"{dataset}__{scorer_llm}" / split / "data").glob("*.parquet"))
     if not paths:
@@ -88,20 +114,23 @@ def prepare_feature_partition(
             raw_tokens = source.get("tokens")
             tokens = [] if raw_tokens is None else list(raw_tokens)
             if configuration == "whole_text":
-                starts = [0] if tokens else []
+                starts = [0]
                 length = len(tokens)
             else:
                 length = int(configuration)
                 starts = _window_starts(len(tokens), length, stride) if tokens else []
             for start in starts:
                 stop = len(tokens) if configuration == "whole_text" else start + length
-                metrics = compute_logprob_metrics({**source, "tokens": tokens[start:stop]})
+                metrics = ({column: float("nan") for column in feature_set.source_columns}
+                           if not tokens[start:stop]
+                           else compute_logprob_metrics({**source, "tokens": tokens[start:stop]}))
+                label = source.get("label", _expected_label(split))
                 rows.append({
                     "scorer_llm": scorer_llm,
                     "dataset": dataset,
                     "split": split,
                     "text_id": text_id,
-                    "label": 0 if split == "HG" else 1 if split == "MG" else None,
+                    "label": label,
                     "start_token": start,
                     "stop_token": stop,
                     "window_configuration": configuration,
@@ -110,8 +139,7 @@ def prepare_feature_partition(
     frame = pd.DataFrame(rows)
     if frame.empty:
         raise ValueError("prepared feature partition is empty")
-    if frame["label"].isna().any():
-        raise ValueError("split must be HG or MG")
+    _validate_frame_labels(frame)
     frame.loc[:, list(feature_set.source_columns)] = (
         frame.loc[:, list(feature_set.source_columns)]
         .apply(pd.to_numeric, errors="coerce")
@@ -143,6 +171,7 @@ def save_prepared_partition(
     missing = {"split", "text_id", "label"}.difference(frame.columns) | set(feature_set.source_columns).difference(frame.columns)
     if missing:
         raise ValueError(f"missing prepared columns: {sorted(missing)}")
+    _validate_frame_labels(frame)
     if set(_identity_columns()).issubset(frame.columns) and frame.duplicated(_identity_columns()).any():
         raise ValueError("duplicate prepared partition identity")
     destination = prepared_partition_path(data_root, scorer_llm=scorer_llm, dataset=dataset, split=split,
@@ -184,6 +213,14 @@ def load_prepared_partition(path: Path | str, *, expected: Mapping[str, object])
     if not metadata_path.exists() or not data_path.exists():
         raise FileNotFoundError(f"incomplete prepared partition: {root}")
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    missing_metadata = [key for key in REQUIRED_METADATA if key not in metadata]
+    if missing_metadata:
+        labels = [key.replace("_", " ") for key in missing_metadata]
+        raise ValueError(f"missing prepared metadata: {labels}")
+    if metadata["schema_version"] != PREPARATION_SCHEMA_VERSION:
+        raise ValueError("prepared metadata schema version is unsupported")
+    if not isinstance(metadata["row_count"], int) or isinstance(metadata["row_count"], bool):
+        raise ValueError("prepared metadata row count must be an integer")
     for key, value in expected.items():
         if metadata.get(key) != value:
             label = key.replace("_", " ")
@@ -192,6 +229,9 @@ def load_prepared_partition(path: Path | str, *, expected: Mapping[str, object])
     missing = {"split", "text_id", "label"}.difference(frame.columns) | set(metadata.get("feature_columns", ())).difference(frame.columns)
     if missing:
         raise ValueError(f"missing prepared columns: {sorted(missing)}")
+    if len(frame) != metadata["row_count"]:
+        raise ValueError("prepared metadata row count does not match data")
+    _validate_frame_labels(frame)
     if set(_identity_columns()).issubset(frame.columns) and frame.duplicated(_identity_columns()).any():
         raise ValueError("duplicate prepared partition identity")
     return frame
@@ -208,7 +248,9 @@ def ensure_prepared_partition(
             load_prepared_partition(path, expected={"scorer_llm": scorer_llm, "dataset": dataset,
                                                      "split": split, "feature_set": feature_set.name,
                                                      "feature_columns": list(feature_set.source_columns),
-                                                     "window_configuration": _window_configuration(window_configuration)})
+                                                     "window_configuration": _window_configuration(window_configuration),
+                                                     "schema_version": PREPARATION_SCHEMA_VERSION,
+                                                     "stride": None if window_configuration == "whole_text" else stride})
         else:
             frame = prepare_feature_partition(processed_root, scorer_llm=scorer_llm, dataset=dataset, split=split,
                                               feature_set=feature_set, window_configuration=window_configuration, stride=stride)
