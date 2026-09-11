@@ -14,7 +14,11 @@ from notebooks.feature_aggregation_utils import (
     load_prepared_partition,
     prepared_partition_path,
 )
-from notebooks.model_training_utils import FittedFeatureVectorModel, score_feature_vector_model
+from notebooks.model_training_utils import (
+    FittedFeatureVectorModel,
+    load_model_metadata,
+    score_feature_vector_model,
+)
 from notebooks.cross_dataset_classification_utils import build_deterministic_parent_cohorts
 
 
