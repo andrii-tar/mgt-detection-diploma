@@ -8,8 +8,8 @@ from typing import Mapping
 
 import pandas as pd
 
-from notebooks.local_evidence_models_utils import load_fitted_models, save_fitted_models
-from notebooks.local_evidence_training_utils import LocalEvidenceModelBundle, LocalEvidenceTrainingResult
+from notebooks.utils.local_evidence_models_utils import load_fitted_models, save_fitted_models
+from notebooks.utils.local_evidence_training_utils import LocalEvidenceModelBundle, LocalEvidenceTrainingResult
 
 
 ARTIFACT_SCHEMA_VERSION = 1

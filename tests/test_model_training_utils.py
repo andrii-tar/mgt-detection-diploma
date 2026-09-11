@@ -10,7 +10,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from notebooks.model_training_utils import (
+from notebooks.utils.model_training_utils import (
     FittedFeatureVectorModel,
     fit_feature_vector_model,
     load_model_artifact,

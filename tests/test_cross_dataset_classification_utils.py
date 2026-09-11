@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from notebooks.cross_dataset_classification_utils import (
+from notebooks.utils.cross_dataset_classification_utils import (
     DATASETS,
     SCORER_LLMS,
     TRAINING_REGIMES,
@@ -16,7 +16,7 @@ from notebooks.cross_dataset_classification_utils import (
     source_coverage_row,
     select_scalar_partition,
 )
-from notebooks.whole_text_classification_utils import WholeTextEvaluationResult
+from notebooks.utils.whole_text_classification_utils import WholeTextEvaluationResult
 
 
 def test_matrix_configuration_has_required_models_datasets_and_regimes() -> None:

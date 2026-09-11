@@ -6,9 +6,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from notebooks.feature_aggregation_utils import FeatureSet, save_prepared_partition
-from notebooks.model_training_utils import fit_feature_vector_model
-from notebooks.classification_experiment_utils import (
+from notebooks.utils.feature_aggregation_utils import FeatureSet, save_prepared_partition
+from notebooks.utils.model_training_utils import fit_feature_vector_model
+from notebooks.utils.classification_experiment_utils import (
     DATASETS,
     EVALUATION_REGIMES,
     TRAINING_REGIMES,

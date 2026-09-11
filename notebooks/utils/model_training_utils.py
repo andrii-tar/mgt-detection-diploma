@@ -16,7 +16,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from notebooks.classification_utils import evaluate_scores
+from notebooks.utils.classification_utils import evaluate_scores
 
 
 MODEL_FAMILIES = ("logistic_regression",)

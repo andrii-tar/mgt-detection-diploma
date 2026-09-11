@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-from notebooks.token_candidate_similarity_heatmaps_utils import _normalize_series, rolling_mean
+from notebooks.utils.token_candidate_similarity_heatmaps_utils import _normalize_series, rolling_mean
 
 
 def _validate_token_count(token_count: int) -> None:

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
-from notebooks.local_evidence_comparison_utils import expand_model_scores_to_tokens
+from notebooks.utils.local_evidence_comparison_utils import expand_model_scores_to_tokens
 
 
 def predict_boundary_positions(

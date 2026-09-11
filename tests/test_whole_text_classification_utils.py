@@ -11,7 +11,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from notebooks.classification_utils import SCALAR_FEATURE_COLUMNS, evaluate_scores
+from notebooks.utils.classification_utils import SCALAR_FEATURE_COLUMNS, evaluate_scores
 
 
 METRIC_COLUMNS = {
@@ -50,7 +50,7 @@ RESULT_DIMENSIONS = {
 
 def whole_text_utils():
     try:
-        return importlib.import_module("notebooks.whole_text_classification_utils")
+        return importlib.import_module("notebooks.utils.whole_text_classification_utils")
     except ModuleNotFoundError:
         pytest.fail("whole-text classification utility is missing")
 

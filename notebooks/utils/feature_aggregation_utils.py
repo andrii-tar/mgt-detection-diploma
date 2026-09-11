@@ -10,7 +10,7 @@ from typing import Callable, Literal, Mapping
 
 import pandas as pd
 
-from notebooks.local_evidence_utils import _window_starts
+from notebooks.utils.local_evidence_utils import _window_starts
 from scripts.logprob_metrics import compute_logprob_metrics
 
 

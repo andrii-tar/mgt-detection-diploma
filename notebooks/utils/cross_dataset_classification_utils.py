@@ -5,9 +5,9 @@ from typing import Mapping, Sequence
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from notebooks.classification_utils import evaluate_scores
-from notebooks.classification_utils import limit_parent_texts, split_cohort
-from notebooks.whole_text_classification_utils import (
+from notebooks.utils.classification_utils import evaluate_scores
+from notebooks.utils.classification_utils import limit_parent_texts, split_cohort
+from notebooks.utils.whole_text_classification_utils import (
     WholeTextEvaluationResult,
     WholeTextEvaluationResult,
     WholeTextTrainingResult,

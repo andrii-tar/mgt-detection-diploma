@@ -205,7 +205,7 @@ def _rebuild_local_evidence(
 ) -> bool:
     if not valid_splits:
         return False
-    from notebooks.local_evidence_utils import load_or_build_local_evidence_windows
+    from notebooks.utils.local_evidence_utils import load_or_build_local_evidence_windows
 
     dataset, model = _experiment_parts(experiment_dir.name)
     load_or_build_local_evidence_windows(

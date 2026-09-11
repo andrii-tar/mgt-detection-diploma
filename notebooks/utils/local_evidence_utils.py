@@ -18,9 +18,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
-from notebooks.classification_utils import evaluate_scores, fit_single_feature_threshold, limit_parent_texts, split_cohort
-from notebooks.logprob_metrics_distributions_utils import token_prefix_length_for_words, validate_word_limits
-from notebooks.token_candidate_similarity_heatmaps_utils import (
+from notebooks.utils.classification_utils import evaluate_scores, fit_single_feature_threshold, limit_parent_texts, split_cohort
+from notebooks.utils.logprob_metrics_distributions_utils import token_prefix_length_for_words, validate_word_limits
+from notebooks.utils.token_candidate_similarity_heatmaps_utils import (
     split_dir,
     validated_text_summary,
 )

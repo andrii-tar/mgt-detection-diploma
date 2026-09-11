@@ -8,7 +8,7 @@ import pandas as pd
 import pandas.testing as pdt
 import pytest
 
-from notebooks.local_evidence_training_utils import train_local_evidence_models
+from notebooks.utils.local_evidence_training_utils import train_local_evidence_models
 
 
 FEATURES = ("feature_a", "feature_b")
@@ -47,7 +47,7 @@ def _cohort(*ids: tuple[str, int]) -> pd.DataFrame:
 
 def _trained(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
-        "notebooks.local_evidence_training_utils.load_local_evidence_cohort",
+        "notebooks.utils.local_evidence_training_utils.load_local_evidence_cohort",
         lambda *args, **kwargs: _windows(args[1]),
     )
     return train_local_evidence_models(
@@ -73,7 +73,7 @@ def _evaluation_results() -> dict[str, pd.DataFrame]:
 def test_trusted_artifact_round_trip_restores_bundle_and_results(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    artifacts = importlib.import_module("notebooks.local_evidence_artifact_utils")
+    artifacts = importlib.import_module("notebooks.utils.local_evidence_artifact_utils")
     trained = _trained(monkeypatch)
     results = _evaluation_results()
 
@@ -104,7 +104,7 @@ def test_trusted_artifact_round_trip_restores_bundle_and_results(
 def test_artifact_loading_requires_explicit_trust(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    artifacts = importlib.import_module("notebooks.local_evidence_artifact_utils")
+    artifacts = importlib.import_module("notebooks.utils.local_evidence_artifact_utils")
     trained = _trained(monkeypatch)
     artifacts.save_local_evidence_artifact(
         tmp_path,
@@ -114,7 +114,7 @@ def test_artifact_loading_requires_explicit_trust(
         evaluation_results=_evaluation_results(),
     )
 
-    models_utils = importlib.import_module("notebooks.local_evidence_models_utils")
+    models_utils = importlib.import_module("notebooks.utils.local_evidence_models_utils")
     monkeypatch.setattr(models_utils.pickle, "load", lambda _: pytest.fail("artifact must not be unpickled"))
 
     with pytest.raises(PermissionError, match="trust_artifact=True"):
@@ -128,7 +128,7 @@ def test_artifact_loading_requires_explicit_trust(
 def test_artifact_rejects_metadata_mismatch_before_loading(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    artifacts = importlib.import_module("notebooks.local_evidence_artifact_utils")
+    artifacts = importlib.import_module("notebooks.utils.local_evidence_artifact_utils")
     trained = _trained(monkeypatch)
     artifacts.save_local_evidence_artifact(
         tmp_path,
@@ -150,7 +150,7 @@ def test_artifact_rejects_metadata_mismatch_before_loading(
 def test_artifact_rejects_training_fingerprint_mismatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    artifacts = importlib.import_module("notebooks.local_evidence_artifact_utils")
+    artifacts = importlib.import_module("notebooks.utils.local_evidence_artifact_utils")
     trained = _trained(monkeypatch)
     path = artifacts.save_local_evidence_artifact(
         tmp_path,

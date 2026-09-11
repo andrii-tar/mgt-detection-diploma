@@ -3,11 +3,11 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from notebooks.local_evidence_training_utils import (
+from notebooks.utils.local_evidence_training_utils import (
     LocalEvidenceModelBundle,
     train_local_evidence_models,
 )
-from notebooks.local_evidence_utils import load_local_evidence_cohort
+from notebooks.utils.local_evidence_utils import load_local_evidence_cohort
 
 
 FEATURES = ("feature_a", "feature_b")
@@ -35,7 +35,7 @@ def _cohort(*ids: tuple[str, int]) -> pd.DataFrame:
 
 def test_training_returns_bundle_with_fitted_models_and_validation_rules(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "notebooks.local_evidence_training_utils.load_local_evidence_cohort",
+        "notebooks.utils.local_evidence_training_utils.load_local_evidence_cohort",
         lambda *args, **kwargs: _windows(args[1]),
     )
 
@@ -59,7 +59,7 @@ def test_training_returns_bundle_with_fitted_models_and_validation_rules(monkeyp
 
 def test_training_rejects_overlapping_train_and_validation_texts(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "notebooks.local_evidence_training_utils.load_local_evidence_cohort",
+        "notebooks.utils.local_evidence_training_utils.load_local_evidence_cohort",
         lambda *args, **kwargs: _windows(args[1]),
     )
 
@@ -83,7 +83,7 @@ def test_cohort_loader_filters_complete_cache_and_rejects_missing_text(monkeypat
         calls.append((args, kwargs))
         return _windows(args[1])
 
-    monkeypatch.setattr("notebooks.local_evidence_utils.load_or_build_local_evidence_windows", load)
+    monkeypatch.setattr("notebooks.utils.local_evidence_utils.load_or_build_local_evidence_windows", load)
     selected = load_local_evidence_cohort(
         "data", "source", "llm", _cohort(("HG", 0), ("MG", 3)),
         window_lengths=(2,), stride=1, top_k=5,
@@ -102,7 +102,7 @@ def test_cohort_loader_forwards_requested_parents(monkeypatch: pytest.MonkeyPatc
         calls.append(kwargs)
         return _windows("source")
 
-    monkeypatch.setattr("notebooks.local_evidence_utils.load_or_build_local_evidence_windows", load)
+    monkeypatch.setattr("notebooks.utils.local_evidence_utils.load_or_build_local_evidence_windows", load)
 
     load_local_evidence_cohort("data", "source", "llm", _cohort(("HG", 0), ("MG", 3)))
 

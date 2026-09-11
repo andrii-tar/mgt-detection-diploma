@@ -23,7 +23,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from notebooks.logprob_metrics_distributions_utils import load_metrics
+from notebooks.utils.logprob_metrics_distributions_utils import load_metrics
 
 
 SCALAR_FEATURE_COLUMNS = (

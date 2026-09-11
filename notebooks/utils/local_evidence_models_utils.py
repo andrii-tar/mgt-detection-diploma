@@ -602,7 +602,7 @@ def run_local_evidence_model_comparison(
     trust_fitted_models: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     from tqdm import tqdm
-    from notebooks.local_evidence_utils import (
+    from notebooks.utils.local_evidence_utils import (
         _decision_scores,
         _fit_document_threshold,
         _partition_windows,

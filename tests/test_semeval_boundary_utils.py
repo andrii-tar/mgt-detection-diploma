@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from notebooks.semeval_boundary_utils import (
+from notebooks.utils.semeval_boundary_utils import (
     add_gold_boundaries,
     build_gold_mg_regions,
     evaluate_mg_regions,

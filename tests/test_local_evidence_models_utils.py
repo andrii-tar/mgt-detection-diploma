@@ -11,8 +11,8 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-import notebooks.local_evidence_models_utils as models_utils
-from notebooks.local_evidence_models_utils import (
+import notebooks.utils.local_evidence_models_utils as models_utils
+from notebooks.utils.local_evidence_models_utils import (
     MODEL_NAMES,
     BayesianConfig,
     GaussianMixtureNBConfig,

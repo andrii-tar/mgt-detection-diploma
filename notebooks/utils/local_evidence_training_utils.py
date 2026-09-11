@@ -7,8 +7,8 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
-from notebooks.classification_utils import evaluate_scores
-from notebooks.local_evidence_models_utils import (
+from notebooks.utils.classification_utils import evaluate_scores
+from notebooks.utils.local_evidence_models_utils import (
     LOCAL_FEATURE_COLUMNS,
     MODEL_NAMES,
     BayesianConfig,
@@ -18,7 +18,7 @@ from notebooks.local_evidence_models_utils import (
     score_local_evidence_classifier,
     training_input_fingerprint,
 )
-from notebooks.local_evidence_utils import (
+from notebooks.utils.local_evidence_utils import (
     _fit_document_threshold,
     _select_evidence_parameters,
     aggregate_evidence_fraction,

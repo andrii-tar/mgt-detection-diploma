@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from notebooks.feature_aggregation_utils import (
+from notebooks.utils.feature_aggregation_utils import (
     FeatureSet,
     ensure_prepared_partition,
     load_prepared_partition,

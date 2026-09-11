@@ -7,19 +7,19 @@ from typing import Mapping, Sequence
 
 import pandas as pd
 
-from notebooks.classification_utils import evaluate_scores
-from notebooks.feature_aggregation_utils import (
+from notebooks.utils.classification_utils import evaluate_scores
+from notebooks.utils.feature_aggregation_utils import (
     PREPARATION_SCHEMA_VERSION,
     WindowConfiguration,
     load_prepared_partition,
     prepared_partition_path,
 )
-from notebooks.model_training_utils import (
+from notebooks.utils.model_training_utils import (
     FittedFeatureVectorModel,
     load_model_metadata,
     score_feature_vector_model,
 )
-from notebooks.cross_dataset_classification_utils import build_deterministic_parent_cohorts
+from notebooks.utils.cross_dataset_classification_utils import build_deterministic_parent_cohorts
 
 
 DATASETS = {

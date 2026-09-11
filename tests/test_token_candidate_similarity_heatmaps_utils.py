@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from notebooks.token_candidate_similarity_heatmaps_utils import (
+from notebooks.utils.token_candidate_similarity_heatmaps_utils import (
     load_token_labels,
     plot_focused_token_metrics_with_local_evidence,
 )

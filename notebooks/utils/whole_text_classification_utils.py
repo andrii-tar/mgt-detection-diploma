@@ -12,13 +12,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from notebooks.classification_utils import (
+from notebooks.utils.classification_utils import (
     LABELS,
     SCALAR_FEATURE_COLUMNS,
     evaluate_scores,
     load_metrics,
 )
-from notebooks.logprob_metrics_distributions_utils import (
+from notebooks.utils.logprob_metrics_distributions_utils import (
     truncate_logprob_row_by_words,
     validate_word_limits,
 )

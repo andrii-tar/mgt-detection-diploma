@@ -10,11 +10,11 @@ import pandas as pd
 import pytest
 import pyarrow.parquet as pq
 
-import notebooks.logprob_metrics_distributions_utils as metric_utils
-import notebooks.local_evidence_utils as local_evidence_utils
-import notebooks.token_candidate_similarity_heatmaps_utils as heatmap_utils
+import notebooks.utils.logprob_metrics_distributions_utils as metric_utils
+import notebooks.utils.local_evidence_utils as local_evidence_utils
+import notebooks.utils.token_candidate_similarity_heatmaps_utils as heatmap_utils
 from scripts.logprob_metrics import compute_logprob_metrics
-from notebooks.logprob_metrics_distributions_utils import (
+from notebooks.utils.logprob_metrics_distributions_utils import (
     TOKEN_DERIVED_METRICS,
     compute_length_metric_table,
     compute_prefix_metrics,
@@ -27,7 +27,7 @@ from notebooks.logprob_metrics_distributions_utils import (
     truncate_logprob_row_by_words,
     validate_word_limits,
 )
-from notebooks.token_candidate_similarity_heatmaps_utils import (
+from notebooks.utils.token_candidate_similarity_heatmaps_utils import (
     TextHeatmapMatrices,
     build_text_heatmap_matrices,
     calculate_rolling_statistics,
@@ -42,7 +42,7 @@ from notebooks.token_candidate_similarity_heatmaps_utils import (
     validated_text_summary,
     visualize_text_similarities,
 )
-from notebooks.local_evidence_utils import (
+from notebooks.utils.local_evidence_utils import (
     LOCAL_FEATURE_COLUMNS,
     build_local_evidence_windows,
     limit_local_evidence_windows_by_words,
@@ -327,7 +327,7 @@ def test_length_distribution_notebook_imports_helpers_before_calls():
     import_index = next(
         index
         for index, cell in enumerate(cells)
-        if "from logprob_metrics_distributions_utils import" in "".join(cell.get("source", []))
+        if "from notebooks.utils.logprob_metrics_distributions_utils import" in "".join(cell.get("source", []))
     )
     call_indices = [
         index
@@ -492,7 +492,7 @@ def test_heatmap_notebook_imports_updated_orchestration_before_calls():
     import_index = next(
         index
         for index, cell in enumerate(cells)
-        if "from notebooks.token_candidate_similarity_heatmaps_utils import" in "".join(cell.get("source", []))
+        if "from notebooks.utils.token_candidate_similarity_heatmaps_utils import" in "".join(cell.get("source", []))
     )
     call_indices = [
         index
@@ -906,22 +906,22 @@ def test_plot_rolling_statistics_histograms_separates_splits_and_metrics(monkeyp
 
 def test_visualize_text_similarities_can_disable_smoothed_plot(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
-        "notebooks.token_candidate_similarity_heatmaps_utils.load_text_row",
+        "notebooks.utils.token_candidate_similarity_heatmaps_utils.load_text_row",
         lambda *args: pd.Series({"id": 1, "tokens": [], "text": ""}),
     )
     monkeypatch.setattr(
-        "notebooks.token_candidate_similarity_heatmaps_utils.load_similarity_row",
+        "notebooks.utils.token_candidate_similarity_heatmaps_utils.load_similarity_row",
         lambda *args: pd.Series({"token_similarities": []}),
     )
     monkeypatch.setattr(
-        "notebooks.token_candidate_similarity_heatmaps_utils.build_text_heatmap_matrices",
+        "notebooks.utils.token_candidate_similarity_heatmaps_utils.build_text_heatmap_matrices",
         lambda *args, **kwargs: TextHeatmapMatrices(
             np.empty((2, 0)), np.empty((2, 0)), [], (0.0, 0.0), (0.0, 0.0), np.empty((1, 0)), (0.0, 0.0)
         ),
     )
-    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.draw_square_heatmap", lambda *args, **kwargs: None)
-    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.draw_token_coverage_scatter", lambda *args, **kwargs: None)
-    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.display", lambda *args, **kwargs: None)
+    monkeypatch.setattr("notebooks.utils.token_candidate_similarity_heatmaps_utils.draw_square_heatmap", lambda *args, **kwargs: None)
+    monkeypatch.setattr("notebooks.utils.token_candidate_similarity_heatmaps_utils.draw_token_coverage_scatter", lambda *args, **kwargs: None)
+    monkeypatch.setattr("notebooks.utils.token_candidate_similarity_heatmaps_utils.display", lambda *args, **kwargs: None)
     monkeypatch.setattr(plt, "show", lambda: None)
 
     visualize_text_similarities(tmp_path, "demo", "model", "HG", 0, show_smoothed=False)
@@ -945,22 +945,22 @@ def test_visualize_text_similarities_truncates_summary_inputs_to_matrix_width(mo
         np.zeros((2, 2)), np.zeros((2, 2)), ["a", "b"], (0.0, 0.0), (0.0, 0.0), np.zeros((1, 2)), (0.0, 0.0)
     )
     captured = {}
-    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.load_text_row", lambda *args: logprob_row)
+    monkeypatch.setattr("notebooks.utils.token_candidate_similarity_heatmaps_utils.load_text_row", lambda *args: logprob_row)
     monkeypatch.setattr(
-        "notebooks.token_candidate_similarity_heatmaps_utils.load_similarity_row",
+        "notebooks.utils.token_candidate_similarity_heatmaps_utils.load_similarity_row",
         lambda *args: pd.Series({"token_similarities": []}),
     )
-    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.build_text_heatmap_matrices", lambda *args, **kwargs: matrices)
-    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.draw_square_heatmap", lambda *args, **kwargs: None)
-    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.draw_token_coverage_scatter", lambda *args, **kwargs: None)
-    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.display", lambda *args, **kwargs: None)
+    monkeypatch.setattr("notebooks.utils.token_candidate_similarity_heatmaps_utils.build_text_heatmap_matrices", lambda *args, **kwargs: matrices)
+    monkeypatch.setattr("notebooks.utils.token_candidate_similarity_heatmaps_utils.draw_square_heatmap", lambda *args, **kwargs: None)
+    monkeypatch.setattr("notebooks.utils.token_candidate_similarity_heatmaps_utils.draw_token_coverage_scatter", lambda *args, **kwargs: None)
+    monkeypatch.setattr("notebooks.utils.token_candidate_similarity_heatmaps_utils.display", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        "notebooks.token_candidate_similarity_heatmaps_utils.token_summary_series",
+        "notebooks.utils.token_candidate_similarity_heatmaps_utils.token_summary_series",
         lambda matrices, coverage, observed_logprobs=None: captured.update(
             coverage=coverage, observed_logprobs=observed_logprobs
         ) or {},
     )
-    monkeypatch.setattr("notebooks.token_candidate_similarity_heatmaps_utils.plot_smoothed_token_summaries", lambda *args, **kwargs: None)
+    monkeypatch.setattr("notebooks.utils.token_candidate_similarity_heatmaps_utils.plot_smoothed_token_summaries", lambda *args, **kwargs: None)
 
     visualize_text_similarities(tmp_path, "demo", "model", "HG", 0)
 
@@ -1407,7 +1407,7 @@ def test_local_evidence_cache_persists_and_validates_schema_configuration(tmp_pa
 def test_local_evidence_cache_rebuilds_when_identity_configuration_is_incompatible(
     tmp_path: Path, dataset: str, model: str, splits: tuple[str, ...]
 ) -> None:
-    from notebooks.local_evidence_utils import load_or_build_local_evidence_windows
+    from notebooks.utils.local_evidence_utils import load_or_build_local_evidence_windows
 
     processed_root = tmp_path / "processed"
     _write_local_evidence_artifacts(processed_root)

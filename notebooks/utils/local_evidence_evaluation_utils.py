@@ -6,16 +6,16 @@ from typing import Mapping, Sequence
 
 import pandas as pd
 
-from notebooks.classification_utils import evaluate_scores
-from notebooks.local_evidence_models_utils import score_local_evidence_classifier
-from notebooks.local_evidence_training_utils import LocalEvidenceModelBundle
-from notebooks.local_evidence_utils import (
+from notebooks.utils.classification_utils import evaluate_scores
+from notebooks.utils.local_evidence_models_utils import score_local_evidence_classifier
+from notebooks.utils.local_evidence_training_utils import LocalEvidenceModelBundle
+from notebooks.utils.local_evidence_utils import (
     aggregate_evidence_fraction,
     aggregate_maximum_window,
     load_local_evidence_cohort,
     limit_local_evidence_windows_by_words,
 )
-from notebooks.semeval_boundary_utils import (
+from notebooks.utils.semeval_boundary_utils import (
     add_gold_boundaries,
     build_gold_mg_regions,
     evaluate_mg_regions,
@@ -24,7 +24,7 @@ from notebooks.semeval_boundary_utils import (
     summarize_boundary_predictions,
     summarize_mg_region_evaluations,
 )
-from notebooks.token_candidate_similarity_heatmaps_utils import load_token_labels
+from notebooks.utils.token_candidate_similarity_heatmaps_utils import load_token_labels
 
 
 @dataclass
@@ -188,7 +188,7 @@ def evaluate_local_evidence_validation_lengths(
     word_limits: Sequence[int],
     show_progress: bool = False,
 ) -> LocalEvidenceDatasetEvaluationResult:
-    from notebooks.logprob_metrics_distributions_utils import validate_word_limits
+    from notebooks.utils.logprob_metrics_distributions_utils import validate_word_limits
 
     limits = validate_word_limits(word_limits)
     original = _add_validation_length_metadata(

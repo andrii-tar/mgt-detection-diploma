@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from notebooks.processing_monitoring_utils import (
+from notebooks.utils.processing_monitoring_utils import (
     STAGES,
     scan_postprocessing_readiness,
     scan_processing_counts,

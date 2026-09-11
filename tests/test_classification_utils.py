@@ -7,9 +7,9 @@ import pytest
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
-import notebooks.classification_utils as classification_utils
-import notebooks.local_evidence_utils as local_evidence_utils
-from notebooks.classification_utils import (
+import notebooks.utils.classification_utils as classification_utils
+import notebooks.utils.local_evidence_utils as local_evidence_utils
+from notebooks.utils.classification_utils import (
     build_canonical_cohort,
     evaluate_scores,
     fit_single_feature_threshold,
@@ -18,7 +18,7 @@ from notebooks.classification_utils import (
     select_model_by_coverage,
     split_cohort,
 )
-from notebooks.local_evidence_utils import (
+from notebooks.utils.local_evidence_utils import (
     aggregate_evidence_fraction,
     aggregate_maximum_window,
     fit_local_evidence_model,
@@ -1089,4 +1089,3 @@ def _legacy_local_evidence_classification_notebook_custom_inspection_contract() 
         assert len(text_ids_keyword.value.elts) == 1
         assert isinstance(text_ids_keyword.value.elts[0], ast.Name)
         assert text_ids_keyword.value.elts[0].id == "custom_text_id"
-

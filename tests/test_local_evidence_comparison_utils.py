@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from notebooks.local_evidence_comparison_utils import (
+from notebooks.utils.local_evidence_comparison_utils import (
     expand_model_scores_to_tokens,
     plot_model_score_heatmap,
     plot_normalized_token_metrics_with_model_evidence,
