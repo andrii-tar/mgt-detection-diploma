@@ -181,6 +181,15 @@ def test_evaluate_feature_vector_model_returns_metrics_predictions_and_coverage(
     assert len(predictions) == 4
     assert metrics.loc[0, "evaluation_window"] == "whole_text"
     assert coverage.loc[0, "rows"] == 4
+    assert {
+        "split", "class", "parent_count", "row_count", "availability_status",
+        "dataset", "partition",
+    }.issubset(coverage.columns)
+    assert coverage.loc[0, "split"] == "HG+MG"
+    assert coverage.loc[0, "class"] == "binary"
+    assert coverage.loc[0, "parent_count"] == 4
+    assert coverage.loc[0, "row_count"] == 4
+    assert coverage.loc[0, "availability_status"] == "available"
 
 
 def test_evaluate_feature_vector_model_allows_training_and_evaluation_window_transfer() -> None:
@@ -202,9 +211,22 @@ def test_export_result_frames_writes_normalized_csvs_and_rejects_missing_run_dim
     frame = pd.DataFrame([{"model_family": "logistic_regression", "scorer_llm": "llm", "feature_set": "d", "training_regime": "Mixed", "training_window": "32", "evaluation_regime": "Kaggle", "evaluation_window": "whole_text", "partition": "test", "macro_f1": 1.0}])
     written = export_result_frames(tmp_path, run_id="run-1", frames={"evaluation_metrics": frame})
     assert written["evaluation_metrics"].name == "evaluation_metrics.csv"
+    assert written["evaluation_metrics"].parent == tmp_path / "experiment-results" / "classification" / "evaluations" / "run-1"
     assert written["evaluation_metrics"].is_file()
     with pytest.raises(ValueError, match="required dimension"):
         export_result_frames(tmp_path, run_id="run-2", frames={"evaluation_metrics": frame.drop(columns="evaluation_window")})
+
+    coverage = pd.DataFrame([{"dataset": "source", "partition": "test"}])
+    with pytest.raises(ValueError, match="required dimension"):
+        export_result_frames(tmp_path, run_id="run-3", frames={"evaluation_coverage": coverage})
+
+
+def test_validation_rejects_malformed_feature_columns_without_type_error() -> None:
+    with pytest.raises(ValueError, match="feature columns"):
+        validate_evaluation_metadata(
+            {"scorer_llm": "llm", "feature_set": "d", "feature_columns": None},
+            {"scorer_llm": "llm", "feature_set": "d", "feature_columns": ["a"]},
+        )
 
 
 def test_availability_row_is_structured_and_release_frames_collects() -> None:

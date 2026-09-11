@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import pickle
+import re
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -137,7 +138,11 @@ def _validate_tabular_inputs(training_metrics: pd.DataFrame, training_coverage: 
 
 
 def _artifact_path(data_root: Path, fitted: FittedFeatureVectorModel, metadata: Mapping[str, object], run_id: str) -> Path:
-    return data_root / "experiment-results" / "classification" / "models" / str(fitted.model_family) / str(metadata["scorer_llm"]) / str(metadata["feature_set"]) / str(metadata["training_regime"]) / str(metadata["training_window"]) / run_id
+    def safe(value: object) -> str:
+        result = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value)).strip("._")
+        return result or "unknown"
+
+    return data_root / "experiment-results" / "classification" / "models" / safe(fitted.model_family) / safe(metadata["scorer_llm"]) / safe(metadata["feature_set"]) / safe(metadata["training_regime"]) / safe(metadata["training_window"]) / safe(run_id)
 
 
 def save_model_artifact(

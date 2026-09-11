@@ -175,3 +175,19 @@ def test_artifact_save_is_atomic_and_rejects_existing_destination(tmp_path: Path
     with pytest.raises(FileExistsError):
         save_model_artifact(tmp_path, _fit(), metadata=METADATA, run_id="run-1",
                             training_metrics=pd.DataFrame(), training_coverage=pd.DataFrame())
+
+
+@pytest.mark.parametrize("value", ["../escape", "nested/name", "bad\\name", ""])
+def test_artifact_path_components_are_sanitized(tmp_path: Path, value: str) -> None:
+    artifact = save_model_artifact(
+        tmp_path,
+        _fit(),
+        metadata={**METADATA, "run_id": "../run/name", "feature_set": value or "valid"},
+        run_id="../run/name",
+        training_metrics=pd.DataFrame(),
+        training_coverage=pd.DataFrame(),
+    )
+
+    assert artifact.is_relative_to(tmp_path)
+    assert artifact.name == "run_name"
+    assert ".." not in artifact.parts

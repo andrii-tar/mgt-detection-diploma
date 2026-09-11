@@ -112,6 +112,17 @@ def test_prepare_and_train_notebook_records_failures_and_never_runs_processing_o
         assert forbidden not in source
 
 
+def test_prepare_and_train_notebook_bounds_source_frame_memory_and_handles_episode_failures() -> None:
+    source = _source()
+
+    assert "release_frames(*source_frames)" in source
+    assert "except (FileNotFoundError, KeyError, ValueError, OSError) as error:" in source
+    assert "fit_feature_vector_model(" in source
+    assert "save_model_artifact(" in source
+    assert "run_summary.append" in source
+    assert "continue" in source
+
+
 def test_evaluate_notebook_is_output_free_and_has_no_definitions() -> None:
     notebook = _notebook("evaluate_classifiers.ipynb")
     code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
@@ -149,8 +160,14 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
         "evaluation_predictions",
         "evaluation_coverage",
         "run_summary",
+        "build_feature_parent_cohorts(",
+        "validation_cohort",
+        "test_cohort",
+        "selected_cohort",
     ):
         assert fragment in source
+
+    assert 'for partition in ("validation", "test")' in source
 
 
 def test_evaluate_notebook_records_expected_failures_and_reraises_unexpected_errors() -> None:

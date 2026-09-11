@@ -45,6 +45,9 @@ _EVALUATION_RESULT_COLUMNS = (
     "model_family", "scorer_llm", "feature_set", "training_regime",
     "training_window", "evaluation_regime", "evaluation_window", "partition",
 )
+_COVERAGE_RESULT_COLUMNS = (
+    "dataset", "split", "class", "parent_count", "row_count", "availability_status",
+)
 
 
 def build_feature_parent_cohorts(
@@ -167,7 +170,12 @@ def validate_evaluation_metadata(
         raise ValueError("feature set does not match")
     if "feature_columns" not in artifact_metadata or "feature_columns" not in prepared_metadata:
         raise ValueError("feature columns metadata is required")
-    if tuple(artifact_metadata["feature_columns"]) != tuple(prepared_metadata["feature_columns"]):
+    try:
+        artifact_columns = tuple(artifact_metadata["feature_columns"])  # type: ignore[arg-type]
+        prepared_columns = tuple(prepared_metadata["feature_columns"])  # type: ignore[arg-type]
+    except TypeError as error:
+        raise ValueError("feature columns metadata must be iterable") from error
+    if artifact_columns != prepared_columns:
         raise ValueError("feature columns do not match")
 
 
@@ -199,7 +207,20 @@ def evaluate_feature_vector_model(
         predictions.append(scored)
         scores = scored["mg_score"]
         metrics.append({**output_metadata, "dataset": dataset, "partition": partition, **evaluate_scores(scored["label"], scores, 0.5)})
-        coverage.append({**output_metadata, "dataset": dataset, "partition": partition, "rows": len(scored), "hg_rows": int(scored["label"].eq(0).sum()), "mg_rows": int(scored["label"].eq(1).sum())})
+        split_values = tuple(sorted(str(value) for value in scored["split"].dropna().unique()))
+        coverage.append({
+            **output_metadata,
+            "dataset": dataset,
+            "partition": partition,
+            "split": "+".join(split_values),
+            "class": "binary" if set(scored["label"]) == {0, 1} else split_values[0],
+            "parent_count": int(scored[["split", "text_id"]].drop_duplicates().shape[0]),
+            "row_count": len(scored),
+            "availability_status": "available",
+            "rows": len(scored),
+            "hg_rows": int(scored["label"].eq(0).sum()),
+            "mg_rows": int(scored["label"].eq(1).sum()),
+        })
     return pd.DataFrame(metrics), pd.concat(predictions, ignore_index=True), pd.DataFrame(coverage)
 
 
@@ -225,7 +246,10 @@ def export_result_frames(
     output = {name: frames.get(name, pd.DataFrame()) for name in names}
     for name in names[:-1]:
         if name not in frames:
-            columns = _TRAINING_RESULT_COLUMNS if name.startswith("training_") else _EVALUATION_RESULT_COLUMNS
+            if name.endswith("coverage"):
+                columns = _COVERAGE_RESULT_COLUMNS
+            else:
+                columns = _TRAINING_RESULT_COLUMNS if name.startswith("training_") else _EVALUATION_RESULT_COLUMNS
             output[name] = pd.DataFrame(columns=columns)
     run_summary_columns = ("run_id", "stage", "status", "scorer_llm", "dataset", "split", "feature_set", "training_window", "evaluation_window", "model_family", "artifact_path", "error")
     if output["run_summary"].empty and not set(output["run_summary"].columns):
@@ -235,6 +259,8 @@ def export_result_frames(
     for name, frame in output.items():
         if name == "run_summary":
             required = run_summary_columns
+        elif name.endswith("coverage"):
+            required = _COVERAGE_RESULT_COLUMNS
         elif name.startswith("training_"):
             required = _TRAINING_RESULT_COLUMNS
         else:

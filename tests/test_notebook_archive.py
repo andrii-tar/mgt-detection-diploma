@@ -28,3 +28,17 @@ def test_archive_readme_documents_archived_notebooks() -> None:
     assert "superseded" in contents.lower()
     for notebook in sorted(ARCHIVED_NOTEBOOKS):
         assert notebook in contents
+
+
+def test_archive_readme_has_one_purpose_status_replacement_row_per_notebook() -> None:
+    contents = (ARCHIVE_DIRECTORY / "README.md").read_text(encoding="utf-8")
+    rows = [line for line in contents.splitlines() if line.startswith("|") and not line.startswith("|---")]
+
+    assert len(rows) == len(ARCHIVED_NOTEBOOKS) + 1
+    assert rows[0].lower().count("notebook") == 1
+    assert rows[0].lower().count("purpose") == 1
+    assert rows[0].lower().count("inactive") == 1
+    assert rows[0].lower().count("replacement") == 1
+    for notebook in ARCHIVED_NOTEBOOKS:
+        row = next(row for row in rows[1:] if notebook in row)
+        assert row.count("|") == 5
