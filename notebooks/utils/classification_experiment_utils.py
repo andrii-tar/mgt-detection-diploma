@@ -112,7 +112,7 @@ def load_episode_partitions(
                 ),
             )
             filtered = prepared[prepared["text_id"].isin(selected_ids)].copy()
-            filtered.insert(0, "dataset", dataset)
+            filtered["dataset"] = dataset
             rows.append(filtered)
         if rows:
             frames[dataset] = pd.concat(rows, ignore_index=True)
@@ -245,7 +245,9 @@ def export_result_frames(
     )
     output = {name: frames.get(name, pd.DataFrame()) for name in names}
     for name in names[:-1]:
-        if name not in frames:
+        if name not in frames or (
+            output[name].empty and not set(output[name].columns)
+        ):
             if name.endswith("coverage"):
                 columns = _COVERAGE_RESULT_COLUMNS
             else:

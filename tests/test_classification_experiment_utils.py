@@ -114,6 +114,33 @@ def test_load_episode_partitions_filters_parent_cohort_before_returning_windows(
     }
 
 
+def test_load_episode_partitions_accepts_prepared_dataset_identity(tmp_path: Path) -> None:
+    frame = _prepared_frame("source", "HG", [1]).assign(dataset="source")
+    save_prepared_partition(
+        tmp_path,
+        frame,
+        scorer_llm="llm",
+        dataset="source",
+        split="HG",
+        feature_set=FeatureSet("d", FEATURES),
+        window_configuration=32,
+        stride=16,
+    )
+
+    frames = load_episode_partitions(
+        tmp_path,
+        scorer_llm="llm",
+        datasets=("source",),
+        partition="test",
+        feature_set="d",
+        window_configuration=32,
+        feature_columns=FEATURES,
+        cohort={("source", "HG", 1)},
+    )
+
+    assert frames["source"]["dataset"].tolist() == ["source"]
+
+
 def test_training_episode_concatenates_train_and_validation_source_frames(tmp_path: Path) -> None:
     feature_set = FeatureSet("d", FEATURES)
     for split in ("HG", "MG"):
@@ -219,6 +246,25 @@ def test_export_result_frames_writes_normalized_csvs_and_rejects_missing_run_dim
     coverage = pd.DataFrame([{"dataset": "source", "partition": "test"}])
     with pytest.raises(ValueError, match="required dimension"):
         export_result_frames(tmp_path, run_id="run-3", frames={"evaluation_coverage": coverage})
+
+
+def test_export_result_frames_normalizes_explicit_empty_frames(tmp_path: Path) -> None:
+    written = export_result_frames(
+        tmp_path,
+        run_id="run-empty",
+        frames={
+            "training_metrics": pd.DataFrame(),
+            "training_coverage": pd.DataFrame(),
+            "evaluation_metrics": pd.DataFrame(),
+            "evaluation_predictions": pd.DataFrame(),
+            "evaluation_coverage": pd.DataFrame(),
+            "run_summary": pd.DataFrame(),
+        },
+    )
+
+    assert written["training_metrics"].read_text(encoding="utf-8").splitlines()[0].split(",")[:6] == [
+        "model_family", "scorer_llm", "feature_set", "training_regime", "training_window", "partition",
+    ]
 
 
 def test_validation_rejects_malformed_feature_columns_without_type_error() -> None:
