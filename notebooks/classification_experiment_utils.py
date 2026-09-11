@@ -161,6 +161,10 @@ def validate_evaluation_metadata(
         raise ValueError("scorer_llm metadata is required")
     if artifact_metadata["scorer_llm"] != prepared_metadata["scorer_llm"]:
         raise ValueError("scorer_llm does not match")
+    if "feature_set" not in artifact_metadata or "feature_set" not in prepared_metadata:
+        raise ValueError("feature set metadata is required")
+    if artifact_metadata["feature_set"] != prepared_metadata["feature_set"]:
+        raise ValueError("feature set does not match")
     if "feature_columns" not in artifact_metadata or "feature_columns" not in prepared_metadata:
         raise ValueError("feature columns metadata is required")
     if tuple(artifact_metadata["feature_columns"]) != tuple(prepared_metadata["feature_columns"]):
@@ -181,6 +185,7 @@ def evaluate_feature_vector_model(
             raise ValueError(f"empty evaluation frame for dataset={dataset!r}")
         prepared_metadata = {
             "scorer_llm": frame.get("scorer_llm", pd.Series([metadata.get("scorer_llm")])).iloc[0],
+            "feature_set": frame.get("feature_set", pd.Series([metadata.get("feature_set")])).iloc[0],
             "feature_columns": list(artifact.feature_columns),
             "window_configuration": frame.get("window_configuration", pd.Series([metadata.get("evaluation_window")])).iloc[0],
         }

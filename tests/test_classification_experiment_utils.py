@@ -156,14 +156,16 @@ def test_discover_model_artifacts_skips_missing_and_invalid_metadata(tmp_path: P
 
 
 def test_validation_matches_llm_and_ordered_features_but_allows_window_transfer() -> None:
-    artifact = {"scorer_llm": "llm", "feature_columns": ["a", "b"], "training_window": "32"}
-    prepared = {"scorer_llm": "llm", "feature_columns": ["a", "b"], "window_configuration": "whole_text"}
+    artifact = {"scorer_llm": "llm", "feature_set": "d", "feature_columns": ["a", "b"], "training_window": "32"}
+    prepared = {"scorer_llm": "llm", "feature_set": "d", "feature_columns": ["a", "b"], "window_configuration": "whole_text"}
     validate_evaluation_metadata(artifact, prepared)
 
     with pytest.raises(ValueError, match="feature columns"):
         validate_evaluation_metadata(artifact, {**prepared, "feature_columns": ["b", "a"]})
     with pytest.raises(ValueError, match="scorer_llm"):
         validate_evaluation_metadata(artifact, {**prepared, "scorer_llm": "other"})
+    with pytest.raises(ValueError, match="feature set"):
+        validate_evaluation_metadata(artifact, {**prepared, "feature_set": "other"})
 
 
 def test_evaluate_feature_vector_model_returns_metrics_predictions_and_coverage() -> None:
