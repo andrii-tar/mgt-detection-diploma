@@ -164,6 +164,12 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
         "validation_cohort",
         "test_cohort",
         "selected_cohort",
+        "evaluate_local_evidence_semeval(",
+        "export_semeval_result_frames(",
+        "SEMEVAL_DATASETS =",
+        "semeval_summary",
+        "semeval_boundary_predictions",
+        '"stage": "semeval"',
     ):
         assert fragment in source
 

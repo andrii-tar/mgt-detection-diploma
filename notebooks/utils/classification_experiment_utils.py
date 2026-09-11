@@ -279,6 +279,24 @@ def export_result_frames(
     return written
 
 
+def export_semeval_result_frames(
+    root: Path | str, *, run_id: str, frames: Mapping[str, pd.DataFrame]
+) -> dict[str, Path]:
+    destination = Path(root) / "experiment-results" / "classification" / "evaluations" / run_id
+    names = (
+        "semeval_summary", "semeval_evaluations", "semeval_predicted_regions",
+        "semeval_boundary_summary", "semeval_boundary_predictions",
+        "semeval_boundary_exclusions",
+    )
+    destination.mkdir(parents=True, exist_ok=True)
+    written: dict[str, Path] = {}
+    for name in names:
+        path = destination / f"{name}.csv"
+        frames.get(name, pd.DataFrame()).to_csv(path, index=False)
+        written[name] = path
+    return written
+
+
 def release_frames(*frames: pd.DataFrame | None) -> None:
     del frames
     gc.collect()

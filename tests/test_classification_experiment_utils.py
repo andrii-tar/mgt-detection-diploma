@@ -16,6 +16,7 @@ from notebooks.utils.classification_experiment_utils import (
     build_feature_parent_cohorts,
     discover_model_artifacts,
     evaluate_feature_vector_model,
+    export_semeval_result_frames,
     export_result_frames,
     load_episode_partitions,
     load_training_episode,
@@ -265,6 +266,18 @@ def test_export_result_frames_normalizes_explicit_empty_frames(tmp_path: Path) -
     assert written["training_metrics"].read_text(encoding="utf-8").splitlines()[0].split(",")[:6] == [
         "model_family", "scorer_llm", "feature_set", "training_regime", "training_window", "partition",
     ]
+
+
+def test_export_semeval_result_frames_writes_separate_csvs(tmp_path: Path) -> None:
+    written = export_semeval_result_frames(
+        tmp_path,
+        run_id="run-semeval",
+        frames={"semeval_summary": pd.DataFrame([{"model": "classifier"}])},
+    )
+
+    assert written["semeval_summary"].name == "semeval_summary.csv"
+    assert written["semeval_summary"].read_text(encoding="utf-8").splitlines() == ["model", "classifier"]
+    assert (written["semeval_summary"].parent / "semeval_boundary_summary.csv").is_file()
 
 
 def test_validation_rejects_malformed_feature_columns_without_type_error() -> None:
