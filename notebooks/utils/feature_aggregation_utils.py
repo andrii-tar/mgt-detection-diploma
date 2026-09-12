@@ -10,7 +10,14 @@ from typing import Callable, Literal, Mapping
 
 import pandas as pd
 
-from notebooks.utils.local_evidence_utils import _window_starts
+from notebooks.utils.local_evidence_utils import (
+    LOCAL_METRICS,
+    WINDOW_STATISTICS,
+    _iter_paired_processed_rows,
+    _pool_feature,
+    _window_starts,
+)
+from notebooks.utils.token_candidate_similarity_heatmaps_utils import validated_text_summary
 from scripts.logprob_metrics import compute_logprob_metrics
 
 
@@ -109,42 +116,68 @@ def prepare_feature_partition(
 ) -> pd.DataFrame:
     configuration = _window_configuration(window_configuration)
     _validate_stride(stride)
-    unknown = set(feature_set.source_columns).difference(METRIC_REGISTRY)
+    scalar_columns = tuple(column for column in feature_set.source_columns if column in METRIC_REGISTRY)
+    local_columns = {}
+    for column in feature_set.source_columns:
+        metric, separator, statistic = column.rpartition("__")
+        if separator and metric in LOCAL_METRICS and statistic in WINDOW_STATISTICS:
+            local_columns[column] = (metric, statistic)
+    unknown = set(feature_set.source_columns).difference((*scalar_columns, *local_columns))
     if unknown:
         raise ValueError(f"feature metrics are not registered: {sorted(unknown)}")
     rows: list[dict[str, object]] = []
     seen_text_ids: set[int] = set()
-    for path in _processed_paths(Path(processed_root), dataset, scorer_llm, split):
-        for source in pd.read_parquet(path).to_dict(orient="records"):
-            text_id = int(source["id"])
-            if text_id in seen_text_ids:
-                raise ValueError(f"duplicate source text identity: {split}/{text_id}")
-            seen_text_ids.add(text_id)
-            raw_tokens = source.get("tokens")
-            tokens = [] if raw_tokens is None else list(raw_tokens)
-            if configuration == "whole_text":
-                starts = [0]
-                length = len(tokens)
-            else:
-                length = int(configuration)
-                starts = _window_starts(len(tokens), length, stride) if tokens else []
-            for start in starts:
-                stop = len(tokens) if configuration == "whole_text" else start + length
-                metrics = ({column: float("nan") for column in feature_set.source_columns}
-                           if not tokens[start:stop]
-                           else compute_logprob_metrics({**source, "tokens": tokens[start:stop]}))
-                label = source.get("label", _expected_label(split))
-                rows.append({
-                    "scorer_llm": scorer_llm,
-                    "dataset": dataset,
-                    "split": split,
-                    "text_id": text_id,
-                    "label": label,
-                    "start_token": start,
-                    "stop_token": stop,
-                    "window_configuration": configuration,
-                    **{column: METRIC_REGISTRY[column].compute(metrics) for column in feature_set.source_columns},
-                })
+    if local_columns:
+        paired_rows, _ = _iter_paired_processed_rows(
+            Path(processed_root), dataset, scorer_llm, split, text_ids=None,
+        )
+        source_rows = paired_rows
+    else:
+        source_rows = (
+            (source, None)
+            for path in _processed_paths(Path(processed_root), dataset, scorer_llm, split)
+            for source in pd.read_parquet(path).to_dict(orient="records")
+        )
+    for source, similarity_source in source_rows:
+        text_id = int(source["id"])
+        if text_id in seen_text_ids:
+            raise ValueError(f"duplicate source text identity: {split}/{text_id}")
+        seen_text_ids.add(text_id)
+        raw_tokens = source.get("tokens")
+        tokens = [] if raw_tokens is None else list(raw_tokens)
+        summary = (
+            validated_text_summary(source, similarity_source, top_k=20)[0]
+            if tokens and similarity_source is not None else None
+        )
+        if configuration == "whole_text":
+            starts = [0]
+            length = len(tokens)
+        else:
+            length = int(configuration)
+            starts = _window_starts(len(tokens), length, stride) if tokens else []
+        for start in starts:
+            stop = len(tokens) if configuration == "whole_text" else start + length
+            metrics = ({column: float("nan") for column in feature_set.source_columns}
+                       if not tokens[start:stop]
+                       else compute_logprob_metrics({**source, "tokens": tokens[start:stop]}))
+            local_values = (
+                {column: _pool_feature(summary[metric][start:stop])[statistic]
+                 for column, (metric, statistic) in local_columns.items()}
+                if summary is not None else {column: float("nan") for column in local_columns}
+            )
+            label = source.get("label", _expected_label(split))
+            rows.append({
+                "scorer_llm": scorer_llm,
+                "dataset": dataset,
+                "split": split,
+                "text_id": text_id,
+                "label": label,
+                "start_token": start,
+                "stop_token": stop,
+                "window_configuration": configuration,
+                **{column: METRIC_REGISTRY[column].compute(metrics) for column in scalar_columns},
+                **local_values,
+            })
     frame = pd.DataFrame(rows)
     if frame.empty:
         raise ValueError("prepared feature partition is empty")

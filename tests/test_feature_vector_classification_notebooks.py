@@ -64,6 +64,25 @@ def test_prepare_and_train_notebook_declares_complete_experiment_configuration()
         assert fragment in source
 
 
+def test_prepare_and_train_notebook_declares_all_scalar_and_similarity_feature_sets() -> None:
+    source = _source()
+
+    assert 'RUN_ID = "feature-vector-classification-2026-09-12"' in source
+    for name in ("scalar_all", "scalar_compact", "simple_similarity", "extended"):
+        assert f'"{name}": FeatureSet("{name}"' in source
+    for column in (
+        "mean_candidate_similarity__mean",
+        "mean_candidate_similarity__std",
+        "top20_coverage__mean",
+        "top20_coverage__std",
+        "observed_logprob__mean",
+        "observed_logprob__std",
+        "mean_candidate_logprob_delta__mean",
+        "mean_candidate_logprob_delta__std",
+    ):
+        assert f'"{column}"' in source
+
+
 def test_prepare_and_train_notebook_uses_resumable_disk_backed_workflow() -> None:
     source = _source()
 

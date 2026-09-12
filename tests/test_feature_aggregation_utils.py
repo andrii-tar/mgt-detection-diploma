@@ -16,6 +16,23 @@ from notebooks.utils.feature_aggregation_utils import (
 
 
 FEATURE_SET = FeatureSet(name="d_score_only", source_columns=("d_score_top20",))
+LOCAL_FEATURE_SET = FeatureSet(
+    name="simple_similarity",
+    source_columns=(
+        "mean_candidate_similarity__mean",
+        "mean_candidate_similarity__std",
+        "top20_coverage__mean",
+        "top20_coverage__std",
+        "observed_logprob__mean",
+        "observed_logprob__std",
+        "mean_candidate_logprob_delta__mean",
+        "mean_candidate_logprob_delta__std",
+    ),
+)
+MIXED_FEATURE_SET = FeatureSet(
+    name="extended",
+    source_columns=("d_score_top20", *LOCAL_FEATURE_SET.source_columns),
+)
 
 
 def _write_processed_text(
@@ -46,6 +63,20 @@ def _write_processed_text(
     )
 
 
+def _write_similarity_text(
+    root: Path, *, dataset: str, scorer: str, split: str, token_count: int, text_id: int = 1,
+) -> None:
+    path = root / f"{dataset}__{scorer}" / split / "token_similarities" / "part-0.parquet"
+    path.parent.mkdir(parents=True)
+    pd.DataFrame([{
+        "id": text_id,
+        "token_similarities": [
+            {"top_logprobs": [{"similarity_to_gt": 0.2 + index * 0.1}]}
+            for index in range(token_count)
+        ],
+    }]).to_parquet(path, index=False)
+
+
 def test_preparation_computes_d_score_over_each_requested_token_window(tmp_path: Path) -> None:
     _write_processed_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=4)
 
@@ -65,6 +96,44 @@ def test_preparation_computes_d_score_over_each_requested_token_window(tmp_path:
     assert whole[["start_token", "stop_token", "window_configuration"]].to_dict("records") == [
         {"start_token": 0, "stop_token": 4, "window_configuration": "whole_text"},
     ]
+
+
+def test_preparation_computes_local_evidence_summary_features(tmp_path: Path) -> None:
+    _write_processed_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2)
+    _write_similarity_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2)
+
+    frame = prepare_feature_partition(
+        tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=LOCAL_FEATURE_SET, window_configuration=2, stride=1,
+    )
+
+    assert frame.loc[0, list(LOCAL_FEATURE_SET.source_columns)].notna().all()
+    assert frame.loc[0, "observed_logprob__mean"] == pytest.approx(-0.105)
+
+
+def test_preparation_combines_scalar_and_local_evidence_features(tmp_path: Path) -> None:
+    _write_processed_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2)
+    _write_similarity_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2)
+
+    frame = prepare_feature_partition(
+        tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=MIXED_FEATURE_SET, window_configuration=2, stride=1,
+    )
+
+    assert frame.loc[0, list(MIXED_FEATURE_SET.source_columns)].notna().all()
+
+
+def test_ensure_reports_missing_stage_two_for_local_features(tmp_path: Path) -> None:
+    _write_processed_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2)
+
+    result = ensure_prepared_partition(
+        tmp_path, tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=LOCAL_FEATURE_SET, window_configuration=2, stride=1,
+    )
+
+    assert result["status"] == "unavailable"
+    assert "token similarity" in str(result["error"]).lower()
+    assert not (tmp_path / "experiment-results").exists()
 
 
 def test_whole_text_emits_zero_length_rows_for_empty_and_none_tokens(tmp_path: Path) -> None:
