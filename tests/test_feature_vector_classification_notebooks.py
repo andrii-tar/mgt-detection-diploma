@@ -166,21 +166,25 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
         "selected_cohort",
         "evaluate_local_evidence_semeval(",
         "export_semeval_result_frames(",
-        "load_or_build_local_evidence_windows(",
-        "semeval_windows[(scorer_llm, semeval_dataset)]",
+        "ensure_prepared_partition(",
+        "semeval_windows[(scorer_llm, semeval_dataset, feature_set_name, semeval_window)]",
         "windows_override=prepared_windows",
         "SEMEVAL_DATASETS =",
         "semeval_summary",
         "semeval_boundary_predictions",
+        '"training_datasets": "|".join(metadata["training_datasets"])',
+        '"train_row_count": metadata["train_row_count"]',
+        '"validation_row_count": metadata["validation_row_count"]',
+        '"artifact_created_at": metadata["created_at"]',
         '"stage": "semeval"',
     ):
         assert fragment in source
 
     assert 'for partition in ("validation", "test")' in source
-    assert source.index("load_or_build_local_evidence_windows(") < source.index("for artifact_path in tqdm(")
+    assert source.index("ensure_prepared_partition(") < source.index("for artifact_path in tqdm(")
     assert source.index("windows_override=prepared_windows") > source.index("for artifact_path in tqdm(")
-    assert "SEMEVAL_CACHE_ROOT" in source
-    assert "path=semeval_cache_path" in source
+    assert 'training_window != "whole_text"' in source
+    assert "load_or_build_local_evidence_windows(" not in source
 
 
 def test_evaluate_notebook_uses_semeval_train_only() -> None:
