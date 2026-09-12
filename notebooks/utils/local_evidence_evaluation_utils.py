@@ -247,6 +247,7 @@ def evaluate_local_evidence_semeval(
     smoothing_window: int = 5,
     minimum_region_length: int = 3,
     sustained_length: int = 3,
+    windows_override: pd.DataFrame | None = None,
 ) -> LocalEvidenceSemEvalEvaluationResult:
     requested = annotations[["id"]].rename(columns={"id": "text_id"}).copy()
     if text_ids is not None:
@@ -264,11 +265,18 @@ def evaluate_local_evidence_semeval(
     empty = pd.DataFrame()
     if available_requested.empty:
         return LocalEvidenceSemEvalEvaluationResult(empty, empty, empty, empty, empty, empty, pd.DataFrame(exclusions))
-    windows = load_local_evidence_cohort(
-        Path(processed_root), dataset, model.llm_name, available_requested,
-        window_lengths=model.window_lengths, stride=model.stride, top_k=model.top_k,
+    windows = (
+        windows_override.copy()
+        if windows_override is not None
+        else load_local_evidence_cohort(
+            Path(processed_root), dataset, model.llm_name, available_requested,
+            window_lengths=model.window_lengths, stride=model.stride, top_k=model.top_k,
+        )
     )
     windows = _select_requested(windows, available_requested)
+    available_window_ids = set(windows["text_id"].unique())
+    for text_id in sorted(set(available_requested["text_id"]) - available_window_ids):
+        exclusions.append({"text_id": int(text_id), "reason": "missing supplied local-evidence windows"})
     token_counts = {text_id: len(labels) for text_id, labels in token_labels.items()}
     scored_frames = []
     for (classifier_name, window_length), fitted in model.classifiers.items():

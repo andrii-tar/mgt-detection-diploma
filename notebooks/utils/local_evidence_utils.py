@@ -322,6 +322,7 @@ def load_or_build_local_evidence_windows(
         stride=stride,
         top_k=top_k,
         splits=normalized_splits,
+        text_ids=None if text_ids is None else tuple(sorted(text_ids["text_id"].unique())),
     )
     save_local_evidence_windows(
         windows,

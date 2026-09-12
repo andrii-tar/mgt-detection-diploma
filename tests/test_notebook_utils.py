@@ -1454,3 +1454,37 @@ def test_local_evidence_cache_rebuilds_when_identity_configuration_is_incompatib
         ),
         rebuilt,
     )
+
+
+def test_local_evidence_cache_rebuild_passes_requested_text_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from notebooks.utils.local_evidence_utils import load_or_build_local_evidence_windows
+
+    requested = pd.DataFrame({"split": ["MG"], "text_id": [7]})
+    built = pd.DataFrame({"split": ["MG"], "text_id": [7], "window_length": [4]})
+    build_ids: list[tuple[int, ...] | None] = []
+    load_calls = 0
+
+    def load(*args, **kwargs):
+        nonlocal load_calls
+        load_calls += 1
+        if load_calls == 1:
+            raise FileNotFoundError
+        return built
+
+    def build(*args, **kwargs):
+        build_ids.append(kwargs.get("text_ids"))
+        return built
+
+    monkeypatch.setattr(local_evidence_utils, "load_local_evidence_windows", load)
+    monkeypatch.setattr(local_evidence_utils, "build_local_evidence_windows", build)
+    monkeypatch.setattr(local_evidence_utils, "save_local_evidence_windows", lambda *args, **kwargs: args[1])
+
+    result = load_or_build_local_evidence_windows(
+        tmp_path, "demo", "model", path=tmp_path / "windows.parquet",
+        splits=("MG",), text_ids=requested,
+    )
+
+    assert build_ids == [(7,)]
+    pd.testing.assert_frame_equal(result, built)

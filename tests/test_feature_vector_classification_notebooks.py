@@ -166,6 +166,9 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
         "selected_cohort",
         "evaluate_local_evidence_semeval(",
         "export_semeval_result_frames(",
+        "load_or_build_local_evidence_windows(",
+        "semeval_windows[(scorer_llm, semeval_dataset)]",
+        "windows_override=prepared_windows",
         "SEMEVAL_DATASETS =",
         "semeval_summary",
         "semeval_boundary_predictions",
@@ -174,6 +177,17 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
         assert fragment in source
 
     assert 'for partition in ("validation", "test")' in source
+    assert source.index("load_or_build_local_evidence_windows(") < source.index("for artifact_path in tqdm(")
+    assert source.index("windows_override=prepared_windows") > source.index("for artifact_path in tqdm(")
+    assert "SEMEVAL_CACHE_ROOT" in source
+    assert "path=semeval_cache_path" in source
+
+
+def test_evaluate_notebook_uses_semeval_train_only() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    assert 'SEMEVAL_DATASETS = {"train":' in source
+    assert '"dev":' not in source[source.index("SEMEVAL_DATASETS ="):]
 
 
 def test_evaluate_notebook_records_expected_failures_and_reraises_unexpected_errors() -> None:

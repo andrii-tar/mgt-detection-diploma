@@ -213,16 +213,16 @@ def test_semeval_evaluation_reuses_scored_windows_for_regions_and_boundaries(
         lambda *args, **kwargs: {7: ["human", " text", " machine", " text"]},
     )
 
-    def load_cohort(*args, **kwargs):
-        requested = args[3]
-        assert requested["text_id"].tolist() == [7]
-        return pd.DataFrame([{
+    prepared_windows = pd.DataFrame([{
             "split": "MG", "text_id": 7, "label": 1, "window_length": 2,
             "start_token": start, "stop_token": start + 2,
             "feature_a": 0.9, "feature_b": 0.1,
         } for start in (0, 2)])
 
-    monkeypatch.setattr("notebooks.utils.local_evidence_evaluation_utils.load_local_evidence_cohort", load_cohort)
+    monkeypatch.setattr(
+        "notebooks.utils.local_evidence_evaluation_utils.load_local_evidence_cohort",
+        lambda *args, **kwargs: pytest.fail("supplied SemEval windows must not be rebuilt"),
+    )
 
     def score(fitted, windows, feature_columns):
         score_calls.append(windows.copy())
@@ -241,7 +241,8 @@ def test_semeval_evaluation_reuses_scored_windows_for_regions_and_boundaries(
     )
 
     result = evaluate_local_evidence_semeval(
-        _semeval_model(), "data", annotations, smoothing_window=1, sustained_length=4,
+        _semeval_model(), "data", annotations, windows_override=prepared_windows,
+        smoothing_window=1, sustained_length=4,
     )
 
     assert isinstance(result, LocalEvidenceSemEvalEvaluationResult)
@@ -250,6 +251,25 @@ def test_semeval_evaluation_reuses_scored_windows_for_regions_and_boundaries(
     assert set(result.summary["model"]) == {"classifier"}
     assert set(result.boundary_summary["model"]) == {"classifier"}
     assert result.boundary_predictions["gold_token_boundary"].tolist() == [2]
+
+
+def test_semeval_evaluation_excludes_processed_text_without_supplied_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    annotations = pd.DataFrame([{"id": 7, "text": "text", "boundary_word_index": 0}])
+    monkeypatch.setattr(
+        "notebooks.utils.local_evidence_evaluation_utils.load_token_labels",
+        lambda *args, **kwargs: {7: ["text"]},
+    )
+
+    result = evaluate_local_evidence_semeval(
+        _semeval_model(), "data", annotations,
+        windows_override=pd.DataFrame(columns=["split", "text_id", "window_length"]),
+    )
+
+    assert result.boundary_exclusions.to_dict("records") == [
+        {"text_id": 7, "reason": "missing supplied local-evidence windows"},
+    ]
 
 
 def test_semeval_omits_unavailable_and_misaligned_texts_without_aborting(
