@@ -206,11 +206,27 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
     assert "load_or_build_local_evidence_windows(" not in source
 
 
+def test_evaluate_notebook_has_one_configuration_and_does_not_overwrite_streamed_results() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    assert source.count('RUN_ID = "') == 1
+    assert source.count("Preparing SemEval feature partitions") == 1
+    assert '"evaluation_predictions": pd.DataFrame()' not in source
+    assert source.count("export_semeval_result_frames(") == 1
+
+
 def test_evaluate_notebook_uses_semeval_train_only() -> None:
     source = _source("evaluate_classifiers.ipynb")
 
     assert 'SEMEVAL_DATASETS = {"train":' in source
     assert '"dev":' not in source[source.index("SEMEVAL_DATASETS ="):]
+
+
+def test_evaluate_notebook_shows_semeval_preparation_progress() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    assert 'for (scorer_llm, feature_set_name, semeval_window), feature_columns in tqdm(semeval_configurations.items(), desc="Preparing SemEval feature partitions", unit="configuration"):' in source
+    assert 'for semeval_split, (semeval_dataset, semeval_path) in tqdm(SEMEVAL_DATASETS.items(), desc=f"{scorer_llm}/{feature_set_name}/{semeval_window}", unit="split", leave=False):' in source
 
 
 def test_evaluate_notebook_records_expected_failures_and_reraises_unexpected_errors() -> None:

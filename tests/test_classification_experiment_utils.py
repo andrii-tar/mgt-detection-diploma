@@ -13,6 +13,7 @@ from notebooks.utils.classification_experiment_utils import (
     EVALUATION_REGIMES,
     TRAINING_REGIMES,
     availability_row,
+    append_result_frame,
     build_feature_parent_cohorts,
     discover_model_artifacts,
     evaluate_feature_vector_model,
@@ -247,6 +248,20 @@ def test_export_result_frames_writes_normalized_csvs_and_rejects_missing_run_dim
     coverage = pd.DataFrame([{"dataset": "source", "partition": "test"}])
     with pytest.raises(ValueError, match="required dimension"):
         export_result_frames(tmp_path, run_id="run-3", frames={"evaluation_coverage": coverage})
+
+
+def test_append_result_frame_writes_header_once_and_appends_rows(tmp_path: Path) -> None:
+    path = tmp_path / "evaluation_predictions.csv"
+    first = pd.DataFrame([{"id": 1, "score": 0.1}])
+    second = pd.DataFrame([{"id": 2, "score": 0.9}])
+
+    append_result_frame(path, first)
+    append_result_frame(path, second)
+
+    assert pd.read_csv(path).to_dict(orient="records") == [
+        {"id": 1, "score": 0.1},
+        {"id": 2, "score": 0.9},
+    ]
 
 
 def test_export_result_frames_normalizes_explicit_empty_frames(tmp_path: Path) -> None:

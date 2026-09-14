@@ -107,6 +107,22 @@ stage = token_similarity
 similarity_method = input_embedding_cosine
 ```
 
+## Classifier Feature Cache
+
+Classifier preparation materializes canonical window features at:
+
+```text
+experiment-results/classification/prepared/all_features/{model}/{dataset}/{split}/{window_configuration}
+```
+
+The table contains all scalar features and, when Stage 2 data is available, all
+local-evidence features. Named feature-set partitions remain at their existing
+`prepared/{feature_set}/...` paths and are projections of the canonical table.
+
+Cache metadata includes a manifest of the Stage 1 and Stage 2 Parquet source
+files. Preparation rebuilds canonical and named partitions when that manifest
+changes.
+
 ## Change Checklist
 
 When adding or renaming datasets, models, stages, or state fields:

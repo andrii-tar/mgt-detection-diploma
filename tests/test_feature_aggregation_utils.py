@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from typing import Mapping
 
 import pandas as pd
 import pytest
 
+from notebooks.utils import feature_aggregation_utils
 from notebooks.utils.feature_aggregation_utils import (
+    CANONICAL_FEATURE_COLUMNS,
     FeatureSet,
+    canonical_partition_path,
     ensure_prepared_partition,
+    ensure_canonical_partition,
+    load_canonical_partition,
     load_prepared_partition,
+    source_manifest,
     prepare_feature_partition,
     save_prepared_partition,
 )
@@ -75,6 +83,100 @@ def _write_similarity_text(
             for index in range(token_count)
         ],
     }]).to_parquet(path, index=False)
+
+
+def test_canonical_partition_persists_all_available_features(tmp_path: Path) -> None:
+    _write_processed_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2)
+    _write_similarity_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2)
+
+    result = ensure_canonical_partition(
+        tmp_path, tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        window_configuration=2, stride=1,
+    )
+
+    assert result["status"] == "available"
+    frame = load_canonical_partition(result["path"], expected={"feature_columns": list(CANONICAL_FEATURE_COLUMNS)})
+    assert frame.loc[0, list(CANONICAL_FEATURE_COLUMNS)].notna().all()
+    metadata = json.loads((result["path"] / "metadata.json").read_text())
+    assert metadata["source_manifest"] == source_manifest(
+        tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+    )
+
+
+def test_canonical_partition_preserves_feature_columns_for_empty_tokens(tmp_path: Path) -> None:
+    _write_processed_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=0)
+    _write_similarity_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=0)
+
+    result = ensure_canonical_partition(
+        tmp_path, tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        window_configuration="whole_text", stride=1,
+    )
+
+    assert result["status"] == "available", result
+    frame = load_canonical_partition(
+        result["path"], expected={"feature_columns": list(CANONICAL_FEATURE_COLUMNS)},
+    )
+    assert list(CANONICAL_FEATURE_COLUMNS) == [
+        column for column in frame.columns if column in CANONICAL_FEATURE_COLUMNS
+    ]
+    assert frame.loc[0, [column for column in CANONICAL_FEATURE_COLUMNS if not column.endswith("__finite_fraction")]].isna().all()
+    assert frame.loc[0, "top20_coverage__finite_fraction"] == 0.0
+
+
+def test_feature_set_projections_reuse_canonical_metrics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _write_processed_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2)
+    _write_similarity_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2)
+    calls = 0
+    original = feature_aggregation_utils.compute_logprob_metrics
+
+    def counted(row: Mapping[str, object]) -> dict[str, float]:
+        nonlocal calls
+        calls += 1
+        return original(row)
+
+    monkeypatch.setattr(feature_aggregation_utils, "compute_logprob_metrics", counted)
+    first = ensure_prepared_partition(
+        tmp_path, tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=FEATURE_SET, window_configuration=2, stride=1,
+    )
+    second = ensure_prepared_partition(
+        tmp_path, tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=MIXED_FEATURE_SET, window_configuration=2, stride=1,
+    )
+
+    assert first["status"] == second["status"] == "available"
+    assert calls == 1
+    assert list(pd.read_parquet(second["path"] / "data.parquet").columns) == [
+        "scorer_llm", "dataset", "split", "text_id", "label", "start_token", "stop_token",
+        "window_configuration", *MIXED_FEATURE_SET.source_columns,
+    ]
+
+
+def test_changed_source_manifest_rebuilds_canonical_and_projection(tmp_path: Path) -> None:
+    _write_processed_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2)
+    _write_similarity_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2)
+    ensure_prepared_partition(
+        tmp_path, tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=FEATURE_SET, window_configuration=2, stride=1,
+    )
+    canonical_path = canonical_partition_path(
+        tmp_path, scorer_llm="scorer", dataset="source", split="HG", window_configuration=2,
+    )
+    original_manifest = json.loads((canonical_path / "metadata.json").read_text())["source_manifest"]
+    source_path = tmp_path / "source__scorer" / "HG" / "data" / "part-0.parquet"
+    source_stat = source_path.stat()
+    os.utime(source_path, ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns + 1_000_000_000))
+
+    refreshed = ensure_prepared_partition(
+        tmp_path, tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=FEATURE_SET, window_configuration=2, stride=1,
+    )
+
+    canonical_metadata = json.loads((canonical_path / "metadata.json").read_text())
+    projection_metadata = json.loads((refreshed["path"] / "metadata.json").read_text())
+    assert refreshed["status"] == "available"
+    assert canonical_metadata["source_manifest"] != original_manifest
+    assert projection_metadata["canonical_source_manifest"] == canonical_metadata["source_manifest"]
 
 
 def test_preparation_computes_d_score_over_each_requested_token_window(tmp_path: Path) -> None:

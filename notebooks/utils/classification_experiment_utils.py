@@ -235,6 +235,15 @@ def availability_row(
     }
 
 
+def append_result_frame(path: Path | str, frame: pd.DataFrame) -> None:
+    if frame.empty:
+        return
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    has_content = destination.exists() and destination.stat().st_size > 0
+    frame.to_csv(destination, mode="a", header=not has_content, index=False)
+
+
 def export_result_frames(
     root: Path | str, *, run_id: str, frames: Mapping[str, pd.DataFrame]
 ) -> dict[str, Path]:
