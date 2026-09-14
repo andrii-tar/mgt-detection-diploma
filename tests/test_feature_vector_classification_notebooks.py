@@ -213,6 +213,8 @@ def test_evaluate_notebook_has_one_configuration_and_does_not_overwrite_streamed
     assert source.count("Preparing SemEval feature partitions") == 1
     assert '"evaluation_predictions": pd.DataFrame()' not in source
     assert source.count("export_semeval_result_frames(") == 1
+    assert "append_result_frame(exports[\"run_summary\"], pd.DataFrame([run_summary[-1]]))" in source
+    assert "release_frames(metrics, predictions, coverage)" in source
 
 
 def test_evaluate_notebook_uses_semeval_train_only() -> None:
