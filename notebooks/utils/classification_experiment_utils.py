@@ -240,8 +240,16 @@ def append_result_frame(path: Path | str, frame: pd.DataFrame) -> None:
         return
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    has_content = destination.exists() and destination.stat().st_size > 0
-    frame.to_csv(destination, mode="a", header=not has_content, index=False)
+    if not destination.exists() or destination.stat().st_size == 0:
+        frame.to_csv(destination, index=False)
+        return
+    existing_columns = list(pd.read_csv(destination, nrows=0).columns)
+    if existing_columns != list(frame.columns):
+        if pd.read_csv(destination, nrows=1).empty:
+            frame.to_csv(destination, index=False)
+            return
+        raise ValueError(f"result frame columns do not match existing CSV: {destination}")
+    frame.to_csv(destination, mode="a", header=False, index=False)
 
 
 def export_result_frames(

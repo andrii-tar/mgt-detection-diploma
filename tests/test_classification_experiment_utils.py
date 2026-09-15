@@ -264,6 +264,18 @@ def test_append_result_frame_writes_header_once_and_appends_rows(tmp_path: Path)
     ]
 
 
+def test_append_result_frame_replaces_placeholder_header_before_first_batch(tmp_path: Path) -> None:
+    path = tmp_path / "evaluation_metrics.csv"
+    path.write_text("model_family,partition\n", encoding="utf-8")
+    frame = pd.DataFrame([{"model_family": "logistic_regression", "partition": "test", "f1": 0.8}])
+
+    append_result_frame(path, frame)
+
+    assert pd.read_csv(path).to_dict(orient="records") == [
+        {"model_family": "logistic_regression", "partition": "test", "f1": 0.8},
+    ]
+
+
 def test_export_result_frames_normalizes_explicit_empty_frames(tmp_path: Path) -> None:
     written = export_result_frames(
         tmp_path,
