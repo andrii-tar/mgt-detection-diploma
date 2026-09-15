@@ -231,6 +231,46 @@ def test_evaluate_notebook_shows_semeval_preparation_progress() -> None:
     assert 'for semeval_split, (semeval_dataset, semeval_path) in tqdm(SEMEVAL_DATASETS.items(), desc=f"{scorer_llm}/{feature_set_name}/{semeval_window}", unit="split", leave=False):' in source
 
 
+def test_analysis_notebook_is_output_free_single_run_and_uses_analysis_utilities() -> None:
+    notebook = _notebook("analyze_classifier_results.ipynb")
+    source = _source("analyze_classifier_results.ipynb")
+    code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
+
+    assert notebook["nbformat"] >= 4
+    assert source.count('RUN_ID = "') == 1
+    for fragment in (
+        "load_classification_run(", "document_metrics(", "configuration_ranking(",
+        "aggregate_by_llm(", "aggregate_by_dataset(", "mixed_bbc_comparison(",
+        "bbc_safety_metrics(", "semeval_region_ranking(", "semeval_boundary_ranking(",
+        "plot_feature_set_heatmap(", "plot_window_heatmap(", "plot_regime_deltas(",
+    ):
+        assert fragment in source
+    for cell in code_cells:
+        assert cell["execution_count"] is None
+        assert cell["outputs"] == []
+        tree = ast.parse("".join(cell["source"]))
+        assert not any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            for node in ast.walk(tree)
+        )
+
+
+def test_analysis_notebook_preserves_existing_outputs_and_adds_transfer_analysis() -> None:
+    source = "\n".join(
+        "".join(cell["source"])
+        for cell in _notebook("analyze_classifier_results.ipynb")["cells"]
+    )
+
+    for fragment in (
+        "## Document Classification", "## Feature Sets And Classification Parameters",
+        "## Mixed Versus Mixed+BBC Training", "## SemEval Region And Boundary Localization",
+        "transfer_scores(", "universal_ranking(", "best_universal_by_llm(",
+        "plot_transfer_heatmap(", "plot_universal_frontier(", "plot_stability_profiles(",
+        "plot_transfer_asymmetry(", "plot_semeval_tradeoff(",
+    ):
+        assert fragment in source
+
+
 def test_evaluate_notebook_records_expected_failures_and_reraises_unexpected_errors() -> None:
     source = _source("evaluate_classifiers.ipynb")
 
