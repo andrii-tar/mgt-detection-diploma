@@ -276,6 +276,18 @@ def test_append_result_frame_replaces_placeholder_header_before_first_batch(tmp_
     ]
 
 
+def test_append_result_frame_initializes_newline_only_csv(tmp_path: Path) -> None:
+    path = tmp_path / "semeval_boundary_exclusions.csv"
+    path.write_text("\n", encoding="utf-8")
+    frame = pd.DataFrame([{"dataset": "SemEval", "status": "available"}])
+
+    append_result_frame(path, frame)
+
+    assert pd.read_csv(path).to_dict(orient="records") == [
+        {"dataset": "SemEval", "status": "available"},
+    ]
+
+
 def test_export_result_frames_normalizes_explicit_empty_frames(tmp_path: Path) -> None:
     written = export_result_frames(
         tmp_path,

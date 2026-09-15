@@ -243,7 +243,11 @@ def append_result_frame(path: Path | str, frame: pd.DataFrame) -> None:
     if not destination.exists() or destination.stat().st_size == 0:
         frame.to_csv(destination, index=False)
         return
-    existing_columns = list(pd.read_csv(destination, nrows=0).columns)
+    try:
+        existing_columns = list(pd.read_csv(destination, nrows=0).columns)
+    except pd.errors.EmptyDataError:
+        frame.to_csv(destination, index=False)
+        return
     if existing_columns != list(frame.columns):
         if pd.read_csv(destination, nrows=1).empty:
             frame.to_csv(destination, index=False)
