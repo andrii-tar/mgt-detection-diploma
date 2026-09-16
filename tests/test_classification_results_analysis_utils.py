@@ -17,6 +17,8 @@ from notebooks.utils.classification_results_analysis_utils import (
     load_classification_run,
     mixed_bbc_comparison,
     plot_aggregate_bars,
+    plot_dimension_semeval_tradeoff,
+    plot_dimension_stability_profiles,
     plot_semeval_tradeoff,
     plot_stability_profiles,
     plot_transfer_asymmetry,
@@ -306,6 +308,252 @@ def test_stability_profiles_highlight_best_llm_configurations() -> None:
 
     assert figure.axes[0].get_ylabel() == "Test macro F1"
     assert figure.axes[0].get_title() == "stability"
+    assert [line.get_label() for line in figure.axes[0].lines] == ["a | Mixed"]
+    assert not figure.axes[0].texts
+    plt.close(figure)
+
+
+ANALYSIS_DIMENSIONS = (
+    "scorer_llm",
+    "model_family",
+    "feature_set",
+    "training_regime",
+    "training_window",
+    "evaluation_window",
+)
+
+
+def _dimension_stability_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
+    rows = []
+    for index, dataset in enumerate(("kaggle_train", "mage_train")):
+        rows.append({
+            "scorer_llm": ("zeta", "alpha")[index],
+            "model_family": ("tree", "linear")[index],
+            "feature_set": ("z", "a")[index],
+            "training_regime": ("Mixed+BBC", "Mixed")[index],
+            "training_window": ("128", "64")[index],
+            "evaluation_window": ("128", "64")[index],
+            "dataset": dataset,
+            "macro_f1": 0.8 - index * 0.1,
+        })
+    scores = pd.DataFrame(rows)
+    return scores, scores.drop(columns=["dataset", "macro_f1"])
+
+
+@pytest.mark.parametrize("dimension", ANALYSIS_DIMENSIONS)
+def test_dimension_stability_profiles_use_sorted_dimension_legend_and_deterministic_colors(dimension: str) -> None:
+    scores, best = _dimension_stability_frames()
+
+    first = plot_dimension_stability_profiles(
+        scores, best, dimension=dimension, title=f"stability by {dimension}",
+    )
+    second = plot_dimension_stability_profiles(
+        scores.iloc[::-1], best.iloc[::-1], dimension=dimension, title=f"stability by {dimension}",
+    )
+
+    assert dimension in first.axes[0].get_title()
+    legend = first.axes[0].get_legend()
+    assert legend is not None
+    labels = [text.get_text() for text in legend.get_texts()]
+    assert labels == sorted(
+        scores[dimension].unique(), key=str,
+    )
+    first_colors = dict(zip(labels, (line.get_color() for line in first.axes[0].lines)))
+    second_legend = second.axes[0].get_legend()
+    assert second_legend is not None
+    assert [text.get_text() for text in second_legend.get_texts()] == labels
+    second_colors = dict(zip(
+        (text.get_text() for text in second_legend.get_texts()),
+        (line.get_color() for line in second.axes[0].lines),
+    ))
+    assert len(set(first_colors.values())) == len(first_colors)
+    assert first_colors == second_colors
+    first_data = [
+        (line.get_xdata().tolist(), line.get_ydata().tolist())
+        for line in first.axes[0].lines
+    ]
+    second_data = [
+        (line.get_xdata().tolist(), line.get_ydata().tolist())
+        for line in second.axes[0].lines
+    ]
+    assert first_data == second_data
+    assert not first.axes[0].texts
+    plt.close(first)
+    plt.close(second)
+
+
+def _dimension_semeval_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
+    rows = []
+    for index, values in enumerate((
+        ("zeta", "tree", "z", "Mixed+BBC", "128", "128"),
+        ("alpha", "linear", "a", "Mixed", "64", "64"),
+    )):
+        configuration = dict(zip(ANALYSIS_DIMENSIONS, values))
+        rows.append({**configuration, "mg_f1": 0.8 + index * 0.1, "mean_absolute_token_error": 10 + index})
+    frame = pd.DataFrame(rows)
+    return frame.drop(columns=["mean_absolute_token_error"]), frame.drop(columns=["mg_f1"])
+
+
+@pytest.mark.parametrize("dimension", ANALYSIS_DIMENSIONS)
+def test_dimension_semeval_tradeoff_uses_sorted_dimension_legend_and_deterministic_colors(dimension: str) -> None:
+    region, boundary = _dimension_semeval_frames()
+
+    first = plot_dimension_semeval_tradeoff(
+        region, boundary, dimension=dimension, title=f"trade-off by {dimension}",
+    )
+    second = plot_dimension_semeval_tradeoff(
+        region.iloc[::-1], boundary.iloc[::-1], dimension=dimension, title=f"trade-off by {dimension}",
+    )
+
+    assert dimension in first.axes[0].get_title()
+    legend = first.axes[0].get_legend()
+    assert legend is not None
+    assert [text.get_text() for text in legend.get_texts()] == sorted(
+        region[dimension].unique(), key=str,
+    )
+    first_colors = dict(zip(
+        (text.get_text() for text in legend.get_texts()),
+        (tuple(handle.get_facecolor()[0]) for handle in legend.legend_handles),
+    ))
+    second_legend = second.axes[0].get_legend()
+    assert second_legend is not None
+    assert [text.get_text() for text in second_legend.get_texts()] == [
+        text.get_text() for text in legend.get_texts()
+    ]
+    second_colors = dict(zip(
+        (text.get_text() for text in second_legend.get_texts()),
+        (tuple(handle.get_facecolor()[0]) for handle in second_legend.legend_handles),
+    ))
+    assert len(set(first_colors.values())) == len(first_colors)
+    assert first_colors == second_colors
+    first_data = [collection.get_offsets().tolist() for collection in first.axes[0].collections]
+    second_data = [collection.get_offsets().tolist() for collection in second.axes[0].collections]
+    assert first_data == second_data
+    assert not first.axes[0].texts
+    plt.close(first)
+    plt.close(second)
+
+
+def test_dimension_plot_helpers_return_empty_figures_for_empty_inputs() -> None:
+    scores, best = _dimension_stability_frames()
+    empty_scores = scores.iloc[0:0]
+    empty_best = best.iloc[0:0]
+    empty_region, empty_boundary = _dimension_semeval_frames()
+    empty_region = empty_region.iloc[0:0]
+    empty_boundary = empty_boundary.iloc[0:0]
+
+    stability = plot_dimension_stability_profiles(
+        empty_scores, empty_best, dimension="scorer_llm", title="empty stability",
+    )
+    tradeoff = plot_dimension_semeval_tradeoff(
+        empty_region, empty_boundary, dimension="scorer_llm", title="empty trade-off",
+    )
+
+    assert stability.axes
+    assert tradeoff.axes
+    plt.close(stability)
+    plt.close(tradeoff)
+
+
+@pytest.mark.parametrize("helper", (plot_dimension_stability_profiles, plot_dimension_semeval_tradeoff))
+def test_dimension_plot_helpers_reject_missing_dimension_column(helper) -> None:
+    with pytest.raises(ValueError, match="dimension"):
+        if helper is plot_dimension_stability_profiles:
+            helper(pd.DataFrame(), pd.DataFrame(), dimension="scorer_llm", title="missing")
+        else:
+            helper(pd.DataFrame(), pd.DataFrame(), dimension="scorer_llm", title="missing")
+
+
+@pytest.mark.parametrize("missing_input", ("scores", "best"))
+def test_dimension_stability_profiles_reject_missing_dimension_from_each_input(missing_input: str) -> None:
+    scores, best = _dimension_stability_frames()
+    frame = scores if missing_input == "scores" else best
+    frame.drop(columns=["scorer_llm"], inplace=True)
+
+    with pytest.raises(ValueError, match="dimension"):
+        plot_dimension_stability_profiles(
+            scores, best, dimension="scorer_llm", title=f"missing {missing_input} dimension",
+        )
+
+
+def test_dimension_semeval_tradeoff_rejects_region_missing_active_dimension() -> None:
+    region, boundary = _dimension_semeval_frames()
+
+    with pytest.raises(ValueError, match="dimension"):
+        plot_dimension_semeval_tradeoff(
+            region.drop(columns=["scorer_llm"]), boundary,
+            dimension="scorer_llm", title="missing region dimension",
+        )
+
+
+def test_dimension_semeval_tradeoff_rejects_boundary_missing_active_dimension() -> None:
+    region, boundary = _dimension_semeval_frames()
+
+    with pytest.raises(ValueError, match="dimension"):
+        plot_dimension_semeval_tradeoff(
+            region, boundary.drop(columns=["scorer_llm"]),
+            dimension="scorer_llm", title="missing boundary dimension",
+        )
+
+
+@pytest.mark.parametrize("unusable_value", (None, "", "   "))
+def test_dimension_stability_profiles_ignore_all_unusable_dimension_values(unusable_value: object) -> None:
+    scores, best = _dimension_stability_frames()
+    scores["scorer_llm"] = unusable_value
+    best["scorer_llm"] = unusable_value
+
+    figure = plot_dimension_stability_profiles(
+        scores, best, dimension="scorer_llm", title="unusable stability dimension",
+    )
+
+    assert not figure.axes[0].lines
+    assert figure.axes[0].get_legend() is None
+    plt.close(figure)
+
+
+@pytest.mark.parametrize("unusable_value", (None, "", "   "))
+def test_dimension_semeval_tradeoff_ignores_all_unusable_dimension_values(unusable_value: object) -> None:
+    region, boundary = _dimension_semeval_frames()
+    region["scorer_llm"] = unusable_value
+    boundary["scorer_llm"] = unusable_value
+
+    figure = plot_dimension_semeval_tradeoff(
+        region, boundary, dimension="scorer_llm", title="unusable trade-off dimension",
+    )
+
+    assert not figure.axes[0].collections
+    assert figure.axes[0].get_legend() is None
+    assert not figure.axes[0].texts
+    plt.close(figure)
+
+
+@pytest.mark.parametrize("helper", (plot_dimension_stability_profiles, plot_dimension_semeval_tradeoff))
+def test_dimension_plot_helpers_exclude_mixed_unusable_dimension_values(helper) -> None:
+    unusable_values = (None, "", "   ")
+    if helper is plot_dimension_stability_profiles:
+        scores, best = _dimension_stability_frames()
+        scores = pd.concat([
+            scores.assign(scorer_llm=value) for value in ("zeta", *unusable_values)
+        ], ignore_index=True)
+        best = pd.concat([
+            best.assign(scorer_llm=value) for value in ("zeta", *unusable_values)
+        ], ignore_index=True)
+        figure = helper(scores, best, dimension="scorer_llm", title="mixed stability dimensions")
+        labels = [text.get_text() for text in figure.axes[0].get_legend().get_texts()]
+        assert labels == ["zeta"]
+        assert len(figure.axes[0].lines) == 1
+    else:
+        region, boundary = _dimension_semeval_frames()
+        region = pd.concat([
+            region.assign(scorer_llm=value) for value in ("zeta", *unusable_values)
+        ], ignore_index=True)
+        boundary = pd.concat([
+            boundary.assign(scorer_llm=value) for value in ("zeta", *unusable_values)
+        ], ignore_index=True)
+        figure = helper(region, boundary, dimension="scorer_llm", title="mixed trade-off dimensions")
+        labels = [text.get_text() for text in figure.axes[0].get_legend().get_texts()]
+        assert labels == ["zeta"]
+        assert len(figure.axes[0].collections) == 1
     plt.close(figure)
 
 
@@ -330,10 +578,42 @@ def test_semeval_tradeoff_joins_matching_configuration_dimensions() -> None:
     ])
     boundary = pd.DataFrame([
         {"scorer_llm": "a", "feature_set": "x", "training_regime": "Mixed", "training_window": "64", "model_family": "lr", "evaluation_window": "64", "mean_absolute_token_error": 10.0},
+        {"scorer_llm": "b", "feature_set": "x", "training_regime": "Mixed", "training_window": "64", "model_family": "lr", "evaluation_window": "64", "mean_absolute_token_error": 12.0},
     ])
 
     figure = plot_semeval_tradeoff(region, boundary, title="trade-off")
 
     assert figure.axes[0].get_xlabel() == "Mean absolute token error"
-    assert len(figure.axes[0].collections[0].get_offsets()) == 1
+    assert len(figure.axes[0].collections) == 1
+    assert len(figure.axes[0].collections[0].get_offsets()) == 2
+    assert {text.get_text() for text in figure.axes[0].texts} == {"a", "b"}
+    assert figure.axes[0].get_legend() is None
+    plt.close(figure)
+
+
+def test_semeval_tradeoff_preserves_legacy_single_view_without_scorer_llm() -> None:
+    region = pd.DataFrame({
+        "feature_set": ["x", "y"],
+        "training_regime": ["Mixed", "Mixed"],
+        "training_window": ["64", "64"],
+        "model_family": ["lr", "lr"],
+        "evaluation_window": ["64", "64"],
+        "mg_f1": [.8, .9],
+    })
+    boundary = pd.DataFrame({
+        "feature_set": ["x", "y"],
+        "training_regime": ["Mixed", "Mixed"],
+        "training_window": ["64", "64"],
+        "model_family": ["lr", "lr"],
+        "evaluation_window": ["64", "64"],
+        "mean_absolute_token_error": [10.0, 12.0],
+    })
+
+    figure = plot_semeval_tradeoff(region, boundary, title="legacy trade-off")
+
+    axis = figure.axes[0]
+    assert len(axis.collections) == 1
+    assert len(axis.collections[0].get_offsets()) == 2
+    assert not axis.texts
+    assert axis.get_legend() is None
     plt.close(figure)

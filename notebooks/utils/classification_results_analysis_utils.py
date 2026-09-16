@@ -385,16 +385,15 @@ def plot_semeval_tradeoff(region_ranking: pd.DataFrame, boundary_ranking: pd.Dat
     boundary = boundary_ranking[[*match_columns, "mean_absolute_token_error"]]
     joined = region.merge(boundary, on=match_columns, how="inner")
     figure, axis = plt.subplots(figsize=(7, 5), constrained_layout=True)
-    colors = _scorer_llm_colors(joined["scorer_llm"]) if "scorer_llm" in joined else {}
-    for scorer_llm, points in joined.groupby("scorer_llm", sort=False, dropna=False):
-        label = str(scorer_llm)
-        axis.scatter(
-            points["mean_absolute_token_error"], points["mg_f1"],
-            color=colors.get(label), label=label,
-        )
+    axis.scatter(joined["mean_absolute_token_error"], joined["mg_f1"])
+    for _, row in joined.iterrows():
+        if "scorer_llm" in row:
+            axis.annotate(
+                str(row["scorer_llm"]),
+                (row["mean_absolute_token_error"], row["mg_f1"]),
+                xytext=(4, 4), textcoords="offset points",
+            )
     axis.set(title=title, xlabel="Mean absolute token error", ylabel="MG F1", ylim=(0, 1))
-    if colors:
-        axis.legend(title="Scorer LLM")
     return figure
 
 
