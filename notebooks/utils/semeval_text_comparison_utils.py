@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
 
 from notebooks.utils.local_evidence_comparison_utils import expand_model_scores_to_tokens
 
@@ -49,6 +50,7 @@ def select_semeval_comparison_texts(
     semeval_split: str | None = None,
     count: int = 5,
     seed: int = 42,
+    eligible_text_ids: Collection[int] | None = None,
 ) -> pd.DataFrame:
     if isinstance(count, (bool, np.bool_)) or not isinstance(count, (int, np.integer)) or count < 0:
         raise ValueError("count must be a non-negative integer")
@@ -62,6 +64,9 @@ def select_semeval_comparison_texts(
         evaluation_dataset=evaluation_dataset,
         semeval_split=semeval_split,
     )
+    if eligible_text_ids is not None:
+        eligible_ids = {str(text_id) for text_id in eligible_text_ids}
+        filtered = filtered.loc[filtered["text_id"].astype(str).isin(eligible_ids)].reset_index(drop=True)
     _require(filtered, ("mg_f1",))
     if filtered.empty:
         return pd.DataFrame(columns=["group", "text_id", "aggregate_mg_f1"])
@@ -90,17 +95,40 @@ def _text_rows(frame: pd.DataFrame, text_id: int, required: Iterable[str]) -> pd
     return rows
 
 
+_REQUESTED_WINDOWS = (32, 64, 128)
+
+
+def _window_groups(rows: pd.DataFrame) -> dict[int, pd.DataFrame]:
+    normalized = rows.assign(_plot_window=pd.to_numeric(rows["window_length"], errors="coerce"))
+    return {
+        window: normalized.loc[normalized["_plot_window"].eq(window)]
+        for window in _REQUESTED_WINDOWS
+        if normalized["_plot_window"].eq(window).any()
+    }
+
+
+def _add_missing_window_legend(axis: plt.Axes, available: Iterable[int]) -> None:
+    available_windows = set(available)
+    for window in _REQUESTED_WINDOWS:
+        if window not in available_windows:
+            axis.add_line(Line2D([], [], color="gray", linestyle="--", label=f"window={window} unavailable"))
+
+
 def plot_boundary_and_regions(predictions: pd.DataFrame, *, text_id: int, selection_group: str, title_prefix: str = "SemEval") -> plt.Figure:
     rows = _text_rows(predictions, text_id, ("text_id", "window_length", "gold_token_boundary", "predicted_token_boundary"))
-    windows = sorted(rows["window_length"].unique())
+    groups = _window_groups(rows)
     token_count = int(rows.get("token_count", pd.Series(dtype=float)).max()) if "token_count" in rows else 0
     if not token_count:
         token_count = int(pd.concat([rows["gold_token_boundary"], rows["predicted_token_boundary"]]).max())
     figure, axis = plt.subplots(figsize=(12, 4), constrained_layout=True)
-    for window in windows:
-        current = rows.loc[rows["window_length"].eq(window)]
-        row = current.iloc[0]
-        signal = np.zeros(token_count + 1, dtype="float64")
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    for index, (window, current) in enumerate(groups.items()):
+        predicted = current["predicted_token_boundary"].dropna()
+        if not predicted.empty:
+            axis.axvline(
+                float(predicted.iloc[0]), color=colors[index % len(colors)],
+                linewidth=2, label=f"predicted boundary, window={window}",
+            )
         starts = current.get("predicted_mg_region_start", pd.Series(dtype=float)).dropna()
         stops = current.get("predicted_mg_region_stop", pd.Series(dtype=float)).dropna()
         if starts.empty and {"start_token", "stop_token", "label"}.issubset(current.columns):
@@ -109,29 +137,31 @@ def plot_boundary_and_regions(predictions: pd.DataFrame, *, text_id: int, select
             stops = mg_rows["stop_token"]
         if not starts.empty and len(starts) == len(stops):
             for start, stop in zip(starts, stops):
-                signal[max(0, int(start)):min(token_count, int(stop)) + 1] = 1.0
-        axis.step(np.arange(token_count + 1), signal, where="post", label=f"window={window}")
-        for predicted in current["predicted_token_boundary"].dropna():
-            axis.axvline(float(predicted), color="tab:red", linestyle=":", alpha=.35)
+                axis.axvspan(float(start), float(stop), color=colors[index % len(colors)], alpha=.08)
+    _add_missing_window_legend(axis, groups)
     gold_boundary = float(rows["gold_token_boundary"].dropna().iloc[0])
     axis.axvspan(gold_boundary, token_count, color="tab:green", alpha=.12, label="gold MG region")
     axis.axvline(gold_boundary, color="tab:green", linestyle="--", label="gold boundary")
     axis.set_xlim(0, token_count)
     axis.set_ylim(-.05, 1.05)
     axis.set_xlabel("Token position")
-    axis.set_ylabel("Predicted MG region")
+    axis.set_yticks([])
     axis.set_title(f"{title_prefix}: text {text_id} ({selection_group}) boundary comparison")
-    axis.legend(loc="upper center", bbox_to_anchor=(.5, -.2), ncol=min(4, len(windows) + 2))
+    axis.legend(loc="upper center", bbox_to_anchor=(.5, -.2), ncol=3)
     return figure
 
 
 def plot_window_level_scores(scored_windows: pd.DataFrame, *, text_id: int, gold_boundary: int, selection_group: str, title_prefix: str = "SemEval") -> plt.Figure:
     rows = _text_rows(scored_windows, text_id, ("text_id", "window_length", "start_token", "stop_token", "mg_score"))
     figure, axis = plt.subplots(figsize=(12, 4), constrained_layout=True)
-    for window, current in rows.groupby("window_length", sort=True):
+    groups = _window_groups(rows)
+    for window, current in groups.items():
         current = current.sort_values("start_token")
         midpoint = (current["start_token"] + current["stop_token"]) / 2
         axis.plot(midpoint, current["mg_score"], marker="o", label=f"window={window}")
+    _add_missing_window_legend(axis, groups)
+    token_count = int(pd.to_numeric(rows["stop_token"], errors="coerce").max())
+    axis.axvspan(gold_boundary, token_count, color="tab:green", alpha=.12, label="gold MG region")
     axis.axvline(gold_boundary, color="tab:green", linestyle="--", label="gold boundary")
     axis.set_ylim(0, 1)
     axis.set_xlabel("Token position")
@@ -143,19 +173,19 @@ def plot_window_level_scores(scored_windows: pd.DataFrame, *, text_id: int, gold
 
 def plot_reconstructed_token_scores(scored_windows: pd.DataFrame, *, text_id: int, token_count: int, gold_boundary: int, selection_group: str, title_prefix: str = "SemEval") -> plt.Figure:
     rows = _text_rows(scored_windows, text_id, ("model", "window_length", "start_token", "stop_token", "mg_score"))
-    windows = sorted(rows["window_length"].unique())
     figure, axis = plt.subplots(figsize=(12, 4), constrained_layout=True)
-    for window in windows:
-        current = rows.loc[rows["window_length"].eq(window)]
+    groups = _window_groups(rows)
+    for window, current in groups.items():
         token_scores = expand_model_scores_to_tokens(current, token_count)
         scores = token_scores["mg_score"].to_numpy(dtype="float64")
         positions = token_scores["token_position"].to_numpy()
         axis.plot(positions, scores, label=f"window={window}")
+    _add_missing_window_legend(axis, groups)
     axis.axvspan(gold_boundary, token_count, color="tab:green", alpha=.12, label="gold MG region")
     axis.axvline(gold_boundary, color="tab:green", linestyle="--", label="gold boundary")
     axis.set_ylim(0, 1)
     axis.set_xlabel("Token position")
     axis.set_ylabel("MG score")
     axis.set_title(f"{title_prefix}: text {text_id} ({selection_group}) token-level MG score comparison")
-    axis.legend(loc="upper center", bbox_to_anchor=(.5, -.2), ncol=min(4, len(windows) + 2))
+    axis.legend(loc="upper center", bbox_to_anchor=(.5, -.2), ncol=3)
     return figure

@@ -261,6 +261,14 @@ def test_analysis_notebook_is_output_free_single_run_and_uses_analysis_utilities
         )
 
 
+def test_analysis_notebook_selects_only_sem_eval_texts_with_at_least_200_tokens() -> None:
+    source = _source("analyze_classifier_results.ipynb")
+
+    assert 'semeval_boundary_configuration["token_count"].ge(200)' in source
+    assert "eligible_text_ids" in source
+    assert "eligible_text_ids=eligible_text_ids" in source
+
+
 def test_analysis_notebook_declares_dimension_plot_matrix_and_availability_warning() -> None:
     source = _source("analyze_classifier_results.ipynb")
 
