@@ -255,6 +255,25 @@ def test_analysis_notebook_is_output_free_single_run_and_uses_analysis_utilities
         )
 
 
+def test_analysis_notebook_declares_dimension_plot_matrix_and_availability_warning() -> None:
+    source = _source("analyze_classifier_results.ipynb")
+
+    assert "ANALYSIS_DIMENSIONS = (" in source
+    for dimension in (
+        "scorer_llm",
+        "model_family",
+        "feature_set",
+        "training_regime",
+        "training_window",
+        "evaluation_window",
+    ):
+        assert f'"{dimension}"' in source
+    assert "plot_dimension_stability_profiles(" in source
+    assert "plot_dimension_semeval_tradeoff(" in source
+    assert "for dimension in ANALYSIS_DIMENSIONS:" in source
+    assert "Availability warning" in source
+
+
 def test_analysis_notebook_preserves_existing_outputs_and_adds_transfer_analysis() -> None:
     source = "\n".join(
         "".join(cell["source"])
