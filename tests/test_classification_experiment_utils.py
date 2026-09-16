@@ -16,12 +16,15 @@ from notebooks.utils.classification_experiment_utils import (
     append_result_frame,
     build_feature_parent_cohorts,
     discover_model_artifacts,
+    ensure_result_exports,
     evaluate_feature_vector_model,
     export_semeval_result_frames,
     export_result_frames,
     load_episode_partitions,
     load_training_episode,
     release_frames,
+    read_existing_result_table,
+    successful_result_keys,
     validate_evaluation_metadata,
 )
 
@@ -286,6 +289,45 @@ def test_append_result_frame_initializes_newline_only_csv(tmp_path: Path) -> Non
     assert pd.read_csv(path).to_dict(orient="records") == [
         {"dataset": "SemEval", "status": "available"},
     ]
+
+
+def test_ensure_result_exports_preserves_existing_files_and_creates_missing_headers(tmp_path: Path) -> None:
+    destination = tmp_path / "experiment-results" / "classification" / "evaluations" / "run-1"
+    destination.mkdir(parents=True)
+    existing = destination / "training_metrics.csv"
+    existing.write_text("model_family,scorer_llm\nlogistic_regression,llm\n", encoding="utf-8")
+
+    standard, semeval = ensure_result_exports(tmp_path, "run-1")
+
+    assert existing.read_text(encoding="utf-8") == "model_family,scorer_llm\nlogistic_regression,llm\n"
+    assert standard["training_metrics"] == existing
+    assert standard["evaluation_metrics"].read_text(encoding="utf-8").startswith("model_family,")
+    assert all(path.is_file() for path in standard.values())
+    assert all(path.is_file() for path in semeval.values())
+
+
+def test_read_existing_result_table_treats_missing_and_empty_tables_as_empty(tmp_path: Path) -> None:
+    missing = read_existing_result_table(tmp_path / "missing.csv")
+    empty_path = tmp_path / "empty.csv"
+    empty_path.write_text("", encoding="utf-8")
+    empty = read_existing_result_table(empty_path)
+
+    assert missing.empty and empty.empty
+
+
+def test_successful_result_keys_filters_status_and_normalizes_windows(tmp_path: Path) -> None:
+    path = tmp_path / "run_summary.csv"
+    pd.DataFrame(
+        [
+            {"status": "available", "scorer_llm": "llm", "training_window": 32, "model_family": "lr"},
+            {"status": "unavailable", "scorer_llm": "other", "training_window": 64, "model_family": "lr"},
+            {"status": "available", "scorer_llm": "missing", "training_window": None, "model_family": "lr"},
+        ]
+    ).to_csv(path, index=False)
+
+    keys = successful_result_keys(path, ("scorer_llm", "training_window", "model_family"))
+
+    assert keys == {("llm", "32", "lr")}
 
 
 def test_export_result_frames_normalizes_explicit_empty_frames(tmp_path: Path) -> None:

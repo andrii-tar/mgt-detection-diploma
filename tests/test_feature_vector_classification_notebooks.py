@@ -67,7 +67,7 @@ def test_prepare_and_train_notebook_declares_complete_experiment_configuration()
 def test_prepare_and_train_notebook_declares_all_scalar_and_similarity_feature_sets() -> None:
     source = _source()
 
-    assert 'RUN_ID = "feature-vector-classification-2026-09-12"' in source
+    assert 'RUN_ID = "feature-vector-classification-2026-09-15-rerun-2"' in source
     for name in ("scalar_all", "scalar_compact", "simple_similarity", "extended"):
         assert f'"{name}": FeatureSet("{name}"' in source
     for column in (
@@ -94,10 +94,12 @@ def test_prepare_and_train_notebook_uses_resumable_disk_backed_workflow() -> Non
         "load_training_episode(",
         "fit_feature_vector_model(",
         "save_model_artifact(",
-        "export_result_frames(",
+        "ensure_result_exports(",
+        "append_result_frame(",
+        "discover_model_artifacts(",
+        "load_model_artifact(",
         "availability_row(",
         "release_frames(",
-        "to_csv(",
     ):
         assert fragment in source
     assert "TRAINING_PARTITIONS = (\"train\", \"validation\")" in source
@@ -174,7 +176,9 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
         'for partition in ("validation", "test")',
         "evaluate_feature_vector_model(",
         "release_frames(",
-        "export_result_frames(",
+        "ensure_result_exports(",
+        "successful_result_keys(",
+        "completed_evaluation_keys",
         "evaluation_metrics",
         "evaluation_predictions",
         "evaluation_coverage",
@@ -184,7 +188,7 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
         "test_cohort",
         "selected_cohort",
         "evaluate_local_evidence_semeval(",
-        "export_semeval_result_frames(",
+        "completed_semeval_keys",
         "ensure_prepared_partition(",
         "semeval_windows[(scorer_llm, semeval_dataset, feature_set_name, semeval_window)]",
         "windows_override=prepared_windows",
@@ -212,7 +216,7 @@ def test_evaluate_notebook_has_one_configuration_and_does_not_overwrite_streamed
     assert source.count('RUN_ID = "') == 1
     assert source.count("Preparing SemEval feature partitions") == 1
     assert '"evaluation_predictions": pd.DataFrame()' not in source
-    assert source.count("export_semeval_result_frames(") == 1
+    assert source.count("ensure_result_exports(") == 1
     assert "append_result_frame(exports[\"run_summary\"], pd.DataFrame([run_summary[-1]]))" in source
     assert "release_frames(metrics, predictions, coverage)" in source
 
@@ -325,6 +329,13 @@ def test_analysis_notebook_preserves_existing_outputs_and_adds_transfer_analysis
         "plot_transfer_asymmetry(", "plot_semeval_tradeoff(",
     ):
         assert fragment in source
+
+
+def test_analysis_notebook_compares_requested_semeval_windows() -> None:
+    source = _source("analyze_classifier_results.ipynb")
+
+    assert "SEMEVAL_COMPARISON_WINDOWS = (32, 64, 128)" in source
+    assert 'window_length"].isin(SEMEVAL_COMPARISON_WINDOWS)' in source
 
 
 def test_evaluate_notebook_records_expected_failures_and_reraises_unexpected_errors() -> None:

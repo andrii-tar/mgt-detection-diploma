@@ -48,6 +48,19 @@ _EVALUATION_RESULT_COLUMNS = (
 _COVERAGE_RESULT_COLUMNS = (
     "dataset", "split", "class", "parent_count", "row_count", "availability_status",
 )
+_RUN_SUMMARY_COLUMNS = (
+    "run_id", "stage", "status", "scorer_llm", "dataset", "split", "feature_set",
+    "training_window", "evaluation_window", "model_family", "artifact_path", "error",
+)
+_STANDARD_RESULT_NAMES = (
+    "training_metrics", "training_coverage", "evaluation_metrics",
+    "evaluation_predictions", "evaluation_coverage", "run_summary",
+)
+_SEMEVAL_RESULT_NAMES = (
+    "semeval_summary", "semeval_evaluations", "semeval_predicted_regions",
+    "semeval_boundary_summary", "semeval_boundary_predictions",
+    "semeval_boundary_exclusions",
+)
 
 
 def build_feature_parent_cohorts(
@@ -256,6 +269,78 @@ def append_result_frame(path: Path | str, frame: pd.DataFrame) -> None:
     frame.to_csv(destination, mode="a", header=False, index=False)
 
 
+def result_export_paths(data_root: Path | str, run_id: str) -> dict[str, Path]:
+    destination = Path(data_root) / "experiment-results" / "classification" / "evaluations" / run_id
+    return {
+        name: destination / f"{name}.csv"
+        for name in (*_STANDARD_RESULT_NAMES, *_SEMEVAL_RESULT_NAMES)
+    }
+
+
+def ensure_result_exports(
+    data_root: Path | str, run_id: str,
+) -> tuple[dict[str, Path], dict[str, Path]]:
+    paths = result_export_paths(data_root, run_id)
+    destination = next(iter(paths.values())).parent
+    destination.mkdir(parents=True, exist_ok=True)
+    standard = {name: paths[name] for name in _STANDARD_RESULT_NAMES}
+    semeval = {name: paths[name] for name in _SEMEVAL_RESULT_NAMES}
+    standard_columns = {
+        "training_metrics": _TRAINING_RESULT_COLUMNS,
+        "training_coverage": _COVERAGE_RESULT_COLUMNS,
+        "evaluation_metrics": _EVALUATION_RESULT_COLUMNS,
+        "evaluation_predictions": _EVALUATION_RESULT_COLUMNS,
+        "evaluation_coverage": _COVERAGE_RESULT_COLUMNS,
+        "run_summary": _RUN_SUMMARY_COLUMNS,
+    }
+    for name, path in standard.items():
+        if not path.exists():
+            pd.DataFrame(columns=standard_columns[name]).to_csv(path, index=False)
+    for path in semeval.values():
+        if not path.exists():
+            path.touch()
+    return standard, semeval
+
+
+def read_existing_result_table(path: Path | str) -> pd.DataFrame:
+    destination = Path(path)
+    if not destination.exists() or destination.stat().st_size == 0:
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(destination)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
+
+
+def _result_key_value(value: object) -> str | None:
+    if pd.isna(value):
+        return None
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def successful_result_keys(
+    path: Path | str,
+    columns: tuple[str, ...],
+    *,
+    stage: str | None = None,
+) -> set[tuple[str, ...]]:
+    table = read_existing_result_table(path)
+    if table.empty or any(column not in table.columns for column in columns):
+        return set()
+    if "status" in table.columns:
+        table = table.loc[table["status"].astype(str).eq("available")]
+    if stage is not None and "stage" in table.columns:
+        table = table.loc[table["stage"].astype(str).eq(stage)]
+    keys: set[tuple[str, ...]] = set()
+    for values in table.loc[:, list(columns)].itertuples(index=False, name=None):
+        key = tuple(_result_key_value(value) for value in values)
+        if all(value is not None for value in key):
+            keys.add(key)  # type: ignore[arg-type]
+    return keys
+
+
 def export_result_frames(
     root: Path | str, *, run_id: str, frames: Mapping[str, pd.DataFrame]
 ) -> dict[str, Path]:
@@ -274,7 +359,7 @@ def export_result_frames(
             else:
                 columns = _TRAINING_RESULT_COLUMNS if name.startswith("training_") else _EVALUATION_RESULT_COLUMNS
             output[name] = pd.DataFrame(columns=columns)
-    run_summary_columns = ("run_id", "stage", "status", "scorer_llm", "dataset", "split", "feature_set", "training_window", "evaluation_window", "model_family", "artifact_path", "error")
+    run_summary_columns = _RUN_SUMMARY_COLUMNS
     if output["run_summary"].empty and not set(output["run_summary"].columns):
         output["run_summary"] = pd.DataFrame(columns=run_summary_columns)
     elif "run_id" not in output["run_summary"]:
