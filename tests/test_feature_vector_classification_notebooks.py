@@ -238,6 +238,7 @@ def test_analysis_notebook_is_output_free_single_run_and_uses_analysis_utilities
 
     assert notebook["nbformat"] >= 4
     assert source.count('RUN_ID = "') == 1
+    assert all("execution" not in cell["metadata"] for cell in notebook["cells"])
     for fragment in (
         "load_classification_run(", "document_metrics(", "configuration_ranking(",
         "aggregate_by_llm(", "aggregate_by_dataset(", "mixed_bbc_comparison(",
@@ -248,6 +249,7 @@ def test_analysis_notebook_is_output_free_single_run_and_uses_analysis_utilities
     for cell in code_cells:
         assert cell["execution_count"] is None
         assert cell["outputs"] == []
+        assert "execution" not in cell["metadata"]
         tree = ast.parse("".join(cell["source"]))
         assert not any(
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
@@ -272,6 +274,41 @@ def test_analysis_notebook_declares_dimension_plot_matrix_and_availability_warni
     assert "plot_dimension_semeval_tradeoff(" in source
     assert "for dimension in ANALYSIS_DIMENSIONS:" in source
     assert "Availability warning" in source
+
+
+def test_analysis_notebook_checks_stability_and_semeval_dimensions_independently() -> None:
+    source = _source("analyze_classifier_results.ipynb")
+    tree = ast.parse(source)
+    loops = [node for node in ast.walk(tree) if isinstance(node, ast.For)]
+
+    stability_loops = [
+        node for node in loops
+        if any(
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Name)
+            and child.func.id == "plot_dimension_stability_profiles"
+            for child in ast.walk(node)
+        )
+    ]
+    semeval_loops = [
+        node for node in loops
+        if any(
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Name)
+            and child.func.id == "plot_dimension_semeval_tradeoff"
+            for child in ast.walk(node)
+        )
+    ]
+
+    assert len(stability_loops) == 1
+    assert len(semeval_loops) == 1
+    assert stability_loops[0] is not semeval_loops[0]
+    stability_source = ast.get_source_segment(source, stability_loops[0]) or ""
+    semeval_source = ast.get_source_segment(source, semeval_loops[0]) or ""
+    assert "usable_transfer" in stability_source
+    assert "usable_region" not in stability_source
+    assert "usable_region" in semeval_source
+    assert "usable_transfer" not in semeval_source
 
 
 def test_analysis_notebook_preserves_existing_outputs_and_adds_transfer_analysis() -> None:
