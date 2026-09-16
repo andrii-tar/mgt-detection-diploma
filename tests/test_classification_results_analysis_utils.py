@@ -434,6 +434,34 @@ def test_dimension_semeval_tradeoff_uses_sorted_dimension_legend_and_determinist
     plt.close(second)
 
 
+def test_dimension_semeval_tradeoff_only_pairs_rows_within_same_run() -> None:
+    configuration = {
+        "scorer_llm": "same-label",
+        "model_family": "lr",
+        "feature_set": "x",
+        "training_regime": "Mixed",
+        "training_window": "64",
+        "evaluation_window": "64",
+    }
+    region = pd.DataFrame([
+        {**configuration, "run_id": "run-1", "mg_f1": .8},
+        {**configuration, "run_id": "run-2", "mg_f1": .9},
+    ])
+    boundary = pd.DataFrame([
+        {**configuration, "run_id": "run-1", "mean_absolute_token_error": 10.0},
+        {**configuration, "run_id": "run-2", "mean_absolute_token_error": 20.0},
+    ])
+
+    figure = plot_dimension_semeval_tradeoff(
+        region, boundary, dimension="scorer_llm", title="same-run trade-off",
+    )
+
+    assert {
+        tuple(point) for point in figure.axes[0].collections[0].get_offsets().tolist()
+    } == {(10.0, .8), (20.0, .9)}
+    plt.close(figure)
+
+
 def test_dimension_plot_helpers_return_empty_figures_for_empty_inputs() -> None:
     scores, best = _dimension_stability_frames()
     empty_scores = scores.iloc[0:0]

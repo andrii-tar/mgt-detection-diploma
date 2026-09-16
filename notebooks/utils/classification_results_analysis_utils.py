@@ -412,7 +412,7 @@ def plot_dimension_semeval_tradeoff(
     required_boundary = {"mean_absolute_token_error"}
     if required_region.issubset(region_ranking.columns) and required_boundary.issubset(boundary_ranking.columns):
         match_columns = [
-            column for column in _CONFIGURATION_COLUMNS
+            column for column in ("run_id", *_CONFIGURATION_COLUMNS)
             if column in region_ranking.columns and column in boundary_ranking.columns
         ]
         usable_region = region_ranking.loc[region_ranking[dimension].notna()].copy()
