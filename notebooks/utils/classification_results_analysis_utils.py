@@ -215,6 +215,21 @@ def best_universal_by_llm(metrics: pd.DataFrame) -> pd.DataFrame:
     return ranking.groupby("scorer_llm", sort=False, group_keys=False).head(1).reset_index(drop=True)
 
 
+def _categorical_colors(values: pd.Series) -> dict[str, object]:
+    labels = sorted({
+        label
+        for value in values.dropna()
+        for label in (str(value),)
+        if label.strip()
+    })
+    palette = plt.get_cmap("tab10")
+    return {label: palette(index % palette.N) for index, label in enumerate(labels)}
+
+
+def _scorer_llm_colors(values: pd.Series) -> dict[str, object]:
+    return _categorical_colors(values)
+
+
 def transfer_matrix(metrics: pd.DataFrame, configuration: Mapping[str, object]) -> pd.DataFrame:
     selected = metrics.copy()
     for column, value in configuration.items():
@@ -269,14 +284,63 @@ def plot_stability_profiles(scores: pd.DataFrame, best_by_llm: pd.DataFrame, *, 
     configuration_columns = [column for column in _CONFIGURATION_COLUMNS if column in scores and column in best_by_llm]
     selected = scores.merge(best_by_llm[configuration_columns].drop_duplicates(), on=configuration_columns, how="inner")
     figure, axis = plt.subplots(figsize=(8, 5), constrained_layout=True)
-    for _, configuration in selected.groupby(configuration_columns, dropna=False):
+    colors = _scorer_llm_colors(selected["scorer_llm"]) if "scorer_llm" in selected else {}
+    for _, configuration_frame in selected.groupby(configuration_columns, dropna=False):
+        configuration = configuration_frame.iloc[0]
         label = " | ".join(str(configuration[column]) for column in ("scorer_llm", "training_regime") if column in configuration)
-        profile = configuration.groupby("dataset", dropna=False)["macro_f1"].mean().reindex(sorted(_BINARY_DATASETS))
-        axis.plot(profile.index, profile.values, marker="o", label=label)
+        profile = configuration_frame.groupby("dataset", dropna=False)["macro_f1"].mean().reindex(sorted(_BINARY_DATASETS))
+        axis.plot(profile.index, profile.values, marker="o", label=label, color=colors.get(str(configuration["scorer_llm"])) if "scorer_llm" in configuration else None)
     axis.set(title=title, xlabel="Test dataset", ylabel="Test macro F1", ylim=(0, 1))
     axis.tick_params(axis="x", rotation=30)
     if not selected.empty:
         axis.legend(title="Best universal by LLM")
+    return figure
+
+
+def plot_dimension_stability_profiles(
+    scores: pd.DataFrame,
+    best_by_dimension: pd.DataFrame,
+    *,
+    dimension: str,
+    title: str,
+) -> plt.Figure:
+    if dimension not in scores.columns or dimension not in best_by_dimension.columns:
+        raise ValueError(f"dimension {dimension!r} must exist in both input frames")
+
+    figure, axis = plt.subplots(figsize=(8, 5), constrained_layout=True)
+    required = {"dataset", "macro_f1"}
+    if required.issubset(scores.columns):
+        configuration_columns = [
+            column for column in _CONFIGURATION_COLUMNS
+            if column in scores.columns and column in best_by_dimension.columns
+        ]
+        usable_scores = scores.loc[scores[dimension].notna()].copy()
+        usable_best = best_by_dimension.loc[best_by_dimension[dimension].notna()].copy()
+        usable_scores = usable_scores.loc[usable_scores[dimension].astype(str).str.strip().ne("")]
+        usable_best = usable_best.loc[usable_best[dimension].astype(str).str.strip().ne("")]
+        if configuration_columns and not usable_scores.empty and not usable_best.empty:
+            selected = usable_scores.merge(
+                usable_best[configuration_columns].drop_duplicates(),
+                on=configuration_columns,
+                how="inner",
+            )
+            labels = sorted(selected[dimension].astype(str).unique())
+            colors = _categorical_colors(selected[dimension])
+            for label in labels:
+                points = selected.loc[selected[dimension].astype(str).eq(label)]
+                profile = points.groupby("dataset", dropna=False)["macro_f1"].mean().reindex(sorted(_BINARY_DATASETS))
+                profile = profile.dropna()
+                axis.plot(
+                    profile.index,
+                    profile.values,
+                    marker="o",
+                    label=label,
+                    color=colors[label],
+                )
+            if labels:
+                axis.legend(title=dimension)
+    axis.set(title=title, xlabel="Test dataset", ylabel="Test macro F1", ylim=(0, 1))
+    axis.tick_params(axis="x", rotation=30)
     return figure
 
 
@@ -321,10 +385,59 @@ def plot_semeval_tradeoff(region_ranking: pd.DataFrame, boundary_ranking: pd.Dat
     boundary = boundary_ranking[[*match_columns, "mean_absolute_token_error"]]
     joined = region.merge(boundary, on=match_columns, how="inner")
     figure, axis = plt.subplots(figsize=(7, 5), constrained_layout=True)
-    axis.scatter(joined["mean_absolute_token_error"], joined["mg_f1"])
-    for _, row in joined.iterrows():
-        if "scorer_llm" in row:
-            axis.annotate(str(row["scorer_llm"]), (row["mean_absolute_token_error"], row["mg_f1"]), xytext=(4, 4), textcoords="offset points")
+    colors = _scorer_llm_colors(joined["scorer_llm"]) if "scorer_llm" in joined else {}
+    for scorer_llm, points in joined.groupby("scorer_llm", sort=False, dropna=False):
+        label = str(scorer_llm)
+        axis.scatter(
+            points["mean_absolute_token_error"], points["mg_f1"],
+            color=colors.get(label), label=label,
+        )
+    axis.set(title=title, xlabel="Mean absolute token error", ylabel="MG F1", ylim=(0, 1))
+    if colors:
+        axis.legend(title="Scorer LLM")
+    return figure
+
+
+def plot_dimension_semeval_tradeoff(
+    region_ranking: pd.DataFrame,
+    boundary_ranking: pd.DataFrame,
+    *,
+    dimension: str,
+    title: str,
+) -> plt.Figure:
+    if dimension not in region_ranking.columns or dimension not in boundary_ranking.columns:
+        raise ValueError(f"dimension {dimension!r} must exist in both input frames")
+
+    figure, axis = plt.subplots(figsize=(7, 5), constrained_layout=True)
+    required_region = {"mg_f1"}
+    required_boundary = {"mean_absolute_token_error"}
+    if required_region.issubset(region_ranking.columns) and required_boundary.issubset(boundary_ranking.columns):
+        match_columns = [
+            column for column in _CONFIGURATION_COLUMNS
+            if column in region_ranking.columns and column in boundary_ranking.columns
+        ]
+        usable_region = region_ranking.loc[region_ranking[dimension].notna()].copy()
+        usable_boundary = boundary_ranking.loc[boundary_ranking[dimension].notna()].copy()
+        usable_region = usable_region.loc[usable_region[dimension].astype(str).str.strip().ne("")]
+        usable_boundary = usable_boundary.loc[usable_boundary[dimension].astype(str).str.strip().ne("")]
+        if match_columns and not usable_region.empty and not usable_boundary.empty:
+            joined = usable_region[match_columns + ["mg_f1"]].merge(
+                usable_boundary[match_columns + ["mean_absolute_token_error"]],
+                on=match_columns,
+                how="inner",
+            )
+            labels = sorted(joined[dimension].astype(str).unique())
+            colors = _categorical_colors(joined[dimension])
+            for label in labels:
+                points = joined.loc[joined[dimension].astype(str).eq(label)]
+                axis.scatter(
+                    points["mean_absolute_token_error"],
+                    points["mg_f1"],
+                    color=colors[label],
+                    label=label,
+                )
+            if labels:
+                axis.legend(title=dimension)
     axis.set(title=title, xlabel="Mean absolute token error", ylabel="MG F1", ylim=(0, 1))
     return figure
 
