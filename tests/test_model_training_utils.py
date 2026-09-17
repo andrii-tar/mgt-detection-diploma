@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -12,6 +13,7 @@ from sklearn.preprocessing import StandardScaler
 
 from notebooks.utils.model_training_utils import (
     FittedFeatureVectorModel,
+    MODEL_FAMILIES,
     fit_feature_vector_model,
     load_model_artifact,
     load_model_metadata,
@@ -69,6 +71,38 @@ def test_logistic_training_uses_only_ordered_feature_columns() -> None:
     assert isinstance(fitted.estimator.named_steps["impute"], SimpleImputer)
     assert isinstance(fitted.estimator.named_steps["scale"], StandardScaler)
     assert fitted.estimator.named_steps["model"].class_weight == "balanced"
+
+
+def test_random_forest_training_scores_without_feature_scaling() -> None:
+    fitted = fit_feature_vector_model("random_forest", TRAIN, feature_columns=FEATURES, seed=42)
+    scored = score_feature_vector_model(fitted, TRAIN)
+
+    assert "random_forest" in MODEL_FAMILIES
+    assert isinstance(fitted.estimator.named_steps["impute"], SimpleImputer)
+    assert "scale" not in fitted.estimator.named_steps
+    assert isinstance(fitted.estimator.named_steps["model"], RandomForestClassifier)
+    assert fitted.estimator.named_steps["model"].random_state == 42
+    assert fitted.estimator.named_steps["model"].class_weight == "balanced"
+    assert scored["mg_score"].between(0.0, 1.0).all()
+    assert scored["prediction"].isin([0, 1]).all()
+
+
+def test_random_forest_artifact_round_trip(tmp_path: Path) -> None:
+    fitted = fit_feature_vector_model("random_forest", TRAIN, feature_columns=FEATURES, seed=42)
+    metadata = {**METADATA, "model_family": "random_forest"}
+    artifact = save_model_artifact(
+        tmp_path,
+        fitted,
+        metadata=metadata,
+        run_id="run-1",
+        training_metrics=pd.DataFrame(),
+        training_coverage=pd.DataFrame(),
+    )
+
+    loaded = load_model_artifact(artifact, expected=metadata, trust_artifact=True)
+
+    assert loaded.model_family == "random_forest"
+    assert isinstance(loaded.estimator.named_steps["model"], RandomForestClassifier)
 
 
 def test_training_coerces_non_numeric_values_and_imputes_missing_values() -> None:

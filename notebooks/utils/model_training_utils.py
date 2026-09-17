@@ -11,6 +11,7 @@ from typing import Mapping
 
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -19,7 +20,7 @@ from sklearn.preprocessing import StandardScaler
 from notebooks.utils.classification_utils import evaluate_scores
 
 
-MODEL_FAMILIES = ("logistic_regression",)
+MODEL_FAMILIES = ("logistic_regression", "random_forest")
 ARTIFACT_VERSION = 1
 REQUIRED_METADATA = (
     "artifact_version", "run_id", "created_at", "model_family", "scorer_llm",
@@ -70,6 +71,34 @@ def _numeric_features(frame: pd.DataFrame, feature_columns: tuple[str, ...]) -> 
     return numeric.replace([np.inf, -np.inf], np.nan)
 
 
+def _estimator(model_family: str, seed: int) -> Pipeline:
+    imputation = ("impute", SimpleImputer(strategy="median", keep_empty_features=True))
+    if model_family == "logistic_regression":
+        return Pipeline(
+            [
+                imputation,
+                ("scale", StandardScaler()),
+                ("model", LogisticRegression(class_weight="balanced", max_iter=1000, random_state=seed)),
+            ]
+        )
+    if model_family == "random_forest":
+        return Pipeline(
+            [
+                imputation,
+                (
+                    "model",
+                    RandomForestClassifier(
+                        n_estimators=100,
+                        class_weight="balanced",
+                        random_state=seed,
+                        n_jobs=-1,
+                    ),
+                ),
+            ]
+        )
+    raise ValueError(f"unknown model family: {model_family!r}")
+
+
 def fit_feature_vector_model(
     model_family: str,
     train: pd.DataFrame,
@@ -88,13 +117,7 @@ def fit_feature_vector_model(
     labels = pd.to_numeric(train["label"], errors="coerce")
     if labels.isna().any() or not labels.isin([0, 1]).all() or labels.nunique() != 2:
         raise ValueError("training labels must contain both classes 0 and 1")
-    estimator = Pipeline(
-        [
-            ("impute", SimpleImputer(strategy="median", keep_empty_features=True)),
-            ("scale", StandardScaler()),
-            ("model", LogisticRegression(class_weight="balanced", max_iter=1000, random_state=seed)),
-        ]
-    )
+    estimator = _estimator(model_family, seed)
     estimator.fit(_numeric_features(train, features), labels.astype("int64"))
     return FittedFeatureVectorModel(model_family, features, estimator)
 
