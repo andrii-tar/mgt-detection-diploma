@@ -59,7 +59,8 @@ def test_prepare_and_train_notebook_declares_complete_experiment_configuration()
         '"BBC": ("HG",)',
         '"Mixed": ("Kaggle", "MAGE", "Outfox")',
         '"Mixed+BBC": ("Kaggle", "MAGE", "Outfox", "BBC")',
-        '"logistic_regression"',
+        "MODEL_FAMILIES as AVAILABLE_MODEL_FAMILIES",
+        "MODEL_FAMILIES = AVAILABLE_MODEL_FAMILIES",
     ):
         assert fragment in source
 

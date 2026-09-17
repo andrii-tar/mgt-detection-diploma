@@ -16,11 +16,25 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 
 from notebooks.utils.classification_utils import evaluate_scores
 
 
-MODEL_FAMILIES = ("logistic_regression", "random_forest")
+MODEL_FAMILIES = (
+    "logistic_regression",
+    "random_forest",
+    "svm_linear",
+    "svm_rbf",
+    "svm_poly",
+    "svm_sigmoid",
+)
+_SVM_KERNELS = {
+    "svm_linear": "linear",
+    "svm_rbf": "rbf",
+    "svm_poly": "poly",
+    "svm_sigmoid": "sigmoid",
+}
 ARTIFACT_VERSION = 1
 REQUIRED_METADATA = (
     "artifact_version", "run_id", "created_at", "model_family", "scorer_llm",
@@ -92,6 +106,21 @@ def _estimator(model_family: str, seed: int) -> Pipeline:
                         class_weight="balanced",
                         random_state=seed,
                         n_jobs=-1,
+                    ),
+                ),
+            ]
+        )
+    if model_family in _SVM_KERNELS:
+        return Pipeline(
+            [
+                imputation,
+                ("scale", StandardScaler()),
+                (
+                    "model",
+                    SVC(
+                        kernel=_SVM_KERNELS[model_family],
+                        probability=True,
+                        class_weight="balanced",
                     ),
                 ),
             ]

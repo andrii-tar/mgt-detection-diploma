@@ -10,6 +10,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 
 from notebooks.utils.model_training_utils import (
     FittedFeatureVectorModel,
@@ -87,6 +88,32 @@ def test_random_forest_training_scores_without_feature_scaling() -> None:
     assert scored["prediction"].isin([0, 1]).all()
 
 
+@pytest.mark.parametrize(
+    ("model_family", "kernel"),
+    [
+        ("svm_linear", "linear"),
+        ("svm_rbf", "rbf"),
+        ("svm_poly", "poly"),
+        ("svm_sigmoid", "sigmoid"),
+    ],
+)
+def test_svm_training_scores_with_scaled_probabilistic_estimator(
+    model_family: str, kernel: str,
+) -> None:
+    fitted = fit_feature_vector_model(model_family, TRAIN, feature_columns=FEATURES, seed=42)
+    scored = score_feature_vector_model(fitted, TRAIN)
+
+    assert model_family in MODEL_FAMILIES
+    assert isinstance(fitted.estimator.named_steps["impute"], SimpleImputer)
+    assert isinstance(fitted.estimator.named_steps["scale"], StandardScaler)
+    assert isinstance(fitted.estimator.named_steps["model"], SVC)
+    assert fitted.estimator.named_steps["model"].kernel == kernel
+    assert fitted.estimator.named_steps["model"].probability is True
+    assert fitted.estimator.named_steps["model"].class_weight == "balanced"
+    assert scored["mg_score"].between(0.0, 1.0).all()
+    assert scored["prediction"].isin([0, 1]).all()
+
+
 def test_random_forest_artifact_round_trip(tmp_path: Path) -> None:
     fitted = fit_feature_vector_model("random_forest", TRAIN, feature_columns=FEATURES, seed=42)
     metadata = {**METADATA, "model_family": "random_forest"}
@@ -103,6 +130,27 @@ def test_random_forest_artifact_round_trip(tmp_path: Path) -> None:
 
     assert loaded.model_family == "random_forest"
     assert isinstance(loaded.estimator.named_steps["model"], RandomForestClassifier)
+
+
+@pytest.mark.parametrize(
+    "model_family", ["svm_linear", "svm_rbf", "svm_poly", "svm_sigmoid"],
+)
+def test_svm_artifact_round_trip(tmp_path: Path, model_family: str) -> None:
+    fitted = fit_feature_vector_model(model_family, TRAIN, feature_columns=FEATURES, seed=42)
+    metadata = {**METADATA, "model_family": model_family}
+    artifact = save_model_artifact(
+        tmp_path,
+        fitted,
+        metadata=metadata,
+        run_id="run-1",
+        training_metrics=pd.DataFrame(),
+        training_coverage=pd.DataFrame(),
+    )
+
+    loaded = load_model_artifact(artifact, expected=metadata, trust_artifact=True)
+
+    assert loaded.model_family == model_family
+    assert isinstance(loaded.estimator.named_steps["model"], SVC)
 
 
 def test_training_coerces_non_numeric_values_and_imputes_missing_values() -> None:
