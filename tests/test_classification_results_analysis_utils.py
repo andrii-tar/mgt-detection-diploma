@@ -15,6 +15,7 @@ from notebooks.utils.classification_results_analysis_utils import (
     configuration_ranking,
     document_metrics,
     load_classification_run,
+    load_prediction_artifact,
     mixed_bbc_comparison,
     plot_aggregate_bars,
     plot_dimension_semeval_tradeoff,
@@ -37,6 +38,15 @@ def _run_root(tmp_path: Path, run_id: str = "run-1") -> Path:
     root = tmp_path / "experiment-results" / "classification" / "evaluations" / run_id
     root.mkdir(parents=True)
     return root
+
+
+def test_load_prediction_artifact_reads_partitioned_prediction_parquet(tmp_path: Path) -> None:
+    artifact = tmp_path / "predictions" / "model" / "Kaggle" / "source" / "test"
+    artifact.mkdir(parents=True)
+    (artifact / "metadata.json").write_text("{}", encoding="utf-8")
+    pd.DataFrame({"label": [0, 1], "mg_score": [0.1, 0.9]}).to_parquet(artifact / "data.parquet", index=False)
+
+    assert load_prediction_artifact(artifact)["mg_score"].tolist() == [0.1, 0.9]
 
 
 def test_load_classification_run_filters_headered_rows_and_records_provenance(tmp_path: Path) -> None:

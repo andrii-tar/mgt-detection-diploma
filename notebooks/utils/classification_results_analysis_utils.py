@@ -97,6 +97,16 @@ def _result_root(data_root: Path | str, run_id: str) -> Path:
     return root
 
 
+def load_prediction_artifact(path: Path | str) -> pd.DataFrame:
+    """Load detailed prediction rows only when a caller explicitly requests them."""
+    root = Path(path)
+    data_path = root / "data.parquet"
+    metadata_path = root / "metadata.json"
+    if not data_path.is_file() or not metadata_path.is_file():
+        raise ValueError(f"incomplete prediction artifact: {root}")
+    return pd.read_parquet(data_path)
+
+
 def _read_rows(path: Path) -> list[list[str]]:
     with path.open(encoding="utf-8", newline="") as handle:
         return [row for row in csv.reader(handle) if row]
