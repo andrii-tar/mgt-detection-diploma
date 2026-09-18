@@ -175,13 +175,15 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
         "TRAINING_REGIMES",
         "EVALUATION_REGIMES",
         'for partition in ("validation", "test")',
-        "evaluate_feature_vector_model(",
+        "EVALUATION_BATCH_SIZE =",
+        "iter_prepared_batches(",
+        "write_prediction_artifact(",
+        "aggregate_prediction_artifact(",
         "release_frames(",
         "ensure_result_exports(",
         "successful_result_keys(",
         "completed_evaluation_keys",
         "evaluation_metrics",
-        "evaluation_predictions",
         "evaluation_coverage",
         "run_summary",
         "build_feature_parent_cohorts(",
@@ -213,6 +215,8 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
     assert source.index("windows_override=prepared_windows") > source.index("for artifact_path in tqdm(")
     assert 'training_window != "whole_text"' in source
     assert "load_or_build_local_evidence_windows(" not in source
+    assert "load_episode_partitions(DATA_ROOT" not in source
+    assert 'append_result_frame(exports["evaluation_predictions"]' not in source
 
 
 def test_evaluate_notebook_has_one_configuration_and_does_not_overwrite_streamed_results() -> None:
@@ -223,7 +227,7 @@ def test_evaluate_notebook_has_one_configuration_and_does_not_overwrite_streamed
     assert '"evaluation_predictions": pd.DataFrame()' not in source
     assert source.count("ensure_result_exports(") == 1
     assert "append_result_frame(exports[\"run_summary\"], pd.DataFrame([run_summary[-1]]))" in source
-    assert "release_frames(metrics, predictions, coverage)" in source
+    assert "release_frames(metrics, coverage)" in source
 
 
 def test_evaluate_notebook_uses_semeval_train_only() -> None:

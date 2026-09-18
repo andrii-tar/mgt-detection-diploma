@@ -54,7 +54,7 @@ _RUN_SUMMARY_COLUMNS = (
 )
 _STANDARD_RESULT_NAMES = (
     "training_metrics", "training_coverage", "evaluation_metrics",
-    "evaluation_predictions", "evaluation_coverage", "run_summary",
+    "evaluation_coverage", "run_summary",
 )
 _SEMEVAL_RESULT_NAMES = (
     "semeval_summary", "semeval_evaluations", "semeval_predicted_regions",
@@ -289,7 +289,6 @@ def ensure_result_exports(
         "training_metrics": _TRAINING_RESULT_COLUMNS,
         "training_coverage": _COVERAGE_RESULT_COLUMNS,
         "evaluation_metrics": _EVALUATION_RESULT_COLUMNS,
-        "evaluation_predictions": _EVALUATION_RESULT_COLUMNS,
         "evaluation_coverage": _COVERAGE_RESULT_COLUMNS,
         "run_summary": _RUN_SUMMARY_COLUMNS,
     }
@@ -347,7 +346,7 @@ def export_result_frames(
     destination = Path(root) / "experiment-results" / "classification" / "evaluations" / run_id
     names = (
         "training_metrics", "training_coverage", "evaluation_metrics",
-        "evaluation_predictions", "evaluation_coverage", "run_summary",
+        "evaluation_coverage", "run_summary",
     )
     output = {name: frames.get(name, pd.DataFrame()) for name in names}
     for name in names[:-1]:
