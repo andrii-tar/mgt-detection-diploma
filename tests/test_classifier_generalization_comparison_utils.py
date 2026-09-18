@@ -4,6 +4,8 @@ import pandas as pd
 import pytest
 
 from notebooks.utils.classifier_generalization_comparison_utils import (
+    comparison_matrix,
+    configuration_index,
     filter_prediction_cohort,
     held_out_binary_metrics,
     rank_generalization_candidates,
@@ -125,3 +127,70 @@ def test_plot_dataset_heatmap_accepts_raw_configuration_metrics() -> None:
     )
 
     assert figure.axes
+
+
+def test_plot_comparison_matrix_uses_numeric_annotations_and_no_long_candidate_labels() -> None:
+    from notebooks.utils.classifier_generalization_comparison_utils import plot_comparison_matrix
+
+    figure = plot_comparison_matrix(
+        pd.DataFrame([[0.8, 0.6]], index=["llm"], columns=["f1", "f2"]),
+        title="mean macro-F1",
+        metric="mean_macro_f1",
+    )
+
+    labels = [text.get_text() for text in figure.axes[0].texts]
+    assert "0.800" in labels
+    assert all(" | " not in label for label in labels)
+
+
+def test_plot_matrix_facets_returns_empty_state_for_no_matrices() -> None:
+    from notebooks.utils.classifier_generalization_comparison_utils import plot_matrix_facets
+
+    figure = plot_matrix_facets({}, title="empty", metric="mean_macro_f1", facet_columns=("model_family",))
+
+    assert any(text.get_text() == "No data" for text in figure.axes[0].texts)
+
+
+def test_comparison_matrix_uses_llm_rows_and_feature_columns_without_long_labels() -> None:
+    metrics = pd.DataFrame(
+        [
+            {"scorer_llm": "llm-b", "feature_set": "extended", "model_family": "rf", "training_window": 64, "evaluation_window": "whole_text", "dataset": "d1", "macro_f1": 0.8},
+            {"scorer_llm": "llm-a", "feature_set": "basic", "model_family": "rf", "training_window": 64, "evaluation_window": "whole_text", "dataset": "d1", "macro_f1": 0.7},
+        ]
+    )
+
+    matrices = comparison_matrix(metrics, value="macro_f1", aggregation="mean")
+
+    matrix = matrices[("rf", 64, "whole_text")]
+    assert matrix.index.tolist() == ["llm-a", "llm-b"]
+    assert matrix.columns.tolist() == ["basic", "extended"]
+    assert pd.isna(matrix.loc["llm-b", "basic"])
+
+
+def test_comparison_matrix_worst_aggregation_is_grouped_by_dataset_before_worst() -> None:
+    metrics = pd.DataFrame(
+        [
+            {"scorer_llm": "llm", "feature_set": "f", "model_family": "rf", "training_window": 64, "evaluation_window": "whole_text", "dataset": "d1", "macro_f1": 0.9},
+            {"scorer_llm": "llm", "feature_set": "f", "model_family": "rf", "training_window": 64, "evaluation_window": "whole_text", "dataset": "d2", "macro_f1": 0.6},
+        ]
+    )
+
+    result = comparison_matrix(metrics, value="macro_f1", aggregation="worst")[("rf", 64, "whole_text")]
+
+    assert result.loc["llm", "f"] == 0.6
+
+
+def test_configuration_index_is_deterministic() -> None:
+    metrics = pd.DataFrame(
+        [
+            {"scorer_llm": "b", "feature_set": "f2", "model_family": "rf", "training_window": 64, "evaluation_window": "whole_text", "macro_f1": 0.8},
+            {"scorer_llm": "a", "feature_set": "f1", "model_family": "lr", "training_window": 128, "evaluation_window": 64, "macro_f1": 0.7},
+        ]
+    )
+
+    result = configuration_index(metrics, facet_columns=("model_family", "training_window", "evaluation_window"))
+
+    assert result[["model_family", "training_window", "evaluation_window"]].to_records(index=False).tolist() == [
+        ("lr", 128, 64),
+        ("rf", 64, "whole_text"),
+    ]

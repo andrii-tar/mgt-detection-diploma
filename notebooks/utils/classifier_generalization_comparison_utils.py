@@ -6,6 +6,7 @@ from typing import Mapping
 import matplotlib.pyplot as plt
 import pandas as pd
 import pyarrow.parquet as pq
+import seaborn as sns
 
 
 TRAINING_DATASETS = {
@@ -21,6 +22,72 @@ TRAINING_DATASETS = {
         "bbc_news_content",
     },
 }
+
+
+def _sorted_values(values: pd.Series) -> list[object]:
+    return sorted(values.drop_duplicates().tolist(), key=lambda value: str(value))
+
+
+def _validate_matrix_columns(metrics: pd.DataFrame, value: str, facet_columns: tuple[str, ...]) -> None:
+    required = {"scorer_llm", "feature_set", "dataset", value, *facet_columns}
+    missing = required.difference(metrics.columns)
+    if missing:
+        raise ValueError(f"missing matrix columns: {sorted(missing)}")
+
+
+def comparison_matrix(
+    metrics: pd.DataFrame,
+    *,
+    value: str,
+    aggregation: str,
+    facet_columns: tuple[str, ...] = ("model_family", "training_window", "evaluation_window"),
+) -> dict[tuple[object, ...], pd.DataFrame]:
+    """Build scorer-LLM by feature-set matrices for each configuration facet."""
+    _validate_matrix_columns(metrics, value, facet_columns)
+    if aggregation not in {"mean", "worst", "mae"}:
+        raise ValueError("aggregation must be mean, worst, or mae")
+    if metrics.empty:
+        return {}
+    dimensions = [*facet_columns, "scorer_llm", "feature_set", "dataset"]
+    per_dataset = metrics.groupby(dimensions, dropna=False)[value].mean().reset_index()
+    dataset_aggregation = "min" if aggregation == "worst" else "mean"
+    grouped = (
+        per_dataset.groupby([*facet_columns, "scorer_llm", "feature_set"], dropna=False)[value]
+        .agg(dataset_aggregation)
+        .reset_index()
+    )
+    result: dict[tuple[object, ...], pd.DataFrame] = {}
+    for facet_values, frame in grouped.groupby(list(facet_columns), dropna=False, sort=False):
+        if not isinstance(facet_values, tuple):
+            facet_values = (facet_values,)
+        matrix = frame.pivot(index="scorer_llm", columns="feature_set", values=value)
+        matrix = matrix.reindex(index=_sorted_values(frame["scorer_llm"]), columns=_sorted_values(frame["feature_set"]))
+        result[facet_values] = matrix
+    return dict(sorted(result.items(), key=lambda item: tuple(str(value) for value in item[0])))
+
+
+def configuration_index(
+    metrics: pd.DataFrame,
+    *,
+    facet_columns: tuple[str, ...],
+) -> pd.DataFrame:
+    """Summarize available matrix facets and their dimensions."""
+    required = {"scorer_llm", "feature_set", *facet_columns}
+    missing = required.difference(metrics.columns)
+    if missing:
+        raise ValueError(f"missing configuration columns: {sorted(missing)}")
+    if metrics.empty:
+        return pd.DataFrame(columns=[*facet_columns, "llm_count", "feature_count", "cell_count"])
+    result = (
+        metrics.groupby(list(facet_columns), dropna=False)
+        .agg(
+            llm_count=("scorer_llm", "nunique"),
+            feature_count=("feature_set", "nunique"),
+            cell_count=("scorer_llm", lambda values: metrics.loc[values.index, ["scorer_llm", "feature_set"]].drop_duplicates().shape[0]),
+        )
+        .reset_index()
+    )
+    return result.sort_values(list(facet_columns), key=lambda column: column.astype(str)).reset_index(drop=True)
 
 
 def prediction_parent_lengths(path: Path | str) -> pd.DataFrame:
@@ -156,6 +223,75 @@ def rank_generalization_candidates(
 def _empty_figure(title: str) -> plt.Figure:
     figure, axis = plt.subplots()
     axis.set_title(title)
+    return figure
+
+
+def plot_comparison_matrix(matrix: pd.DataFrame, *, title: str, metric: str) -> plt.Figure:
+    figure, axis = plt.subplots(figsize=(max(5, 1.2 * len(matrix.columns) + 2), max(3, 0.5 * len(matrix.index) + 2)))
+    if matrix.empty:
+        axis.set_title(title)
+        axis.text(0.5, 0.5, "No data", ha="center", va="center", transform=axis.transAxes)
+        axis.set_axis_off()
+        return figure
+    is_mae = "mae" in metric or "error" in metric
+    mask = matrix.isna()
+    sns.heatmap(
+        matrix,
+        mask=mask,
+        annot=True,
+        fmt=".3f",
+        vmin=None if is_mae else 0,
+        vmax=None if is_mae else 1,
+        cmap="viridis_r" if is_mae else "YlGnBu",
+        cbar_kws={"label": "MAE (lower is better)" if is_mae else "Macro-F1"},
+        ax=axis,
+    )
+    axis.set_title(title + (" (lower is better)" if is_mae else ""))
+    axis.set_xlabel("Feature set")
+    axis.set_ylabel("Scorer LLM")
+    figure.tight_layout()
+    return figure
+
+
+def plot_matrix_facets(
+    matrices: Mapping[tuple[object, ...], pd.DataFrame],
+    *,
+    title: str,
+    metric: str,
+    facet_columns: tuple[str, ...],
+) -> plt.Figure:
+    if not matrices:
+        figure, axis = plt.subplots(figsize=(6, 3))
+        axis.set_title(title)
+        axis.text(0.5, 0.5, "No data", ha="center", va="center", transform=axis.transAxes)
+        axis.set_axis_off()
+        return figure
+    count = len(matrices)
+    columns = min(3, count)
+    rows = (count + columns - 1) // columns
+    figure, axes = plt.subplots(rows, columns, squeeze=False, figsize=(6 * columns, 4.5 * rows))
+    for index, (facet_values, matrix) in enumerate(matrices.items()):
+        axis = axes.flat[index]
+        facet_title = ", ".join(f"{column}={value}" for column, value in zip(facet_columns, facet_values))
+        is_mae = "mae" in metric or "error" in metric
+        sns.heatmap(
+            matrix,
+            mask=matrix.isna(),
+            annot=True,
+            fmt=".3f",
+            vmin=None if is_mae else 0,
+            vmax=None if is_mae else 1,
+            cmap="viridis_r" if is_mae else "YlGnBu",
+            cbar=False,
+            ax=axis,
+        )
+        axis.set_title(facet_title)
+        axis.set_xlabel("Feature set")
+        axis.set_ylabel("Scorer LLM")
+    for axis in axes.flat[count:]:
+        axis.set_visible(False)
+    figure.suptitle(title + (" (lower is better)" if "mae" in metric or "error" in metric else ""))
+    figure.tight_layout()
     return figure
 
 

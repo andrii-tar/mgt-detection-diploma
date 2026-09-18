@@ -28,14 +28,26 @@ def test_generalization_comparison_notebook_declares_parameters_and_plots() -> N
         "All texts",
         ">= {MIN_TEXT_TOKENS}",
         "held_out_binary_metrics(",
-        "rank_generalization_candidates(",
+        "comparison_matrix(",
+        "plot_matrix_facets(",
+        "insufficient_binary_holdout",
+    ):
+        assert fragment in source
+
+
+def test_generalization_notebook_uses_matrix_facets_instead_of_flat_plots() -> None:
+    source = _source("compare_classifier_generalization.ipynb")
+    assert "comparison_matrix(" in source
+    assert "plot_matrix_facets(" in source
+    assert "configuration_index(" in source
+    for forbidden in (
         "plot_generalization_leaderboard(",
         "plot_dataset_heatmap(",
         "plot_f1_mae_frontier(",
         "plot_parameter_effects(",
-        "insufficient_binary_holdout",
+        "plot_safety_frontier(",
     ):
-        assert fragment in source
+        assert forbidden not in source
 
 
 def test_prepare_and_train_notebook_is_four_cell_output_free_without_definitions() -> None:
