@@ -8,6 +8,12 @@ import pytest
 
 from notebooks.utils.feature_aggregation_utils import FeatureSet, save_prepared_partition
 from notebooks.utils.model_training_utils import fit_feature_vector_model
+from notebooks.utils.streaming_classification_evaluation_utils import (
+    iter_prepared_batches,
+    prediction_artifact_is_complete,
+    prediction_artifact_path,
+    write_prediction_artifact,
+)
 from notebooks.utils.classification_experiment_utils import (
     DATASETS,
     EVALUATION_REGIMES,
@@ -144,6 +150,41 @@ def test_load_episode_partitions_accepts_prepared_dataset_identity(tmp_path: Pat
     )
 
     assert frames["source"]["dataset"].tolist() == ["source"]
+
+
+def test_iter_prepared_batches_filters_selected_texts_without_pandas_parquet_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    feature_set = FeatureSet("d", FEATURES)
+    for split in ("HG", "MG"):
+        save_prepared_partition(
+            tmp_path,
+            _prepared_frame("source", split, [1, 2, 3]),
+            scorer_llm="llm", dataset="source", split=split,
+            feature_set=feature_set, window_configuration=32, stride=16,
+        )
+    path = tmp_path / "experiment-results" / "classification" / "prepared" / "d" / "llm" / "source" / "HG" / "32"
+    expected = {
+        "schema_version": 1, "scorer_llm": "llm", "dataset": "source", "split": "HG",
+        "feature_set": "d", "feature_columns": ["feature_a"], "window_configuration": "32", "stride": 16,
+    }
+    monkeypatch.setattr(pd, "read_parquet", pytest.fail)
+
+    batches = list(iter_prepared_batches(path, expected=expected, selected_ids={2, 3}, batch_size=1))
+
+    assert [text_id for batch in batches for text_id in batch["text_id"]] == [2, 3]
+
+
+def test_prediction_artifact_is_atomically_published(tmp_path: Path) -> None:
+    key = {
+        "artifact_id": "linear-model", "evaluation_regime": "Kaggle", "dataset": "source", "partition": "test",
+    }
+    path = prediction_artifact_path(tmp_path, key)
+    batches = iter((pd.DataFrame({"label": [0, 1], "mg_score": [0.1, 0.9]}),))
+
+    assert write_prediction_artifact(path, expected=key, batches=batches) == 2
+    assert prediction_artifact_is_complete(path, expected={**key, "row_count": 2})
+    assert not list(path.parent.glob(".*.tmp"))
 
 
 def test_training_episode_concatenates_train_and_validation_source_frames(tmp_path: Path) -> None:
