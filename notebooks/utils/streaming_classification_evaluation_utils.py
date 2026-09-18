@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import sqlite3
+import tempfile
 import uuid
 from collections.abc import Iterator, Mapping, Set
 from pathlib import Path
@@ -101,3 +104,87 @@ def write_prediction_artifact(
             writer.close()
         shutil.rmtree(temporary, ignore_errors=True)
         raise
+
+
+def aggregate_prediction_artifact(path: Path | str, threshold: float) -> dict[str, float | int]:
+    """Calculate exact binary metrics without materializing prediction rows in memory."""
+    data_path = Path(path) / "data.parquet"
+    descriptor, database_path = tempfile.mkstemp(prefix=".prediction-metrics-", suffix=".sqlite", dir=data_path.parent)
+    os.close(descriptor)
+    connection: sqlite3.Connection | None = None
+    try:
+        with sqlite3.connect(database_path) as connection:
+            connection.execute("CREATE TABLE scores (label INTEGER NOT NULL, score REAL NOT NULL)")
+            for batch in pq.ParquetFile(data_path).iter_batches(columns=["label", "mg_score"]):
+                connection.executemany(
+                    "INSERT INTO scores VALUES (?, ?)", batch.to_pandas().itertuples(index=False, name=None),
+                )
+            tn, fp, fn, tp = connection.execute(
+                """SELECT
+                    SUM(label = 0 AND score < ?), SUM(label = 0 AND score >= ?),
+                    SUM(label = 1 AND score < ?), SUM(label = 1 AND score >= ?)
+                FROM scores""", (threshold, threshold, threshold, threshold),
+            ).fetchone()
+            negatives, positives, total = connection.execute(
+                "SELECT SUM(label = 0), SUM(label = 1), COUNT(*) FROM scores",
+            ).fetchone()
+            sum_positive_ranks = connection.execute(
+                """WITH ranked AS (
+                    SELECT label, RANK() OVER (ORDER BY score) AS first_rank,
+                           COUNT(*) OVER (PARTITION BY score) AS tie_count
+                    FROM scores
+                ) SELECT SUM(CASE WHEN label = 1 THEN first_rank + (tie_count - 1) / 2.0 ELSE 0 END)
+                    FROM ranked""",
+            ).fetchone()[0]
+            average_precision = connection.execute(
+                """WITH grouped AS (
+                    SELECT score, SUM(label = 1) AS positives, COUNT(*) AS total FROM scores GROUP BY score
+                ), cumulative AS (
+                    SELECT positives, total,
+                           SUM(positives) OVER (ORDER BY score DESC) AS cumulative_positives,
+                           SUM(total) OVER (ORDER BY score DESC) AS cumulative_total
+                    FROM grouped
+                ) SELECT SUM(positives * 1.0 / ? * cumulative_positives / cumulative_total) FROM cumulative""",
+                (positives,),
+            ).fetchone()[0]
+        tn, fp, fn, tp = (int(value or 0) for value in (tn, fp, fn, tp))
+        negatives, positives, total = int(negatives or 0), int(positives or 0), int(total)
+        has_both_labels = bool(negatives and positives)
+        hg_precision = _safe_divide(tn, tn + fn)
+        hg_recall = _safe_divide(tn, negatives)
+        mg_precision = _safe_divide(tp, tp + fp)
+        mg_recall = _safe_divide(tp, positives)
+        hg_f1 = _f1(hg_precision, hg_recall)
+        mg_f1 = _f1(mg_precision, mg_recall)
+        present_f1 = [
+            f1 for is_present, f1 in (
+                (bool(negatives or tn + fn), hg_f1),
+                (bool(positives or fp + tp), mg_f1),
+            ) if is_present
+        ]
+        predicted_mg = fp + tp
+        return {
+            "roc_auc": ((sum_positive_ranks - positives * (positives + 1) / 2) / (positives * negatives)) if has_both_labels else float("nan"),
+            "pr_auc": float(average_precision) if has_both_labels else float("nan"),
+            "accuracy": (tn + tp) / total,
+            "balanced_accuracy": (hg_recall + mg_recall) / 2 if has_both_labels else float("nan"),
+            "macro_f1": sum(present_f1) / len(present_f1),
+            "weighted_f1": (hg_f1 * negatives + mg_f1 * positives) / total,
+            "hg_precision": hg_precision, "hg_recall": hg_recall, "hg_f1": hg_f1, "hg_support": negatives,
+            "mg_precision": mg_precision, "mg_recall": mg_recall, "mg_f1": mg_f1, "mg_support": positives,
+            "tn": tn, "fp": fp, "fn": fn, "tp": tp,
+            "false_positive_rate": fp / negatives if negatives else float("nan"),
+            "predicted_mg_rate": predicted_mg / total,
+        }
+    finally:
+        if connection is not None:
+            connection.close()
+        Path(database_path).unlink(missing_ok=True)
+
+
+def _safe_divide(numerator: int, denominator: int) -> float:
+    return numerator / denominator if denominator else 0.0
+
+
+def _f1(precision: float, recall: float) -> float:
+    return 2 * precision * recall / (precision + recall) if precision + recall else 0.0

@@ -8,7 +8,9 @@ import pytest
 
 from notebooks.utils.feature_aggregation_utils import FeatureSet, save_prepared_partition
 from notebooks.utils.model_training_utils import fit_feature_vector_model
+from notebooks.utils.classification_utils import evaluate_scores
 from notebooks.utils.streaming_classification_evaluation_utils import (
+    aggregate_prediction_artifact,
     iter_prepared_batches,
     prediction_artifact_is_complete,
     prediction_artifact_path,
@@ -185,6 +187,32 @@ def test_prediction_artifact_is_atomically_published(tmp_path: Path) -> None:
     assert write_prediction_artifact(path, expected=key, batches=batches) == 2
     assert prediction_artifact_is_complete(path, expected={**key, "row_count": 2})
     assert not list(path.parent.glob(".*.tmp"))
+
+
+def test_aggregate_prediction_artifact_matches_evaluate_scores_with_ties(tmp_path: Path) -> None:
+    labels = pd.Series([0, 1, 0, 1, 1, 0])
+    scores = pd.Series([0.2, 0.2, 0.7, 0.7, 0.9, 0.1])
+    path = prediction_artifact_path(tmp_path, {
+        "artifact_id": "linear-model", "evaluation_regime": "Kaggle", "dataset": "source", "partition": "test",
+    })
+    write_prediction_artifact(path, expected={}, batches=iter((pd.DataFrame({"label": labels, "mg_score": scores}),)))
+
+    assert aggregate_prediction_artifact(path, threshold=0.5) == pytest.approx(
+        evaluate_scores(labels, scores, 0.5), nan_ok=True,
+    )
+
+
+def test_aggregate_prediction_artifact_matches_evaluate_scores_for_single_class(tmp_path: Path) -> None:
+    labels = pd.Series([0, 0, 0])
+    scores = pd.Series([0.2, 0.7, 0.1])
+    path = prediction_artifact_path(tmp_path, {
+        "artifact_id": "linear-model", "evaluation_regime": "Kaggle", "dataset": "source", "partition": "test",
+    })
+    write_prediction_artifact(path, expected={}, batches=iter((pd.DataFrame({"label": labels, "mg_score": scores}),)))
+
+    assert aggregate_prediction_artifact(path, threshold=0.5) == pytest.approx(
+        evaluate_scores(labels, scores, 0.5), nan_ok=True,
+    )
 
 
 def test_training_episode_concatenates_train_and_validation_source_frames(tmp_path: Path) -> None:
