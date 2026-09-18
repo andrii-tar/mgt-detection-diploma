@@ -191,7 +191,10 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
         "evaluate_local_evidence_semeval(",
         "completed_semeval_keys",
         "ensure_prepared_partition(",
-        "semeval_windows[(scorer_llm, semeval_dataset, feature_set_name, semeval_window)]",
+        "semeval_prepared_partitions[(scorer_llm, semeval_dataset, feature_set_name, semeval_window)]",
+        'semeval_prepared["path"]',
+        'semeval_prepared["expected"]',
+        "release_frames(prepared_windows)",
         "windows_override=prepared_windows",
         "SEMEVAL_DATASETS =",
         "semeval_summary",
@@ -206,6 +209,7 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
 
     assert 'for partition in ("validation", "test")' in source
     assert source.index("ensure_prepared_partition(") < source.index("for artifact_path in tqdm(")
+    assert source.index("semeval_prepared = semeval_prepared_partitions[") > source.index("for artifact_path in tqdm(")
     assert source.index("windows_override=prepared_windows") > source.index("for artifact_path in tqdm(")
     assert 'training_window != "whole_text"' in source
     assert "load_or_build_local_evidence_windows(" not in source
