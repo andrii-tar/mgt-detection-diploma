@@ -21,6 +21,23 @@ def _source(name: str = "prepare_and_train_classifiers.ipynb") -> str:
     )
 
 
+def test_generalization_comparison_notebook_declares_parameters_and_plots() -> None:
+    source = _source("compare_classifier_generalization.ipynb")
+    assert source.index("MIN_TEXT_TOKENS =") < source.index("load_classification_run(")
+    for fragment in (
+        "All texts",
+        ">= {MIN_TEXT_TOKENS}",
+        "held_out_binary_metrics(",
+        "rank_generalization_candidates(",
+        "plot_generalization_leaderboard(",
+        "plot_dataset_heatmap(",
+        "plot_f1_mae_frontier(",
+        "plot_parameter_effects(",
+        "insufficient_binary_holdout",
+    ):
+        assert fragment in source
+
+
 def test_prepare_and_train_notebook_is_four_cell_output_free_without_definitions() -> None:
     notebook = _notebook()
     code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
