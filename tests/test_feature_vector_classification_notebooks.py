@@ -50,6 +50,27 @@ def test_generalization_notebook_uses_matrix_facets_instead_of_flat_plots() -> N
         assert forbidden not in source
 
 
+def test_feature_importance_notebook_declares_isolated_permutation_experiment() -> None:
+    notebook = _notebook("explore_extended_feature_importance.ipynb")
+    source = _source("explore_extended_feature_importance.ipynb")
+
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            assert cell["execution_count"] is None
+            assert cell["outputs"] == []
+    for required in (
+        "IMPORTANCE_RUN_ID =",
+        "SOURCE_RUN_ID =",
+        "PERMUTATION_REPEATS = 30",
+        "feature-importance",
+        "permute_feature_by_parent",
+        "summarize_importance",
+    ):
+        assert required in source
+    assert "save_model_artifact" not in source
+    assert "fit_feature_vector_model" not in source
+
+
 def test_prepare_and_train_notebook_is_four_cell_output_free_without_definitions() -> None:
     notebook = _notebook()
     code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
