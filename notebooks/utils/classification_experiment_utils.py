@@ -170,6 +170,24 @@ def discover_model_artifacts(models_root: Path | str, *, filters: Mapping[str, o
     return matches
 
 
+def prediction_artifact_key(
+    artifact_path: Path | str,
+    *,
+    models_root: Path | str,
+    evaluation_regime: str,
+    dataset: str,
+    partition: str,
+) -> dict[str, str]:
+    """Build the prediction-artifact key from the model path and evaluation row."""
+    artifact_id = "__".join(Path(artifact_path).relative_to(Path(models_root)).parts)
+    return {
+        "artifact_id": artifact_id,
+        "evaluation_regime": evaluation_regime,
+        "dataset": dataset,
+        "partition": partition,
+    }
+
+
 def validate_evaluation_metadata(
     artifact_metadata: Mapping[str, object], prepared_metadata: Mapping[str, object]
 ) -> None:

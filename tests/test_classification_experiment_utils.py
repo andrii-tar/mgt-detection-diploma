@@ -37,6 +37,26 @@ from notebooks.utils.classification_experiment_utils import (
 )
 
 
+def test_prediction_artifact_key_uses_evaluation_metadata_not_artifact_id_segments():
+    from notebooks.utils.classification_experiment_utils import prediction_artifact_key
+
+    artifact_path = Path("models/svm_sigmoid/gemma_3_270m_it/extended/Mixed/32/run-id")
+    key = prediction_artifact_key(
+        artifact_path,
+        models_root=Path("models"),
+        evaluation_regime="Kaggle",
+        dataset="kaggle_train",
+        partition="test",
+    )
+
+    assert key == {
+        "artifact_id": "svm_sigmoid__gemma_3_270m_it__extended__Mixed__32__run-id",
+        "evaluation_regime": "Kaggle",
+        "dataset": "kaggle_train",
+        "partition": "test",
+    }
+
+
 FEATURES = ("feature_a",)
 
 
