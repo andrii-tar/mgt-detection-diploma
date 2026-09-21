@@ -71,6 +71,15 @@ def test_feature_importance_notebook_declares_isolated_permutation_experiment() 
     assert "fit_feature_vector_model" not in source
 
 
+def test_feature_importance_notebook_requires_complete_validation_binary_artifacts() -> None:
+    source = _source("explore_extended_feature_importance.ipynb")
+
+    assert 'partition="validation"' in source
+    assert 'binary_candidates["dataset_count"].eq(3)' in source
+    assert 'raise RuntimeError("No binary configurations have complete prediction coverage.")' in source
+    assert '"binary": "mean validation macro-F1"' in source
+
+
 def test_prepare_and_train_notebook_is_four_cell_output_free_without_definitions() -> None:
     notebook = _notebook()
     code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
