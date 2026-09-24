@@ -18,7 +18,13 @@ def permute_feature_by_parent(frame: pd.DataFrame, *, feature: str, seed: int) -
     shuffled_values = values.loc[:, parent_columns].copy()
     shuffled_values[feature] = shuffled
     result = frame.copy()
-    return result.drop(columns=feature).merge(shuffled_values, on=parent_columns, how="left", validate="many_to_one")
+    permuted = result.drop(columns=feature).merge(
+        shuffled_values,
+        on=parent_columns,
+        how="left",
+        validate="many_to_one",
+    )
+    return permuted.loc[:, frame.columns]
 
 
 def metric_degradation(*, metric: str, baseline: float, permuted: float) -> float:

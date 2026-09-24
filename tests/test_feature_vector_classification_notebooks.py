@@ -61,12 +61,15 @@ def test_feature_importance_notebook_declares_isolated_permutation_experiment() 
     for required in (
         "IMPORTANCE_RUN_ID =",
         "SOURCE_RUN_ID =",
-        "PERMUTATION_REPEATS = 30",
+        "PERMUTATION_REPEATS = 5",
         "feature-importance",
         "permute_feature_by_parent",
         "summarize_importance",
     ):
         assert required in source
+    assert 'PERMUTATION_TRAINING_WINDOW = "32"' in source
+    assert 'binary_candidates = binary_candidates.loc[binary_candidates["training_window"].eq(PERMUTATION_TRAINING_WINDOW)].copy()' in source
+    assert 'semeval_ranking = semeval_ranking.loc[semeval_ranking["training_window"].eq(PERMUTATION_TRAINING_WINDOW)].copy()' in source
     assert "save_model_artifact" not in source
     assert "fit_feature_vector_model" not in source
 
@@ -78,6 +81,15 @@ def test_feature_importance_notebook_requires_complete_validation_binary_artifac
     assert 'binary_candidates["dataset_count"].eq(3)' in source
     assert 'raise RuntimeError("No binary configurations have complete prediction coverage.")' in source
     assert '"binary": "mean validation macro-F1"' in source
+
+
+def test_feature_importance_notebook_reports_permutation_progress() -> None:
+    source = _source("explore_extended_feature_importance.ipynb")
+
+    assert 'desc=f"Binary {dataset} permutations"' in source
+    assert 'desc=f"SemEval {training_window} permutations"' in source
+    assert 'leave=False' in source
+    assert 'unit="permutation"' in source
 
 
 def test_prepare_and_train_notebook_is_four_cell_output_free_without_definitions() -> None:
@@ -118,8 +130,7 @@ def test_prepare_and_train_notebook_declares_complete_experiment_configuration()
         '"BBC": ("HG",)',
         '"Mixed": ("Kaggle", "MAGE", "Outfox")',
         '"Mixed+BBC": ("Kaggle", "MAGE", "Outfox", "BBC")',
-        "MODEL_FAMILIES as AVAILABLE_MODEL_FAMILIES",
-        "MODEL_FAMILIES = AVAILABLE_MODEL_FAMILIES",
+        'MODEL_FAMILIES = ("logistic_regression", "random_forest")',
     ):
         assert fragment in source
 
@@ -127,7 +138,7 @@ def test_prepare_and_train_notebook_declares_complete_experiment_configuration()
 def test_prepare_and_train_notebook_declares_all_scalar_and_similarity_feature_sets() -> None:
     source = _source()
 
-    assert 'RUN_ID = "feature-vector-classification-2026-09-15-rerun-2"' in source
+    assert 'RUN_ID = "feature-vector-classification-2026-09-21-logreg-random-forest"' in source
     for name in ("scalar_all", "scalar_compact", "simple_similarity", "extended"):
         assert f'"{name}": FeatureSet("{name}"' in source
     for column in (
@@ -202,6 +213,13 @@ def test_prepare_and_train_notebook_bounds_source_frame_memory_and_handles_episo
     assert "save_model_artifact(" in source
     assert "run_summary.append" in source
     assert "continue" in source
+
+
+def test_prepare_and_train_notebook_limits_the_new_run_to_fast_model_families() -> None:
+    source = _source()
+
+    assert 'RUN_ID = "feature-vector-classification-2026-09-21-logreg-random-forest"' in source
+    assert 'MODEL_FAMILIES = ("logistic_regression", "random_forest")' in source
 
 
 def test_evaluate_notebook_is_output_free_and_has_no_definitions() -> None:
@@ -287,6 +305,15 @@ def test_evaluate_notebook_has_one_configuration_and_does_not_overwrite_streamed
     assert source.count("ensure_result_exports(") == 1
     assert "append_result_frame(exports[\"run_summary\"], pd.DataFrame([run_summary[-1]]))" in source
     assert "release_frames(metrics, coverage)" in source
+
+
+def test_evaluate_notebook_regenerates_missing_prediction_artifacts_on_resume() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    assert 'RUN_ID = "feature-vector-classification-2026-09-21-logreg-random-forest"' in source
+    assert "prediction_artifact_is_complete(prediction_path, expected=artifact_key)" in source
+    assert '"evaluation_window": evaluation_window_value' in source
+    assert "if not partition_keys <= completed_evaluation_keys or not all(" in source
 
 
 def test_evaluate_notebook_uses_semeval_train_only() -> None:

@@ -15,11 +15,13 @@ def test_permute_feature_by_parent_keeps_window_values_together():
             "split": ["HG", "HG", "MG", "MG"],
             "text_id": [1, 1, 2, 2],
             "feature": [10.0, 10.0, 20.0, 20.0],
+            "later_feature": [1.0, 1.0, 2.0, 2.0],
         }
     )
 
     result = permute_feature_by_parent(frame, feature="feature", seed=1)
 
+    assert result.columns.tolist() == frame.columns.tolist()
     assert result.groupby(["split", "text_id"])["feature"].nunique().eq(1).all()
     assert sorted(result.groupby(["split", "text_id"])["feature"].first()) == [10.0, 20.0]
 

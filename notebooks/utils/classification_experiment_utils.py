@@ -175,6 +175,7 @@ def prediction_artifact_key(
     *,
     models_root: Path | str,
     evaluation_regime: str,
+    evaluation_window: str,
     dataset: str,
     partition: str,
 ) -> dict[str, str]:
@@ -183,6 +184,7 @@ def prediction_artifact_key(
     return {
         "artifact_id": artifact_id,
         "evaluation_regime": evaluation_regime,
+        "evaluation_window": evaluation_window,
         "dataset": dataset,
         "partition": partition,
     }

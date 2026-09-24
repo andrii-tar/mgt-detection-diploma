@@ -37,7 +37,7 @@ from notebooks.utils.classification_experiment_utils import (
 )
 
 
-def test_prediction_artifact_key_uses_evaluation_metadata_not_artifact_id_segments():
+def test_prediction_artifact_key_includes_evaluation_window_not_artifact_id_segments():
     from notebooks.utils.classification_experiment_utils import prediction_artifact_key
 
     artifact_path = Path("models/svm_sigmoid/gemma_3_270m_it/extended/Mixed/32/run-id")
@@ -45,6 +45,7 @@ def test_prediction_artifact_key_uses_evaluation_metadata_not_artifact_id_segmen
         artifact_path,
         models_root=Path("models"),
         evaluation_regime="Kaggle",
+        evaluation_window="32",
         dataset="kaggle_train",
         partition="test",
     )
@@ -52,9 +53,24 @@ def test_prediction_artifact_key_uses_evaluation_metadata_not_artifact_id_segmen
     assert key == {
         "artifact_id": "svm_sigmoid__gemma_3_270m_it__extended__Mixed__32__run-id",
         "evaluation_regime": "Kaggle",
+        "evaluation_window": "32",
         "dataset": "kaggle_train",
         "partition": "test",
     }
+
+
+def test_prediction_artifact_paths_are_distinct_for_evaluation_windows(tmp_path: Path) -> None:
+    base_key = {
+        "artifact_id": "linear-model",
+        "evaluation_regime": "Kaggle",
+        "dataset": "source",
+        "partition": "test",
+    }
+
+    path_32 = prediction_artifact_path(tmp_path, {**base_key, "evaluation_window": "32"})
+    path_64 = prediction_artifact_path(tmp_path, {**base_key, "evaluation_window": "64"})
+
+    assert path_32 != path_64
 
 
 FEATURES = ("feature_a",)
@@ -199,7 +215,7 @@ def test_iter_prepared_batches_filters_selected_texts_without_pandas_parquet_loa
 
 def test_prediction_artifact_is_atomically_published(tmp_path: Path) -> None:
     key = {
-        "artifact_id": "linear-model", "evaluation_regime": "Kaggle", "dataset": "source", "partition": "test",
+        "artifact_id": "linear-model", "evaluation_regime": "Kaggle", "evaluation_window": "32", "dataset": "source", "partition": "test",
     }
     path = prediction_artifact_path(tmp_path, key)
     batches = iter((pd.DataFrame({"label": [0, 1], "mg_score": [0.1, 0.9]}),))
@@ -213,7 +229,7 @@ def test_aggregate_prediction_artifact_matches_evaluate_scores_with_ties(tmp_pat
     labels = pd.Series([0, 1, 0, 1, 1, 0])
     scores = pd.Series([0.2, 0.2, 0.7, 0.7, 0.9, 0.1])
     path = prediction_artifact_path(tmp_path, {
-        "artifact_id": "linear-model", "evaluation_regime": "Kaggle", "dataset": "source", "partition": "test",
+        "artifact_id": "linear-model", "evaluation_regime": "Kaggle", "evaluation_window": "32", "dataset": "source", "partition": "test",
     })
     write_prediction_artifact(path, expected={}, batches=iter((pd.DataFrame({"label": labels, "mg_score": scores}),)))
 
@@ -226,7 +242,7 @@ def test_aggregate_prediction_artifact_matches_evaluate_scores_for_single_class(
     labels = pd.Series([0, 0, 0])
     scores = pd.Series([0.2, 0.7, 0.1])
     path = prediction_artifact_path(tmp_path, {
-        "artifact_id": "linear-model", "evaluation_regime": "Kaggle", "dataset": "source", "partition": "test",
+        "artifact_id": "linear-model", "evaluation_regime": "Kaggle", "evaluation_window": "32", "dataset": "source", "partition": "test",
     })
     write_prediction_artifact(path, expected={}, batches=iter((pd.DataFrame({"label": labels, "mg_score": scores}),)))
 

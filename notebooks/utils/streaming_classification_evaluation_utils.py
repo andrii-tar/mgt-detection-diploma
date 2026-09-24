@@ -47,7 +47,7 @@ def iter_prepared_batches(
 
 
 def prediction_artifact_path(results_root: Path | str, evaluation_key: Mapping[str, object]) -> Path:
-    required = ("artifact_id", "evaluation_regime", "dataset", "partition")
+    required = ("artifact_id", "evaluation_regime", "evaluation_window", "dataset", "partition")
     missing = [key for key in required if not evaluation_key.get(key)]
     if missing:
         raise ValueError(f"prediction artifact key is missing: {missing}")
