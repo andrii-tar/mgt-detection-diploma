@@ -16,9 +16,10 @@ Single-dataset evaluations remain unchanged. This change applies only to the
 
 For each mixed evaluation composition, source parent rows are pooled across all
 constituent datasets before cohort selection. The sampler selects at most 1,000
-parent texts per partition split from the pooled rows. Parent identity remains
-the tuple `(dataset, split, text_id)` so equal text IDs in different datasets do
-not collide.
+parent texts for each pooled source split (`HG` and `MG`) before the existing
+train/validation/test partitioning. Parent identity remains the tuple
+`(dataset, split, text_id)` so equal text IDs in different datasets do not
+collide.
 
 Sampling remains deterministic using the artifact's existing cohort seed. The
 selection must preserve enough identity information to load the selected
@@ -51,7 +52,8 @@ artifacts.
 
 ## Verification
 
-- Test pooled cohort sampling is capped at 1,000 total parent texts per split.
+- Test pooled cohort sampling is capped at 1,000 total parent texts for each
+  pooled `HG`/`MG` source split before partitioning.
 - Test pooled identities retain dataset, split, and text ID.
 - Test single-dataset cohort behavior remains unchanged.
 - Test the evaluation notebook emits combined mixed artifacts/metrics rather
