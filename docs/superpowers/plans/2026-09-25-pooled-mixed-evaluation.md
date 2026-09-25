@@ -44,7 +44,7 @@ selected = set().union(*cohorts.values())
 
 assert all(len({identity for identity in selected if identity[1] == split}) <= 4 for split in ("HG", "MG"))
 assert all(len(identity) == 3 for identity in selected)
-assert {identity[0] for identity in selected} == {"Kaggle", "MAGE", "Outfox"}
+assert {identity[0] for identity in selected} <= {"Kaggle", "MAGE", "Outfox"}
 ```
 
 Also add a deterministic repeatability assertion:
@@ -80,7 +80,7 @@ def build_pooled_feature_parent_cohorts(
     """Select deterministic pooled parent identities across datasets."""
 ```
 
-Validate the same required columns as the existing helper. Collapse feature rows to one parent row per `(dataset, split, text_id)` and compute token counts per same key when filtering is requested. Create a deterministic numeric temporary ID from the sorted unique `(dataset, text_id)` pairs, retain the original dataset and source split columns, and call `build_deterministic_parent_cohorts` with `id_column` set to that temporary numeric ID. Convert each returned partition back to `(str(dataset), str(split), text_id)` tuples. Do not alter `build_feature_parent_cohorts` or `build_deterministic_parent_cohorts` unless the tests prove the existing interfaces cannot support the temporary ID.
+Validate the same required columns as the existing helper. Collapse feature rows to one parent row per `(dataset, split, text_id)` and compute token counts per same key when filtering is requested. For each source split, use `DataFrame.sample(n=min(max_per_split, len(parents)), random_state=seed)` on the pooled parent rows so the cap is total across datasets and the selected sample is not biased toward one dataset's numeric IDs. Pass the pooled sampled parent rows to the existing `split_cohort` helper with the same seed, then convert each returned partition to `(str(dataset), str(split), text_id)` tuples. Do not alter `build_feature_parent_cohorts` or `build_deterministic_parent_cohorts`.
 
 - [ ] **Step 4: Run the utility tests and verify they pass**
 
