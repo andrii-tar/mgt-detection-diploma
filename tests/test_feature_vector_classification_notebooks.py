@@ -357,6 +357,12 @@ def test_evaluate_notebook_uses_reduced_composition_matrix_and_windows() -> None
     assert 'MIXED_BBC_COMPOSITION_ID = composition_id(MIXED_COMPOSITIONS[1])' in source
     assert 'allowed_evaluation_compositions = {' in source
     assert 'MIXED_BBC_COMPOSITION_ID: {MIXED_COMPOSITION_ID, MIXED_BBC_COMPOSITION_ID}' in source
+    assert "build_pooled_feature_parent_cohorts" in source
+    assert "MIXED_MAX_PER_SPLIT = 1000" in source
+    assert "is_mixed_evaluation = len(source_names) > 1" in source
+    assert "dataset = evaluation_composition_id" in source
+    assert "build_pooled_feature_parent_cohorts(" in source
+    assert "aggregate_prediction_artifact(prediction_path" in source
     assert "for evaluation_composition in EVALUATION_COMPOSITIONS:" in source
     assert "composition_has_both_classes(evaluation_composition, SOURCE_SPLITS)" in source
     assert "evaluation_composition_id = composition_id(evaluation_composition)" in source
