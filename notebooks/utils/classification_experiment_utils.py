@@ -163,6 +163,69 @@ def build_feature_parent_cohorts(
     return result
 
 
+def build_pooled_feature_parent_cohorts(
+    frame: pd.DataFrame,
+    *,
+    seed: int,
+    max_per_split: int = 1000,
+    min_text_tokens: int | None = None,
+) -> dict[str, set[tuple[str, str, object]]]:
+    """Select deterministic pooled parent identities across datasets."""
+    required = {"dataset", "split", "text_id", "label"}
+    missing = sorted(required.difference(frame.columns))
+    if missing:
+        raise ValueError(f"missing cohort columns: {missing}")
+    if max_per_split <= 0:
+        raise ValueError("max_per_split must be greater than 0")
+
+    parent_columns = ["dataset", "split", "text_id", "label"]
+    parents = frame[parent_columns].drop_duplicates().copy()
+    if min_text_tokens is not None:
+        if "token_count" in frame:
+            token_counts = frame.groupby(["dataset", "split", "text_id"], as_index=False)["token_count"].max()
+        elif "stop_token" in frame:
+            token_counts = (
+                frame.groupby(["dataset", "split", "text_id"], as_index=False)["stop_token"]
+                .max()
+                .rename(columns={"stop_token": "token_count"})
+            )
+        else:
+            raise ValueError("token_count or stop_token is required for minimum token filtering")
+        parents = parents.merge(
+            token_counts,
+            on=["dataset", "split", "text_id"],
+            how="left",
+            validate="one_to_one",
+        )
+        parents = parents.loc[parents["token_count"].ge(min_text_tokens)].reset_index(drop=True)
+
+    sampled = pd.concat(
+        [
+            source.sample(n=min(max_per_split, len(source)), random_state=seed)
+            for _, source in parents.groupby("split", sort=True)
+        ],
+        ignore_index=True,
+    )
+    if sampled.empty:
+        raise ValueError("pooled cohort is empty after filtering")
+
+    parent_key = sampled["dataset"].astype(str) + "\x1f" + sampled["text_id"].astype(str)
+    sampled["_pooled_parent_id"] = pd.factorize(parent_key, sort=True)[0]
+    partitions = build_deterministic_parent_cohorts(
+        sampled,
+        id_column="_pooled_parent_id",
+        max_per_split=max_per_split,
+        seed=seed,
+    )
+    return {
+        partition: {
+            (str(dataset), str(split), text_id)
+            for dataset, split, text_id in rows[["dataset", "split", "text_id"]].itertuples(index=False, name=None)
+        }
+        for partition, rows in partitions.items()
+    }
+
+
 def _prepared_expected(
     *, scorer_llm: str, dataset: str, split: str, feature_set: str,
     window_configuration: WindowConfiguration, feature_columns: Sequence[str],

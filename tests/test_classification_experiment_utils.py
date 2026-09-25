@@ -24,6 +24,7 @@ from notebooks.utils.classification_experiment_utils import (
     availability_row,
     append_result_frame,
     build_feature_parent_cohorts,
+    build_pooled_feature_parent_cohorts,
     discover_model_artifacts,
     ensure_result_exports,
     evaluate_feature_vector_model,
@@ -196,6 +197,52 @@ def test_feature_parent_cohorts_filter_using_window_stop_tokens() -> None:
 
     selected = set().union(*cohorts.values())
     assert {identity[2] for identity in selected} == {1, 2, 3, 4, 5}
+
+
+def test_pooled_feature_parent_cohorts_caps_each_source_split_across_datasets() -> None:
+    frame = pd.DataFrame(
+        [
+            {"dataset": dataset, "split": split, "text_id": index, "label": int(split == "MG")}
+            for dataset in ("Kaggle", "MAGE", "Outfox")
+            for split in ("HG", "MG")
+            for index in range(6)
+        ]
+    )
+
+    cohorts = build_pooled_feature_parent_cohorts(frame, seed=42, max_per_split=6)
+    selected = set().union(*cohorts.values())
+
+    assert all(len({identity for identity in selected if identity[1] == split}) <= 6 for split in ("HG", "MG"))
+    assert all(len(identity) == 3 for identity in selected)
+    assert {identity[0] for identity in selected} <= {"Kaggle", "MAGE", "Outfox"}
+    assert build_pooled_feature_parent_cohorts(frame, seed=42, max_per_split=6) == cohorts
+
+    all_rows = set().union(*build_pooled_feature_parent_cohorts(frame, seed=42, max_per_split=18).values())
+    assert {"Kaggle", "MAGE", "Outfox"} <= {identity[0] for identity in all_rows}
+    assert ("Kaggle", "HG", 0) in all_rows
+    assert ("MAGE", "HG", 0) in all_rows
+
+
+def test_pooled_feature_parent_cohorts_filter_using_window_stop_tokens() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "dataset": dataset,
+                "split": split,
+                "text_id": index,
+                "label": int(split == "MG"),
+                "stop_token": index + 99,
+            }
+            for dataset in ("Kaggle", "MAGE")
+            for split in ("HG", "MG")
+            for index in range(8)
+        ]
+    )
+
+    cohorts = build_pooled_feature_parent_cohorts(frame, seed=42, max_per_split=6, min_text_tokens=101)
+
+    selected = set().union(*cohorts.values())
+    assert all(identity[2] >= 2 for identity in selected)
 
 
 def test_load_episode_partitions_filters_parent_cohort_before_returning_windows(tmp_path: Path) -> None:
