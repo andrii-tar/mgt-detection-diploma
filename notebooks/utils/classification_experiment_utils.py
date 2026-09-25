@@ -364,7 +364,10 @@ def append_result_frame(path: Path | str, frame: pd.DataFrame) -> None:
         if pd.read_csv(destination, nrows=1).empty:
             frame.to_csv(destination, index=False)
             return
-        raise ValueError(f"result frame columns do not match existing CSV: {destination}")
+        if set(frame.columns).issubset(existing_columns):
+            frame = frame.reindex(columns=existing_columns)
+        else:
+            raise ValueError(f"result frame columns do not match existing CSV: {destination}")
     frame.to_csv(destination, mode="a", header=False, index=False)
 
 

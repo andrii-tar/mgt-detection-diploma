@@ -344,13 +344,24 @@ def test_evaluate_notebook_regenerates_missing_prediction_artifacts_on_resume() 
     assert "if not partition_keys <= completed_evaluation_keys or not all(" in source
 
 
-def test_evaluate_notebook_iterates_all_binary_evaluation_compositions() -> None:
+def test_evaluate_notebook_uses_reduced_composition_matrix_and_windows() -> None:
     source = _source("evaluate_classifiers.ipynb")
 
-    assert "EVALUATION_COMPOSITIONS = dataset_subsets(tuple(DATASETS))" in source
+    assert 'SINGLE_DATASETS = ("Kaggle", "MAGE", "Outfox")' in source
+    assert 'MIXED_COMPOSITIONS = (("Kaggle", "MAGE", "Outfox"), ("Kaggle", "MAGE", "Outfox", "BBC"))' in source
+    assert 'TRAINING_COMPOSITIONS = tuple((name,) for name in SINGLE_DATASETS) + MIXED_COMPOSITIONS' in source
+    assert 'EVALUATION_COMPOSITIONS = TRAINING_COMPOSITIONS' in source
+    assert 'EVALUATION_WINDOWS = ("whole_text", 32, 64)' in source
+    assert 'str(artifact_metadata.get(artifact_path, {}).get("training_window", "")) in {"whole_text", "32", "64"}' in source
+    assert 'MIXED_COMPOSITION_ID = composition_id(MIXED_COMPOSITIONS[0])' in source
+    assert 'MIXED_BBC_COMPOSITION_ID = composition_id(MIXED_COMPOSITIONS[1])' in source
+    assert 'allowed_evaluation_compositions = {' in source
+    assert 'MIXED_BBC_COMPOSITION_ID: {MIXED_COMPOSITION_ID, MIXED_BBC_COMPOSITION_ID}' in source
     assert "for evaluation_composition in EVALUATION_COMPOSITIONS:" in source
     assert "composition_has_both_classes(evaluation_composition, SOURCE_SPLITS)" in source
     assert "evaluation_composition_id = composition_id(evaluation_composition)" in source
+    assert 'if evaluation_composition_id not in allowed_evaluation_compositions[training_composition_id]: continue' in source
+    assert "128" not in source[source.index('EVALUATION_WINDOWS ='):source.index('EVALUATION_BATCH_SIZE =')]
 
 
 def test_evaluate_notebook_uses_semeval_train_only() -> None:

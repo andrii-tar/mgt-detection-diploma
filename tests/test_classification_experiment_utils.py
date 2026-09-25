@@ -438,6 +438,19 @@ def test_append_result_frame_writes_header_once_and_appends_rows(tmp_path: Path)
     ]
 
 
+def test_append_result_frame_aligns_rows_to_existing_superset_schema(tmp_path: Path) -> None:
+    path = tmp_path / "run_summary.csv"
+    pd.DataFrame([{"run_id": "run-1", "stage": "training", "training_composition": "Kaggle", "error": ""}]).to_csv(path, index=False)
+    frame = pd.DataFrame([{"run_id": "run-1", "stage": "semeval", "error": "missing labels"}])
+
+    append_result_frame(path, frame)
+
+    result = pd.read_csv(path)
+    assert list(result.columns) == ["run_id", "stage", "training_composition", "error"]
+    assert pd.isna(result.loc[1, "training_composition"])
+    assert result.loc[1, "error"] == "missing labels"
+
+
 def test_append_result_frame_replaces_placeholder_header_before_first_batch(tmp_path: Path) -> None:
     path = tmp_path / "evaluation_metrics.csv"
     path.write_text("model_family,partition\n", encoding="utf-8")
