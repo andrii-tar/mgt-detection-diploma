@@ -162,7 +162,7 @@ def test_prepare_and_train_notebook_persists_composition_aware_metadata() -> Non
 def test_prepare_and_train_notebook_declares_all_scalar_and_similarity_feature_sets() -> None:
     source = _source()
 
-    assert 'RUN_ID = "feature-vector-classification-2026-09-21-logreg-random-forest"' in source
+    assert 'RUN_ID = "feature-vector-classification-2026-09-25-logreg-random-forest-max600-min100"' in source
     for name in ("scalar_all", "scalar_compact", "simple_similarity", "extended"):
         assert f'"{name}": FeatureSet("{name}"' in source
     for column in (
@@ -242,7 +242,7 @@ def test_prepare_and_train_notebook_bounds_source_frame_memory_and_handles_episo
 def test_prepare_and_train_notebook_limits_the_new_run_to_fast_model_families() -> None:
     source = _source()
 
-    assert 'RUN_ID = "feature-vector-classification-2026-09-21-logreg-random-forest"' in source
+    assert 'RUN_ID = "feature-vector-classification-2026-09-25-logreg-random-forest-max600-min100"' in source
     assert 'MODEL_FAMILIES = ("logistic_regression", "random_forest")' in source
 
 
@@ -338,7 +338,7 @@ def test_evaluate_notebook_has_one_configuration_and_does_not_overwrite_streamed
 def test_evaluate_notebook_regenerates_missing_prediction_artifacts_on_resume() -> None:
     source = _source("evaluate_classifiers.ipynb")
 
-    assert 'RUN_ID = "feature-vector-classification-2026-09-21-logreg-random-forest"' in source
+    assert 'RUN_ID = "feature-vector-classification-2026-09-25-logreg-random-forest-max600-min100"' in source
     assert "prediction_artifact_is_complete(prediction_path, expected=artifact_key)" in source
     assert '"evaluation_window": evaluation_window_value' in source
     assert "if not partition_keys <= completed_evaluation_keys or not all(" in source
@@ -504,8 +504,8 @@ def test_bounded_prefix_evaluation_notebook_contract() -> None:
                 for node in ast.walk(tree)
             )
     for fragment in (
-        'RUN_ID = "bounded-prefix-classifier-evaluation-window32-2026-09-24"',
-        'SOURCE_RUN_ID = "feature-vector-classification-2026-09-21-logreg-random-forest"',
+        'RUN_ID = "bounded-prefix-classifier-evaluation-window32-2026-09-25"',
+        'SOURCE_RUN_ID = "feature-vector-classification-2026-09-25-logreg-random-forest-max600-min100"',
         "TOKEN_BOUNDS =",
         "MIN_MACRO_F1 =",
         "MIN_BALANCED_ACCURACY =",
