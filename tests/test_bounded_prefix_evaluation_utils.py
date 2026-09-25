@@ -122,9 +122,22 @@ def test_parent_identity_collection_uses_source_labels_and_split_cap(tmp_path: P
     )
 
     assert parents.to_dict("records") == [
-        {"dataset": "source", "split": "HG", "text_id": 1, "label": 0},
-        {"dataset": "source", "split": "HG", "text_id": 2, "label": 0},
+        {"dataset": "source", "split": "HG", "text_id": 1, "label": 0, "token_count": 2},
+        {"dataset": "source", "split": "HG", "text_id": 2, "label": 0, "token_count": 2},
     ]
+
+
+def test_parent_identity_collection_filters_short_sources_before_split_cap(tmp_path: Path) -> None:
+    _write_source(tmp_path, text_id=1, token_count=1)
+    _write_source(tmp_path, text_id=2, token_count=2)
+    _write_source(tmp_path, text_id=3, token_count=2)
+
+    parents = collect_source_parent_identities(
+        tmp_path, scorer_llm="scorer", dataset="source", split="HG", max_per_split=2,
+        min_text_tokens=2, batch_size=1,
+    )
+
+    assert list(parents["text_id"]) == [2, 3]
 
 
 def test_parent_identity_collection_handles_an_empty_source(tmp_path: Path) -> None:
@@ -136,7 +149,7 @@ def test_parent_identity_collection_handles_an_empty_source(tmp_path: Path) -> N
         tmp_path, scorer_llm="scorer", dataset="source", split="HG", max_per_split=2, batch_size=2,
     )
 
-    assert list(parents.columns) == ["dataset", "split", "text_id", "label"]
+    assert list(parents.columns) == ["dataset", "split", "text_id", "label", "token_count"]
     assert parents.empty
 
 

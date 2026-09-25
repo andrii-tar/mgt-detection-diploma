@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import combinations
 from typing import Mapping, Sequence
 
 import pandas as pd
@@ -41,15 +42,78 @@ EVALUATION_REGIMES = {
 }
 
 
+def _dataset_subsets(dataset_names: Sequence[str]) -> tuple[tuple[str, ...], ...]:
+    ordered = tuple(dict.fromkeys(dataset_names))
+    return tuple(
+        subset
+        for size in range(1, len(ordered) + 1)
+        for subset in combinations(ordered, size)
+    )
+
+
+def _composition_id(dataset_names: Sequence[str]) -> str:
+    return "+".join(dataset_names)
+
+
+def _composition_has_both_classes(
+    composition: Sequence[str], source_splits: Mapping[str, Sequence[str]],
+) -> bool:
+    splits = {split for name in composition for split in source_splits.get(name, ())}
+    return {"HG", "MG"}.issubset(splits)
+
+
+def seen_during_training(
+    training_composition: Sequence[str], evaluation_composition: Sequence[str],
+) -> bool:
+    return set(evaluation_composition).issubset(training_composition)
+
+
+def build_experiment_matrix(
+    *,
+    source_splits: Mapping[str, Sequence[str]],
+    dataset_names: Sequence[str] = tuple(DATASETS),
+) -> pd.DataFrame:
+    subsets = _dataset_subsets(dataset_names)
+    rows: list[dict[str, object]] = []
+    for training in subsets:
+        training_valid = _composition_has_both_classes(training, source_splits)
+        for evaluation in subsets:
+            evaluation_valid = _composition_has_both_classes(evaluation, source_splits)
+            binary_valid = training_valid and evaluation_valid
+            rows.append({
+                "training_composition": _composition_id(training),
+                "evaluation_composition": _composition_id(evaluation),
+                "training_datasets": tuple(training),
+                "evaluation_datasets": tuple(evaluation),
+                "binary_valid": binary_valid,
+                "seen_during_training": seen_during_training(training, evaluation),
+                "status": "available" if binary_valid else "unavailable",
+                "reason": "" if binary_valid else "single_class_composition",
+            })
+    return pd.DataFrame(rows)
+
+
 def build_deterministic_parent_cohorts(
     frame: pd.DataFrame,
     *,
     id_column: str,
-    max_per_split: int = 500,
+    max_per_split: int = 600,
+    min_text_tokens: int | None = None,
     seed: int = 42,
 ) -> dict[str, pd.DataFrame]:
-    """Cap each HG/MG parent split by numeric ID before stratified partitioning."""
+    """Filter and cap each HG/MG parent split before stratified partitioning."""
+    if min_text_tokens is not None and min_text_tokens < 0:
+        raise ValueError("min_text_tokens must be non-negative")
+    required = {"split", id_column, "label"}
+    if min_text_tokens is not None:
+        required.add("token_count")
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(f"missing parent columns: {', '.join(sorted(missing))}")
     parents = frame.drop_duplicates(subset=["split", id_column, "label"]).reset_index(drop=True)
+    if min_text_tokens is not None:
+        token_counts = pd.to_numeric(parents["token_count"], errors="raise")
+        parents = parents.loc[token_counts.ge(min_text_tokens)].reset_index(drop=True)
     limited = limit_parent_texts(parents, id_column=id_column, max_per_split=max_per_split)
     if limited["label"].nunique() == 2:
         return split_cohort(limited, seed=seed)

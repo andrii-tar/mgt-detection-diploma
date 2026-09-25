@@ -115,7 +115,7 @@ def test_prepare_and_train_notebook_declares_complete_experiment_configuration()
         "SCORER_LLMS =",
         "DATASETS =",
         "SOURCE_SPLITS =",
-        "TRAINING_REGIME =",
+        "TRAINING_COMPOSITIONS =",
         "WINDOW_CONFIGURATIONS =",
         "FEATURE_SETS =",
         "MODEL_FAMILIES =",
@@ -128,9 +128,33 @@ def test_prepare_and_train_notebook_declares_complete_experiment_configuration()
         '"Outfox": "outfox_chatgpt_train"',
         '"BBC": "bbc_news_content"',
         '"BBC": ("HG",)',
-        '"Mixed": ("Kaggle", "MAGE", "Outfox")',
-        '"Mixed+BBC": ("Kaggle", "MAGE", "Outfox", "BBC")',
         'MODEL_FAMILIES = ("logistic_regression", "random_forest")',
+    ):
+        assert fragment in source
+
+
+def test_prepare_and_train_notebook_iterates_all_dataset_subsets() -> None:
+    source = _source()
+
+    for fragment in (
+        "dataset_subsets(",
+        "TRAINING_COMPOSITIONS =",
+        "for training_composition in TRAINING_COMPOSITIONS:",
+        "composition_id(training_composition)",
+        "composition_has_both_classes(training_composition, SOURCE_SPLITS)",
+    ):
+        assert fragment in source
+    assert 'TRAINING_REGIME = "Mixed+BBC"' not in source
+
+
+def test_prepare_and_train_notebook_persists_composition_aware_metadata() -> None:
+    source = _source()
+
+    for fragment in (
+        '"training_composition": training_composition_id',
+        '"evaluation_composition": ""',
+        '"training_composition": training_composition_id',
+        '"dataset": training_composition_id',
     ):
         assert fragment in source
 
@@ -249,8 +273,10 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
         "metadata[\"scorer_llm\"]",
         "metadata[\"feature_columns\"]",
         "evaluation_window",
-        "TRAINING_REGIMES",
-        "EVALUATION_REGIMES",
+        "TRAINING_COMPOSITIONS",
+        "EVALUATION_COMPOSITIONS",
+        "composition_has_both_classes",
+        "composition_id",
         'for partition in ("validation", "test")',
         "EVALUATION_BATCH_SIZE =",
         "iter_prepared_batches(",
@@ -279,6 +305,8 @@ def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> N
         "semeval_summary",
         "semeval_boundary_predictions",
         '"training_datasets": "|".join(metadata["training_datasets"])',
+        '"training_composition": training_composition',
+        '"evaluation_composition": evaluation_composition_id',
         '"train_row_count": metadata["train_row_count"]',
         '"validation_row_count": metadata["validation_row_count"]',
         '"artifact_created_at": metadata["created_at"]',
@@ -314,6 +342,15 @@ def test_evaluate_notebook_regenerates_missing_prediction_artifacts_on_resume() 
     assert "prediction_artifact_is_complete(prediction_path, expected=artifact_key)" in source
     assert '"evaluation_window": evaluation_window_value' in source
     assert "if not partition_keys <= completed_evaluation_keys or not all(" in source
+
+
+def test_evaluate_notebook_iterates_all_binary_evaluation_compositions() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    assert "EVALUATION_COMPOSITIONS = dataset_subsets(tuple(DATASETS))" in source
+    assert "for evaluation_composition in EVALUATION_COMPOSITIONS:" in source
+    assert "composition_has_both_classes(evaluation_composition, SOURCE_SPLITS)" in source
+    assert "evaluation_composition_id = composition_id(evaluation_composition)" in source
 
 
 def test_evaluate_notebook_uses_semeval_train_only() -> None:

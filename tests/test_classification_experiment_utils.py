@@ -18,6 +18,7 @@ from notebooks.utils.streaming_classification_evaluation_utils import (
 )
 from notebooks.utils.classification_experiment_utils import (
     DATASETS,
+    DATASET_ORDER,
     EVALUATION_REGIMES,
     TRAINING_REGIMES,
     availability_row,
@@ -33,8 +34,58 @@ from notebooks.utils.classification_experiment_utils import (
     release_frames,
     read_existing_result_table,
     successful_result_keys,
+    composition_has_both_classes,
+    composition_id,
+    dataset_subsets,
+    result_key,
+    threshold_source_is_valid,
     validate_evaluation_metadata,
 )
+
+
+def test_dataset_subsets_returns_all_non_empty_combinations_in_stable_order() -> None:
+    assert dataset_subsets(DATASET_ORDER) == (
+        ("Kaggle",), ("MAGE",), ("Outfox",), ("BBC",),
+        ("Kaggle", "MAGE"), ("Kaggle", "Outfox"),
+        ("Kaggle", "BBC"), ("MAGE", "Outfox"),
+        ("MAGE", "BBC"), ("Outfox", "BBC"),
+        ("Kaggle", "MAGE", "Outfox"),
+        ("Kaggle", "MAGE", "BBC"),
+        ("Kaggle", "Outfox", "BBC"),
+        ("MAGE", "Outfox", "BBC"),
+        ("Kaggle", "MAGE", "Outfox", "BBC"),
+    )
+
+
+def test_composition_id_canonicalizes_dataset_order() -> None:
+    assert composition_id(("Outfox", "Kaggle")) == "Kaggle+Outfox"
+
+
+def test_binary_validity_requires_hg_and_mg_sources() -> None:
+    assert composition_has_both_classes(("Kaggle",), {"Kaggle": ("HG", "MG")})
+    assert not composition_has_both_classes(("BBC",), {"BBC": ("HG",)})
+
+
+def test_threshold_source_rejects_test_data() -> None:
+    assert threshold_source_is_valid("validation")
+    assert threshold_source_is_valid("training")
+    assert not threshold_source_is_valid("test")
+
+
+def test_result_key_exposes_both_compositions_and_all_dimensions() -> None:
+    key = result_key(
+        training_composition="Kaggle",
+        evaluation_composition="MAGE",
+        scorer_llm="llm",
+        feature_set="extended",
+        training_window="32",
+        evaluation_window="32",
+        model_family="random_forest",
+    )
+
+    assert key.training_composition == "Kaggle"
+    assert key.evaluation_composition == "MAGE"
+    assert len(key) == 7
 
 
 def test_prediction_artifact_key_includes_evaluation_window_not_artifact_id_segments():
@@ -130,6 +181,21 @@ def test_feature_parent_cohorts_support_bbc_human_only_sources() -> None:
 
     assert {name: len(value) for name, value in cohorts.items()} == {"train": 3, "validation": 1, "test": 1}
     assert all(identity[1:] == ("HG", identity[2]) and identity[0] == "BBC" for values in cohorts.values() for identity in values)
+
+
+def test_feature_parent_cohorts_filter_using_window_stop_tokens() -> None:
+    frame = pd.DataFrame({
+        "dataset": ["source"] * 12,
+        "split": ["HG"] * 6 + ["MG"] * 6,
+        "text_id": list(range(6)) * 2,
+        "label": [0] * 6 + [1] * 6,
+        "stop_token": [99, 100, 101, 102, 103, 104] * 2,
+    })
+
+    cohorts = build_feature_parent_cohorts(frame, seed=42, max_per_split=5, min_text_tokens=100)
+
+    selected = set().union(*cohorts.values())
+    assert {identity[2] for identity in selected} == {1, 2, 3, 4, 5}
 
 
 def test_load_episode_partitions_filters_parent_cohort_before_returning_windows(tmp_path: Path) -> None:

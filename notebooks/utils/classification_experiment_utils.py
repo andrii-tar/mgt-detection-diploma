@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import gc
 import json
+from itertools import combinations
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Mapping, NamedTuple, Sequence
 
 import pandas as pd
 
@@ -28,6 +29,7 @@ DATASETS = {
     "Outfox": "outfox_chatgpt_train",
     "BBC": "bbc_news_content",
 }
+DATASET_ORDER = tuple(DATASETS)
 SOURCE_SPLITS = {name: ("HG", "MG") for name in DATASETS if name != "BBC"} | {"BBC": ("HG",)}
 TRAINING_REGIMES = {
     "Kaggle": ("Kaggle",),
@@ -37,6 +39,71 @@ TRAINING_REGIMES = {
     "Mixed+BBC": ("Kaggle", "MAGE", "Outfox", "BBC"),
 }
 EVALUATION_REGIMES = {**TRAINING_REGIMES, "BBC": ("BBC",)}
+
+
+class ExperimentResultKey(NamedTuple):
+    training_composition: str
+    evaluation_composition: str
+    scorer_llm: str
+    feature_set: str
+    training_window: str
+    evaluation_window: str
+    model_family: str
+
+
+def _canonical_dataset_names(dataset_names: Sequence[str]) -> tuple[str, ...]:
+    unknown = sorted(set(dataset_names).difference(DATASET_ORDER))
+    if unknown:
+        raise ValueError(f"unknown dataset names: {unknown}")
+    return tuple(name for name in DATASET_ORDER if name in dataset_names)
+
+
+def dataset_subsets(
+    dataset_names: tuple[str, ...] = DATASET_ORDER,
+) -> tuple[tuple[str, ...], ...]:
+    canonical = _canonical_dataset_names(dataset_names)
+    return tuple(
+        subset
+        for size in range(1, len(canonical) + 1)
+        for subset in combinations(canonical, size)
+    )
+
+
+def composition_id(dataset_names: tuple[str, ...]) -> str:
+    return "+".join(_canonical_dataset_names(dataset_names))
+
+
+def composition_has_both_classes(
+    composition: tuple[str, ...],
+    source_splits: Mapping[str, Sequence[str]],
+) -> bool:
+    splits = {split for name in composition for split in source_splits.get(name, ())}
+    return {"HG", "MG"}.issubset(splits)
+
+
+def threshold_source_is_valid(threshold_source: str) -> bool:
+    return threshold_source in {"training", "validation"}
+
+
+def result_key(
+    *,
+    training_composition: str,
+    evaluation_composition: str,
+    scorer_llm: str,
+    feature_set: str,
+    training_window: str,
+    evaluation_window: str,
+    model_family: str,
+) -> ExperimentResultKey:
+    return ExperimentResultKey(
+        training_composition,
+        evaluation_composition,
+        scorer_llm,
+        feature_set,
+        training_window,
+        evaluation_window,
+        model_family,
+    )
 
 _TRAINING_RESULT_COLUMNS = (
     "model_family", "scorer_llm", "feature_set", "training_regime", "training_window", "partition",
@@ -64,7 +131,8 @@ _SEMEVAL_RESULT_NAMES = (
 
 
 def build_feature_parent_cohorts(
-    frame: pd.DataFrame, *, seed: int, max_per_split: int
+    frame: pd.DataFrame, *, seed: int, max_per_split: int = 600,
+    min_text_tokens: int | None = None,
 ) -> dict[str, set[tuple[str, str, object]]]:
     required = {"dataset", "split", "text_id", "label"}
     missing = sorted(required.difference(frame.columns))
@@ -73,8 +141,19 @@ def build_feature_parent_cohorts(
     result = {"train": set(), "validation": set(), "test": set()}
     for dataset, source in frame.groupby("dataset", sort=True):
         parents = source[["split", "text_id", "label"]].drop_duplicates()
+        if min_text_tokens is not None:
+            if "token_count" in source:
+                token_counts = source.groupby(["split", "text_id"], as_index=False)["token_count"].max()
+            elif "stop_token" in source:
+                token_counts = source.groupby(["split", "text_id"], as_index=False)["stop_token"].max().rename(
+                    columns={"stop_token": "token_count"}
+                )
+            else:
+                raise ValueError("token_count or stop_token is required for minimum token filtering")
+            parents = parents.merge(token_counts, on=["split", "text_id"], how="left", validate="one_to_one")
         partitions = build_deterministic_parent_cohorts(
-            parents, id_column="text_id", max_per_split=max_per_split, seed=seed
+            parents, id_column="text_id", max_per_split=max_per_split,
+            min_text_tokens=min_text_tokens, seed=seed,
         )
         for partition, rows in partitions.items():
             result[partition].update(

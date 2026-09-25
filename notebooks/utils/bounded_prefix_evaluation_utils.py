@@ -194,11 +194,14 @@ def _validated_feature_batch(rows: list[dict[str, object]], feature_set: Feature
 
 def collect_source_parent_identities(
     processed_root: Path | str, *, scorer_llm: str, dataset: str, split: str,
-    max_per_split: int, batch_size: int, progress_description: str | None = None,
+    max_per_split: int, batch_size: int, min_text_tokens: int | None = None,
+    progress_description: str | None = None,
 ) -> pd.DataFrame:
     _validate_batch_size(batch_size)
     if isinstance(max_per_split, bool) or not isinstance(max_per_split, Integral) or max_per_split <= 0:
         raise ValueError("max_per_split must be a positive integer")
+    if min_text_tokens is not None and min_text_tokens < 0:
+        raise ValueError("min_text_tokens must be non-negative")
     rows: list[dict[str, object]] = []
     seen_ids: set[int] = set()
     for source, _ in _iter_source_rows(
@@ -209,10 +212,11 @@ def collect_source_parent_identities(
         if text_id in seen_ids:
             raise ValueError(f"duplicate source text identity: {split}/{text_id}")
         seen_ids.add(text_id)
-        rows.append({"dataset": dataset, "split": split, "text_id": text_id, "label": _source_label(source, split)})
-    return pd.DataFrame(rows, columns=["dataset", "split", "text_id", "label"]).sort_values(
-        "text_id"
-    ).head(int(max_per_split)).reset_index(drop=True)
+        rows.append({"dataset": dataset, "split": split, "text_id": text_id, "label": _source_label(source, split), "token_count": len(source["tokens"])})
+    parents = pd.DataFrame(rows, columns=["dataset", "split", "text_id", "label", "token_count"])
+    if min_text_tokens is not None:
+        parents = parents.loc[parents["token_count"].ge(min_text_tokens)]
+    return parents.sort_values("text_id").head(int(max_per_split)).reset_index(drop=True)
 
 
 def ensure_bounded_prefix_result_exports(data_root: Path | str, run_id: str) -> dict[str, Path]:

@@ -6,6 +6,7 @@ from notebooks.utils.cross_dataset_classification_utils import (
     DATASETS,
     SCORER_LLMS,
     TRAINING_REGIMES,
+    build_experiment_matrix,
     build_deterministic_parent_cohorts,
     build_shared_parent_manifest,
     combine_whole_text_dataset_results,
@@ -15,8 +16,32 @@ from notebooks.utils.cross_dataset_classification_utils import (
     pivot_matrix,
     source_coverage_row,
     select_scalar_partition,
+    seen_during_training,
 )
 from notebooks.utils.whole_text_classification_utils import WholeTextEvaluationResult
+
+
+def test_experiment_matrix_contains_all_training_and_evaluation_subsets() -> None:
+    matrix = build_experiment_matrix(
+        source_splits={"Kaggle": ("HG", "MG"), "BBC": ("HG",)},
+        dataset_names=("Kaggle", "BBC"),
+    )
+
+    assert len(matrix) == 9
+    assert {
+        "training_composition", "evaluation_composition", "binary_valid",
+        "seen_during_training", "status", "reason",
+    } <= set(matrix.columns)
+    bbc_only = matrix.loc[
+        matrix["evaluation_composition"].eq("BBC") & matrix["training_composition"].eq("BBC")
+    ].iloc[0]
+    assert bbc_only["status"] == "unavailable"
+    assert bbc_only["reason"] == "single_class_composition"
+
+
+def test_seen_during_training_requires_full_evaluation_composition_membership() -> None:
+    assert not seen_during_training(("Kaggle", "MAGE"), ("Kaggle", "Outfox"))
+    assert seen_during_training(("Kaggle", "MAGE"), ("Kaggle",))
 
 
 def test_matrix_configuration_has_required_models_datasets_and_regimes() -> None:
@@ -62,6 +87,21 @@ def test_parent_cohorts_are_numeric_capped_and_reproducible() -> None:
     }
     assert set(first["train"]["text_id"]).union(first["validation"]["text_id"], first["test"]["text_id"]) <= {1, 2, 3, 4, 5}
     assert set(first["train"]["split"]) == {"HG", "MG"}
+
+
+def test_parent_cohorts_filter_short_texts_before_applying_split_cap() -> None:
+    frame = pd.DataFrame([
+        {"split": split, "text_id": text_id, "label": int(split == "MG"), "token_count": token_count}
+        for split in ("HG", "MG")
+        for text_id, token_count in ((1, 99), (2, 100), (3, 101), (4, 102), (5, 103), (6, 104), (7, 105))
+    ])
+
+    cohorts = build_deterministic_parent_cohorts(
+        frame, id_column="text_id", max_per_split=5, min_text_tokens=100, seed=42
+    )
+
+    selected = pd.concat(cohorts.values(), ignore_index=True)
+    assert set(selected["text_id"]) == {2, 3, 4, 5, 6}
 
 
 def test_parent_cohorts_support_bbc_style_human_only_sources() -> None:
