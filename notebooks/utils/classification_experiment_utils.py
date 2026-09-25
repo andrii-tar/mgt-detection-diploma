@@ -348,8 +348,9 @@ def successful_result_keys(
     table = read_existing_result_table(path)
     if table.empty or any(column not in table.columns for column in columns):
         return set()
-    if "status" in table.columns:
-        table = table.loc[table["status"].astype(str).eq("available")]
+    status_column = "status" if "status" in table.columns else "availability_status"
+    if status_column in table.columns:
+        table = table.loc[table[status_column].astype(str).eq("available")]
     if stage is not None and "stage" in table.columns:
         table = table.loc[table["stage"].astype(str).eq(stage)]
     keys: set[tuple[str, ...]] = set()

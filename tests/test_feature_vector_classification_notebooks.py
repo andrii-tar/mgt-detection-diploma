@@ -451,3 +451,44 @@ def test_evaluate_notebook_records_expected_failures_and_reraises_unexpected_err
     assert "raise" in source
     for forbidden in ("fit_feature_vector_model(", "save_model_artifact(", "process_pipeline", "token_similarity_stage2"):
         assert forbidden not in source
+
+
+def test_bounded_prefix_evaluation_notebook_contract() -> None:
+    notebook = _notebook("report/evaluate_bounded_prefix_classifiers.ipynb")
+    source = _source("report/evaluate_bounded_prefix_classifiers.ipynb")
+
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            assert cell["execution_count"] is None
+            assert cell["outputs"] == []
+            tree = ast.parse("".join(cell["source"]))
+            assert not any(
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                for node in ast.walk(tree)
+            )
+    for fragment in (
+        'RUN_ID = "bounded-prefix-classifier-evaluation-window32-2026-09-24"',
+        'SOURCE_RUN_ID = "feature-vector-classification-2026-09-21-logreg-random-forest"',
+        "TOKEN_BOUNDS =",
+        "MIN_MACRO_F1 =",
+        "MIN_BALANCED_ACCURACY =",
+        "MIN_CLASS_SUPPORT =",
+        'MODEL_FAMILIES = ("logistic_regression", "random_forest")',
+        "ensure_bounded_prefix_result_exports(",
+        "iter_bounded_prefix_feature_batches(",
+        "collect_source_parent_identities(",
+        "prefix_window_label(",
+        'progress_description=f"Collecting parents:',
+        'progress_description=f"Scoring prefix:',
+        "bounded_prefix_prediction_key(",
+        "prediction_artifact_is_complete(",
+        "aggregate_prediction_artifact(",
+        'read(columns=["split", "text_id"])',
+        '.drop_duplicates(["split", "text_id"])',
+        "original_token_count",
+        "evaluated_token_count",
+        "No qualifying length",
+    ):
+        assert fragment in source
+    for forbidden in ("fit_feature_vector_model(", "save_model_artifact(", "process_pipeline", "token_similarity_stage2"):
+        assert forbidden not in source

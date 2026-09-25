@@ -10,6 +10,7 @@ from matplotlib.colors import Normalize
 from matplotlib.patches import FancyArrowPatch
 import pandas as pd
 import seaborn as sns
+from tqdm.auto import tqdm
 
 
 _RESULT_TABLES = (
@@ -105,6 +106,29 @@ def load_prediction_artifact(path: Path | str) -> pd.DataFrame:
     if not data_path.is_file() or not metadata_path.is_file():
         raise ValueError(f"incomplete prediction artifact: {root}")
     return pd.read_parquet(data_path)
+
+
+def load_prediction_artifacts(
+    data_root: Path | str, *, run_id: str, progress_description: str | None = None,
+) -> pd.DataFrame:
+    """Load all complete row-level prediction artifacts for an evaluation run."""
+    root = _result_root(data_root, run_id) / "predictions"
+    if not root.is_dir():
+        return pd.DataFrame()
+    frames = []
+    data_paths = sorted(root.glob("**/data.parquet"))
+    paths = tqdm(data_paths, desc=progress_description, unit="artifact") if progress_description else data_paths
+    for data_path in paths:
+        artifact = data_path.parent
+        if not (artifact / "metadata.json").is_file():
+            continue
+        try:
+            frame = load_prediction_artifact(artifact)
+        except (OSError, ValueError):
+            continue
+        if not frame.empty:
+            frames.append(frame)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
 def _read_rows(path: Path) -> list[list[str]]:

@@ -15,6 +15,7 @@ from notebooks.utils.classification_results_analysis_utils import (
     configuration_ranking,
     document_metrics,
     load_classification_run,
+    load_prediction_artifacts,
     load_prediction_artifact,
     mixed_bbc_comparison,
     plot_aggregate_bars,
@@ -47,6 +48,23 @@ def test_load_prediction_artifact_reads_partitioned_prediction_parquet(tmp_path:
     pd.DataFrame({"label": [0, 1], "mg_score": [0.1, 0.9]}).to_parquet(artifact / "data.parquet", index=False)
 
     assert load_prediction_artifact(artifact)["mg_score"].tolist() == [0.1, 0.9]
+
+
+def test_load_prediction_artifacts_discovers_nested_run_predictions(tmp_path: Path) -> None:
+    root = _run_root(tmp_path)
+    artifact = root / "predictions" / "model" / "Mixed" / "source" / "test"
+    artifact.mkdir(parents=True)
+    (artifact / "metadata.json").write_text('{"row_count": 2}', encoding="utf-8")
+    pd.DataFrame({"label": [0, 1], "mg_score": [0.1, 0.9]}).to_parquet(
+        artifact / "data.parquet", index=False
+    )
+
+    predictions = load_prediction_artifacts(tmp_path, run_id="run-1")
+
+    assert predictions[["label", "mg_score"]].to_dict("records") == [
+        {"label": 0, "mg_score": 0.1},
+        {"label": 1, "mg_score": 0.9},
+    ]
 
 
 def test_load_classification_run_filters_headered_rows_and_records_provenance(tmp_path: Path) -> None:

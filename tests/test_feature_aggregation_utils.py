@@ -12,6 +12,7 @@ from notebooks.utils import feature_aggregation_utils
 from notebooks.utils.feature_aggregation_utils import (
     CANONICAL_FEATURE_COLUMNS,
     FeatureSet,
+    build_feature_row,
     canonical_partition_path,
     ensure_prepared_partition,
     ensure_canonical_partition,
@@ -198,6 +199,31 @@ def test_preparation_computes_d_score_over_each_requested_token_window(tmp_path:
     assert whole[["start_token", "stop_token", "window_configuration"]].to_dict("records") == [
         {"start_token": 0, "stop_token": 4, "window_configuration": "whole_text"},
     ]
+
+
+def test_shared_feature_row_matches_prepared_token_window(tmp_path: Path) -> None:
+    _write_processed_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=4)
+    _write_similarity_text(tmp_path, dataset="source", scorer="scorer", split="HG", token_count=4)
+    source = pd.read_parquet(tmp_path / "source__scorer" / "HG" / "data" / "part-0.parquet").iloc[0].to_dict()
+    similarity = pd.read_parquet(
+        tmp_path / "source__scorer" / "HG" / "token_similarities" / "part-0.parquet"
+    ).iloc[0].to_dict()
+
+    direct = build_feature_row(
+        source, similarity, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=MIXED_FEATURE_SET, start_token=0, stop_token=2, window_configuration="2",
+    )
+    prepared = prepare_feature_partition(
+        tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=MIXED_FEATURE_SET, window_configuration=2, stride=2,
+    )
+
+    assert direct["start_token"] == prepared.loc[0, "start_token"] == 0
+    assert direct["stop_token"] == prepared.loc[0, "stop_token"] == 2
+    for column in ("scorer_llm", "dataset", "split", "text_id", "label", "window_configuration"):
+        assert direct[column] == prepared.loc[0, column]
+    for column in MIXED_FEATURE_SET.source_columns:
+        assert direct[column] == pytest.approx(prepared.loc[0, column], nan_ok=True)
 
 
 def test_preparation_computes_local_evidence_summary_features(tmp_path: Path) -> None:

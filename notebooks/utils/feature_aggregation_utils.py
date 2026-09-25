@@ -157,13 +157,53 @@ def _feature_columns(feature_set: FeatureSet) -> tuple[tuple[str, ...], dict[str
     return scalar_columns, local_columns
 
 
+def build_feature_row(
+    source: Mapping[str, object], similarity_source: Mapping[str, object] | None, *,
+    scorer_llm: str, dataset: str, split: str, feature_set: FeatureSet,
+    start_token: int, stop_token: int, window_configuration: str,
+) -> dict[str, object]:
+    """Build one feature row from an inclusive-start, exclusive-stop token slice."""
+    scalar_columns, local_columns = _feature_columns(feature_set)
+    tokens = [] if source.get("tokens") is None else list(source["tokens"])
+    if start_token < 0 or stop_token < start_token or stop_token > len(tokens):
+        raise ValueError("token slice is outside the scored-token range")
+    summary = (
+        validated_text_summary(source, similarity_source, top_k=20)[0]
+        if tokens and similarity_source is not None else None
+    )
+    token_slice = tokens[start_token:stop_token]
+    metrics = (
+        {column: float("nan") for column in feature_set.source_columns}
+        if not token_slice else compute_logprob_metrics({**source, "tokens": token_slice})
+    )
+    local_values = (
+        {
+            column: _pool_feature(summary[metric][start_token:stop_token])[statistic]
+            for column, (metric, statistic) in local_columns.items()
+        }
+        if summary is not None else {column: float("nan") for column in local_columns}
+    )
+    return {
+        "scorer_llm": scorer_llm,
+        "dataset": dataset,
+        "split": split,
+        "text_id": int(source["id"]),
+        "label": source.get("label", _expected_label(split)),
+        "start_token": start_token,
+        "stop_token": stop_token,
+        "window_configuration": window_configuration,
+        **{column: METRIC_REGISTRY[column].compute(metrics) for column in scalar_columns},
+        **local_values,
+    }
+
+
 def prepare_feature_partition(
     processed_root: Path | str, *, scorer_llm: str, dataset: str, split: str,
     feature_set: FeatureSet, window_configuration: WindowConfiguration, stride: int,
 ) -> pd.DataFrame:
     configuration = _window_configuration(window_configuration)
     _validate_stride(stride)
-    scalar_columns, local_columns = _feature_columns(feature_set)
+    _, local_columns = _feature_columns(feature_set)
     rows: list[dict[str, object]] = []
     seen_text_ids: set[int] = set()
     if local_columns:
@@ -184,10 +224,6 @@ def prepare_feature_partition(
         seen_text_ids.add(text_id)
         raw_tokens = source.get("tokens")
         tokens = [] if raw_tokens is None else list(raw_tokens)
-        summary = (
-            validated_text_summary(source, similarity_source, top_k=20)[0]
-            if tokens and similarity_source is not None else None
-        )
         if configuration == "whole_text":
             starts = [0]
             length = len(tokens)
@@ -196,27 +232,11 @@ def prepare_feature_partition(
             starts = _window_starts(len(tokens), length, stride) if tokens else []
         for start in starts:
             stop = len(tokens) if configuration == "whole_text" else start + length
-            metrics = ({column: float("nan") for column in feature_set.source_columns}
-                       if not tokens[start:stop]
-                       else compute_logprob_metrics({**source, "tokens": tokens[start:stop]}))
-            local_values = (
-                {column: _pool_feature(summary[metric][start:stop])[statistic]
-                 for column, (metric, statistic) in local_columns.items()}
-                if summary is not None else {column: float("nan") for column in local_columns}
-            )
-            label = source.get("label", _expected_label(split))
-            rows.append({
-                "scorer_llm": scorer_llm,
-                "dataset": dataset,
-                "split": split,
-                "text_id": text_id,
-                "label": label,
-                "start_token": start,
-                "stop_token": stop,
-                "window_configuration": configuration,
-                **{column: METRIC_REGISTRY[column].compute(metrics) for column in scalar_columns},
-                **local_values,
-            })
+            rows.append(build_feature_row(
+                source, similarity_source, scorer_llm=scorer_llm, dataset=dataset, split=split,
+                feature_set=feature_set, start_token=start, stop_token=stop,
+                window_configuration=configuration,
+            ))
     frame = pd.DataFrame(rows)
     if frame.empty:
         raise ValueError("prepared feature partition is empty")
