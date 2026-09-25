@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 
@@ -39,11 +40,15 @@ def iter_prepared_batches(
     columns = [
         "split", "text_id", "label", "start_token", "stop_token", "window_configuration", *feature_columns,
     ]
+    if not selected_ids:
+        return
+    text_id_type = pq.ParquetFile(data_path).schema_arrow.field("text_id").type
+    selected_values = pa.array(list(selected_ids), type=text_id_type)
     for record_batch in pq.ParquetFile(data_path).iter_batches(batch_size=batch_size, columns=columns):
-        frame = record_batch.to_pandas()
-        selected = frame.loc[frame["text_id"].isin(selected_ids)].copy()
-        if not selected.empty:
-            yield selected
+        mask = pc.is_in(record_batch.column("text_id"), value_set=selected_values)
+        selected_batch = record_batch.filter(mask)
+        if selected_batch.num_rows:
+            yield selected_batch.to_pandas()
 
 
 def prediction_artifact_path(results_root: Path | str, evaluation_key: Mapping[str, object]) -> Path:

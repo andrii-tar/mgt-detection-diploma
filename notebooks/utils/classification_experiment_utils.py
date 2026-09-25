@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Mapping, NamedTuple, Sequence
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 from notebooks.utils.classification_utils import evaluate_scores
 from notebooks.utils.feature_aggregation_utils import (
@@ -39,6 +40,67 @@ TRAINING_REGIMES = {
     "Mixed+BBC": ("Kaggle", "MAGE", "Outfox", "BBC"),
 }
 EVALUATION_REGIMES = {**TRAINING_REGIMES, "BBC": ("BBC",)}
+
+
+def load_evaluation_cohorts(
+    cache: dict,
+    *,
+    data_root: Path,
+    scorer_llm: str,
+    feature_set_name: str,
+    feature_columns: Sequence[str],
+    evaluation_composition: Sequence[str],
+    evaluation_window: WindowConfiguration,
+    batch_size: int,
+    max_per_split: int,
+    mixed_max_per_split: int,
+    cohort_seed: int,
+    min_text_tokens: int,
+) -> dict[str, set[tuple[str, str, object]]]:
+    """Load and cache parent cohorts shared by compatible model evaluations."""
+    cache_key = (
+        scorer_llm, feature_set_name, tuple(feature_columns), tuple(evaluation_composition), str(evaluation_window),
+        cohort_seed, min_text_tokens,
+    )
+    if cache_key in cache:
+        return cache[cache_key]
+
+    parent_rows = []
+    for source_name in evaluation_composition:
+        dataset = DATASETS[source_name]
+        for split in SOURCE_SPLITS[source_name]:
+            path = prepared_partition_path(
+                data_root, scorer_llm=scorer_llm, dataset=dataset, split=split,
+                feature_set=feature_set_name, window_configuration=evaluation_window,
+            )
+            retained_batches = []
+            for record_batch in pq.ParquetFile(path / "data.parquet").iter_batches(
+                batch_size=batch_size, columns=["split", "text_id", "label", "stop_token"],
+            ):
+                identities = record_batch.to_pandas().assign(dataset=dataset)
+                identities["numeric_text_id"] = pd.to_numeric(identities["text_id"], errors="raise")
+                retained_batches.append(identities)
+            retained = pd.concat(retained_batches, ignore_index=True)
+            retained["token_count"] = retained.groupby(["dataset", "split", "text_id"])["stop_token"].transform("max")
+            parent_rows.append(
+                retained.sort_values("numeric_text_id")
+                .drop_duplicates(["dataset", "split", "text_id"], keep="first")
+                .drop(columns="numeric_text_id")
+            )
+    parent_frame = pd.concat(parent_rows, ignore_index=True)
+    cohorts = (
+        build_pooled_feature_parent_cohorts(
+            parent_frame, seed=cohort_seed, max_per_split=mixed_max_per_split,
+            min_text_tokens=min_text_tokens,
+        )
+        if len(evaluation_composition) > 1
+        else build_feature_parent_cohorts(
+            parent_frame, seed=cohort_seed, max_per_split=max_per_split,
+            min_text_tokens=min_text_tokens,
+        )
+    )
+    cache[cache_key] = cohorts
+    return cohorts
 
 
 class ExperimentResultKey(NamedTuple):
