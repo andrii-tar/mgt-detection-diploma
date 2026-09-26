@@ -50,6 +50,7 @@ def test_matrix_configuration_has_required_models_datasets_and_regimes() -> None
         "gemma_3_270m_it",
         "littlelamb",
         "smollm2_360m",
+        "smollm2_1_7b",
     )
     assert DATASETS == {
         "Kaggle": "kaggle_train",

@@ -13,11 +13,13 @@ TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 MINISTRAL_Q4_FILES = {
     "unsloth/Ministral-3-3B-Instruct-2512-GGUF": "Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
     "unsloth/Ministral-3-3B-Reasoning-2512-GGUF": "Ministral-3-3B-Reasoning-2512-Q4_K_M.gguf",
+    "lmstudio-community/SmolLM2-1.7B-Instruct-GGUF": "SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
 }
 MINISTRAL_TOKENIZER_IDS = {
     model_id: model_id.replace("unsloth/", "mistralai/").replace("-GGUF", "")
     for model_id in MINISTRAL_Q4_FILES
 }
+MINISTRAL_TOKENIZER_IDS["lmstudio-community/SmolLM2-1.7B-Instruct-GGUF"] = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
 
 
 def _decode_token(tokenizer: Any, token_id: int) -> str:

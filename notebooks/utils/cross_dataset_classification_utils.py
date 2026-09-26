@@ -22,6 +22,7 @@ SCORER_LLMS = (
     "gemma_3_270m_it",
     "littlelamb",
     "smollm2_360m",
+    "smollm2_1_7b",
 )
 DATASETS = {
     "Kaggle": "kaggle_train",

@@ -21,6 +21,7 @@ MODEL_IDS = {
     "ministral_3_3b": "unsloth/Ministral-3-3B-Instruct-2512-GGUF",
     "ministral_3_3b_reasoning": "unsloth/Ministral-3-3B-Reasoning-2512-GGUF",
     "smollm2_360m": "HuggingFaceTB/SmolLM2-360M-Instruct",
+    "smollm2_1_7b": "lmstudio-community/SmolLM2-1.7B-Instruct-GGUF"
 }
 
 def build_datasets(data_root: Path) -> dict[str, dict[str, object]]:
