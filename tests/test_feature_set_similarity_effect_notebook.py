@@ -41,3 +41,12 @@ def test_feature_set_similarity_effect_notebook_declares_both_hypothesis_outputs
         "delta_by_model_size.png",
     ):
         assert required in source
+
+
+def test_notebook_iterates_training_regimes_and_matches_gpt_who_contexts() -> None:
+    source = _source()
+
+    assert "training_regimes = sorted(" in source
+    assert "for training_regime in training_regimes" in source
+    assert "training_regime_output_root" in source
+    assert "gpt_who_experiment_for_training_regime" in source

@@ -8,6 +8,7 @@ from notebooks.utils.feature_set_similarity_effect_utils import (
     DEFAULT_MODEL_SIZES_BILLIONS,
     aggregate_feature_set_deltas,
     attach_model_sizes,
+    gpt_who_experiment_for_training_regime,
     matched_feature_set_deltas,
 )
 
@@ -46,6 +47,12 @@ def test_aggregate_and_model_size_metadata_keep_unknown_models() -> None:
 
 def test_default_model_sizes_include_littlelamb() -> None:
     assert DEFAULT_MODEL_SIZES_BILLIONS["littlelamb"] == pytest.approx(0.3)
+
+
+def test_gpt_who_context_mapping_only_matches_mixed_regimes() -> None:
+    assert gpt_who_experiment_for_training_regime("Kaggle") is None
+    assert gpt_who_experiment_for_training_regime("Kaggle+MAGE+Outfox") == "smollm_mixed"
+    assert gpt_who_experiment_for_training_regime("Kaggle+MAGE+Outfox+BBC") == "smollm_mixed_bbc"
 
 
 def test_feature_set_comparison_uses_one_color_per_feature_set() -> None:

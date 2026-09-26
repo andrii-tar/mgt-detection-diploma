@@ -36,6 +36,11 @@ DEFAULT_MODEL_SIZES_BILLIONS = {
     "smollm2_1_7b": 1.7,
 }
 
+GPT_WHO_EXPERIMENT_BY_TRAINING_REGIME = {
+    "Kaggle+MAGE+Outfox": "smollm_mixed",
+    "Kaggle+MAGE+Outfox+BBC": "smollm_mixed_bbc",
+}
+
 
 def _require_columns(frame: pd.DataFrame, required: set[str]) -> None:
     missing = sorted(required.difference(frame.columns))
@@ -94,6 +99,39 @@ def aggregate_feature_set_deltas(deltas: pd.DataFrame) -> pd.DataFrame:
         .agg(mean_delta="mean", std_delta="std", match_count="count")
         .sort_values(["feature_set", "mean_delta", "scorer_llm"], ascending=[True, False, True], ignore_index=True)
     )
+
+
+def gpt_who_experiment_for_training_regime(training_regime: str) -> str | None:
+    return GPT_WHO_EXPERIMENT_BY_TRAINING_REGIME.get(training_regime)
+
+
+def append_external_feature_set_comparison(
+    metrics: pd.DataFrame,
+    external_metrics: pd.DataFrame,
+    *,
+    baseline_feature_set: str,
+    external_feature_set: str,
+    metric: str = "macro_f1",
+) -> pd.DataFrame:
+    """Represent an external scorer as a feature-set comparison per scorer LLM."""
+    _require_columns(metrics, {"scorer_llm", "feature_set", metric})
+    _require_columns(external_metrics, {"scorer_llm", metric})
+    baseline = (
+        metrics.loc[metrics["feature_set"].eq(baseline_feature_set)]
+        .groupby("scorer_llm", as_index=False)[metric]
+        .mean()
+        .rename(columns={metric: "baseline_score"})
+    )
+    external = (
+        external_metrics.groupby("scorer_llm", as_index=False)[metric]
+        .mean()
+        .rename(columns={metric: "comparison_score"})
+    )
+    result = baseline.merge(external, on="scorer_llm", how="inner")
+    result["feature_set"] = external_feature_set
+    result["model_family"] = external_feature_set
+    result["delta"] = result["comparison_score"] - result["baseline_score"]
+    return result
 
 
 def attach_model_sizes(
