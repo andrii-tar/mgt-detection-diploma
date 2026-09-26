@@ -33,11 +33,15 @@ def test_feature_set_similarity_effect_notebook_declares_both_hypothesis_outputs
         "COMPARISON_FEATURE_SETS",
         "matched_feature_set_deltas(",
         "plot_feature_set_comparison(",
+        "plot_classifier_feature_set_comparison(",
+        "plot_new_method_vs_gpt_who(",
         "plot_feature_set_delta_heatmap(",
         "plot_delta_by_model_size(",
         "matched_feature_set_deltas.csv",
         "feature_set_effect_summary.csv",
         "feature_set_comparison.png",
+        "classifier_feature_set_comparison.png",
+        "new_method_vs_gpt_who.png",
         "delta_by_model_size.png",
     ):
         assert required in source
