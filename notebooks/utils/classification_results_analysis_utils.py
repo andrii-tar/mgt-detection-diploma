@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
@@ -98,18 +98,21 @@ def _result_root(data_root: Path | str, run_id: str) -> Path:
     return root
 
 
-def load_prediction_artifact(path: Path | str) -> pd.DataFrame:
+def load_prediction_artifact(
+    path: Path | str, *, columns: Sequence[str] | None = None,
+) -> pd.DataFrame:
     """Load detailed prediction rows only when a caller explicitly requests them."""
     root = Path(path)
     data_path = root / "data.parquet"
     metadata_path = root / "metadata.json"
     if not data_path.is_file() or not metadata_path.is_file():
         raise ValueError(f"incomplete prediction artifact: {root}")
-    return pd.read_parquet(data_path)
+    return pd.read_parquet(data_path, columns=list(columns) if columns is not None else None)
 
 
 def load_prediction_artifacts(
     data_root: Path | str, *, run_id: str, progress_description: str | None = None,
+    columns: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """Load all complete row-level prediction artifacts for an evaluation run."""
     root = _result_root(data_root, run_id) / "predictions"
@@ -123,7 +126,7 @@ def load_prediction_artifacts(
         if not (artifact / "metadata.json").is_file():
             continue
         try:
-            frame = load_prediction_artifact(artifact)
+            frame = load_prediction_artifact(artifact, columns=columns)
         except (OSError, ValueError):
             continue
         if not frame.empty:
