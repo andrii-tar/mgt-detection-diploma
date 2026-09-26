@@ -65,6 +65,13 @@ FEATURE_SET_LABELS = {
 }
 
 
+def _ordered_scorer_llms(values: Sequence[str]) -> list[str]:
+    unique_values = list(dict.fromkeys(values))
+    known = [value for value in unique_values if value in DEFAULT_MODEL_SIZES_BILLIONS]
+    unknown = [value for value in unique_values if value not in DEFAULT_MODEL_SIZES_BILLIONS]
+    return sorted(known, key=DEFAULT_MODEL_SIZES_BILLIONS.get) + unknown
+
+
 def _require_columns(frame: pd.DataFrame, required: set[str]) -> None:
     missing = sorted(required.difference(frame.columns))
     if missing:
@@ -228,7 +235,7 @@ def plot_feature_set_lines(
     """Plot one model-family/feature-set line across scorer LLMs."""
     _require_columns(metrics, {"scorer_llm", "model_family", "feature_set", metric})
     figure, axis = plt.subplots(figsize=(10, 5), constrained_layout=True)
-    scorer_llms = list(pd.unique(metrics["scorer_llm"]))
+    scorer_llms = _ordered_scorer_llms(metrics["scorer_llm"])
     summary = (
         metrics.groupby(["scorer_llm", "model_family", "feature_set"], as_index=False)[metric]
         .mean()
@@ -289,7 +296,7 @@ def plot_classifier_feature_set_comparison(
         sharey=True, squeeze=False, constrained_layout=True,
     )
     axes = axes[0]
-    scorer_llms = list(pd.unique(classifier_metrics["scorer_llm"]))
+    scorer_llms = _ordered_scorer_llms(classifier_metrics["scorer_llm"])
     positions = {scorer_llm: index for index, scorer_llm in enumerate(scorer_llms)}
     feature_sets = list(pd.unique(classifier_metrics["feature_set"]))
     offsets = {
@@ -362,7 +369,7 @@ def plot_new_method_vs_gpt_who(
         axis.set_axis_off()
         return figure
 
-    scorer_llms = list(pd.unique(selected["scorer_llm"]))
+    scorer_llms = _ordered_scorer_llms(selected["scorer_llm"])
     positions = {scorer_llm: index for index, scorer_llm in enumerate(scorer_llms)}
     methods = [new_method_feature_set, "gpt_who"]
     offsets = {method: offset for method, offset in zip(methods, (-0.12, 0.12))}

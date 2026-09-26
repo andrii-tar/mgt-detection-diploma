@@ -50,6 +50,25 @@ def test_default_model_sizes_include_littlelamb() -> None:
     assert DEFAULT_MODEL_SIZES_BILLIONS["littlelamb"] == pytest.approx(0.3)
 
 
+def test_plot_scorer_llms_are_ordered_by_model_size() -> None:
+    from notebooks.utils.feature_set_similarity_effect_utils import plot_new_method_vs_gpt_who
+
+    metrics = pd.DataFrame([
+        {"scorer_llm": "gemma_3_1b_it", "feature_set": "simple_similarity", "macro_f1": .80},
+        {"scorer_llm": "littlelamb", "feature_set": "simple_similarity", "macro_f1": .75},
+        {"scorer_llm": "gemma_3_270m_it", "feature_set": "simple_similarity", "macro_f1": .70},
+        {"scorer_llm": "gemma_3_1b_it", "feature_set": "gpt_who", "macro_f1": .78},
+        {"scorer_llm": "littlelamb", "feature_set": "gpt_who", "macro_f1": .73},
+        {"scorer_llm": "gemma_3_270m_it", "feature_set": "gpt_who", "macro_f1": .68},
+    ])
+
+    figure = plot_new_method_vs_gpt_who(metrics, title="test")
+    assert [tick.get_text() for tick in figure.axes[0].get_xticklabels()] == [
+        "gemma_3_270m_it", "littlelamb", "gemma_3_1b_it",
+    ]
+    plt.close(figure)
+
+
 def test_gpt_who_context_mapping_only_matches_mixed_regimes() -> None:
     assert gpt_who_experiment_for_training_regime("Kaggle") is None
     assert gpt_who_experiment_for_training_regime("Kaggle+MAGE+Outfox") == "smollm_mixed"
