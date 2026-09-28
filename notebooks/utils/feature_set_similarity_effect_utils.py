@@ -60,7 +60,7 @@ FEATURE_SET_LABELS = {
     "scalar_compact": "simple features",
     "simple_similarity": "similarity",
     "scalar_all": "all scalar features",
-    "extended": "extended features",
+    "extended": "extended similarity",
     "gpt_who": "GPT-who",
 }
 
@@ -293,7 +293,7 @@ def plot_classifier_feature_set_comparison(
 
     figure, axes = plt.subplots(
         1, len(model_families), figsize=(6 * len(model_families), 5),
-        sharey=True, squeeze=False, constrained_layout=True,
+        sharey=True, squeeze=False,
     )
     axes = axes[0]
     scorer_llms = _ordered_scorer_llms(classifier_metrics["scorer_llm"])
@@ -344,10 +344,24 @@ def plot_classifier_feature_set_comparison(
         axis.set_title(model_family.replace("_", " ").title())
         axis.set_xticks(range(len(scorer_llms)), scorer_llms, rotation=30, ha="right")
         axis.set_xlabel("Scorer LLM")
-        axis.legend(title="Feature set")
         axis.grid(axis="y", alpha=0.25)
     axes[0].set_ylabel(f"Mean {metric}")
     figure.suptitle(title)
+    legend_items = {}
+    for axis in axes:
+        for handle, label in zip(*axis.get_legend_handles_labels()):
+            legend_items.setdefault(label, handle)
+    labels = list(legend_items)
+    handles = [legend_items[label] for label in labels]
+    figure.subplots_adjust(bottom=0.28)
+    figure.legend(
+        handles,
+        labels,
+        title="Feature set",
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.02),
+        ncol=min(3, len(labels)),
+    )
     return figure
 
 

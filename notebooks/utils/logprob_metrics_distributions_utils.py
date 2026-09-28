@@ -122,12 +122,17 @@ def load_logprob_rows(
     return list(iter_logprob_rows(processed_root, selected_datasets, selected_models, selected_parent_ids))
 
 
-def iter_logprob_rows(
+def iter_logprob_row_batches(
     processed_root: Path,
     selected_datasets: list[str] | None = None,
     selected_models: list[str] | None = None,
     selected_parent_ids: Mapping[str, set[int]] | None = None,
-) -> Iterator[dict]:
+    *,
+    batch_size: int = 256,
+) -> Iterator[list[dict]]:
+    if isinstance(batch_size, bool) or not isinstance(batch_size, Integral) or batch_size <= 0:
+        raise ValueError("batch_size must be a positive integer")
+
     for path in sorted(processed_root.glob("*/*/data/*.parquet")):
         experiment_name = path.parents[2].name
         split = path.parents[1].name
@@ -141,13 +146,36 @@ def iter_logprob_rows(
             continue
         if parent_ids is not None and not parent_ids:
             continue
-        read_kwargs = {} if parent_ids is None else {"filters": [("id", "in", sorted(parent_ids))]}
-        for row in pd.read_parquet(path, **read_kwargs).to_dict(orient="records"):
-            row["dataset"] = dataset
-            row["model"] = model
-            if row.get("split") is None or pd.isna(row.get("split")):
-                row["split"] = split
-            yield row
+
+        parquet_file = pq.ParquetFile(path)
+        for record_batch in parquet_file.iter_batches(batch_size=int(batch_size)):
+            frame = record_batch.to_pandas()
+            if parent_ids is not None and "id" in frame.columns:
+                frame = frame.loc[frame["id"].isin(parent_ids)]
+            if frame.empty:
+                continue
+            rows = frame.to_dict(orient="records")
+            for row in rows:
+                row["dataset"] = dataset
+                row["model"] = model
+                if row.get("split") is None or pd.isna(row.get("split")):
+                    row["split"] = split
+            yield rows
+
+
+def iter_logprob_rows(
+    processed_root: Path,
+    selected_datasets: list[str] | None = None,
+    selected_models: list[str] | None = None,
+    selected_parent_ids: Mapping[str, set[int]] | None = None,
+) -> Iterator[dict]:
+    for batch in iter_logprob_row_batches(
+        processed_root,
+        selected_datasets,
+        selected_models,
+        selected_parent_ids,
+    ):
+        yield from batch
 
 
 def default_length_metrics_path(processed_root: Path) -> Path:

@@ -80,6 +80,26 @@ def test_load_prediction_artifacts_discovers_nested_run_predictions(tmp_path: Pa
     ]
 
 
+def test_load_prediction_artifacts_applies_filter_before_reading(tmp_path: Path) -> None:
+    root = _run_root(tmp_path)
+    included = root / "predictions" / "included" / "Mixed" / "source" / "test"
+    excluded = root / "predictions" / "excluded" / "Mixed" / "source" / "test"
+    for artifact, score in ((included, 0.1), (excluded, 0.9)):
+        artifact.mkdir(parents=True)
+        (artifact / "metadata.json").write_text("{}", encoding="utf-8")
+        pd.DataFrame({"label": [0], "mg_score": [score]}).to_parquet(
+            artifact / "data.parquet", index=False
+        )
+
+    predictions = load_prediction_artifacts(
+        tmp_path,
+        run_id="run-1",
+        artifact_filter=lambda path: "included" in path.parts,
+    )
+
+    assert predictions["mg_score"].tolist() == [0.1]
+
+
 def test_load_classification_run_filters_headered_rows_and_records_provenance(tmp_path: Path) -> None:
     root = _run_root(tmp_path)
     pd.DataFrame([

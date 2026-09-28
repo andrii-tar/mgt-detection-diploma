@@ -191,6 +191,16 @@ def _gold_token_boundary(text: str, word_boundary: int, token_labels: Sequence[s
     raise ValueError("word boundary does not map to a decoded token")
 
 
+def gold_token_boundary(
+    text: str,
+    boundary_word_index: int,
+    token_labels: Sequence[str],
+) -> int:
+    """Return the decoded-token position for a SemEval word boundary."""
+
+    return _gold_token_boundary(text, int(boundary_word_index), token_labels)
+
+
 def add_gold_boundaries(
     predictions: pd.DataFrame,
     annotations: pd.DataFrame,

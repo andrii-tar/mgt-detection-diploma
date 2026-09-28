@@ -1,0 +1,5 @@
+Set-Location "D:\Projects\master_diploma\text-detection\.worktrees\gpt-who-baseline"
+
+$env:TEXT_DETECTION_DATA = "D:/Projects/master_diploma/text-detection-data"
+
+uv run jupyter lab notebooks/try_gpt_who_baseline.ipynb

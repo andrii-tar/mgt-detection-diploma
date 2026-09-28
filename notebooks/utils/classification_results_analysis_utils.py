@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
@@ -113,6 +113,7 @@ def load_prediction_artifact(
 def load_prediction_artifacts(
     data_root: Path | str, *, run_id: str, progress_description: str | None = None,
     columns: Sequence[str] | None = None,
+    artifact_filter: Callable[[Path], bool] | None = None,
 ) -> pd.DataFrame:
     """Load all complete row-level prediction artifacts for an evaluation run."""
     root = _result_root(data_root, run_id) / "predictions"
@@ -124,6 +125,8 @@ def load_prediction_artifacts(
     for data_path in paths:
         artifact = data_path.parent
         if not (artifact / "metadata.json").is_file():
+            continue
+        if artifact_filter is not None and not artifact_filter(artifact):
             continue
         try:
             frame = load_prediction_artifact(artifact, columns=columns)
