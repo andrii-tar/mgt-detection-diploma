@@ -173,13 +173,18 @@ def test_classifier_feature_set_plot_facets_model_families() -> None:
         {"scorer_llm": "small", "feature_set": "simple_similarity", "model_family": "logistic_regression", "macro_f1": .75},
         {"scorer_llm": "small", "feature_set": "scalar_compact", "model_family": "random_forest", "macro_f1": .62},
         {"scorer_llm": "small", "feature_set": "simple_similarity", "model_family": "random_forest", "macro_f1": .78},
+        {"scorer_llm": "small", "feature_set": "extended", "model_family": "random_forest", "macro_f1": .76},
         {"scorer_llm": "small", "feature_set": "gpt_who", "model_family": "gpt_who", "macro_f1": .70},
     ])
 
     figure = plot_classifier_feature_set_comparison(metrics, title="test")
 
     assert len(figure.axes) == 2
-    assert all("GPT-who" in [text.get_text() for text in axis.get_legend().get_texts()] for axis in figure.axes)
+    assert all(axis.get_legend() is None for axis in figure.axes)
+    assert len(figure.legends) == 1
+    legend_labels = [text.get_text() for text in figure.legends[0].get_texts()]
+    assert "GPT-who" in legend_labels
+    assert "extended similarity" in legend_labels
     gpt_who_collections = [
         collection
         for axis in figure.axes

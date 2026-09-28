@@ -19,6 +19,7 @@ from notebooks.utils.logprob_metrics_distributions_utils import (
     compute_length_metric_table,
     compute_prefix_metrics,
     default_length_metrics_path,
+    iter_logprob_row_batches,
     load_length_metric_table,
     load_logprob_rows,
     plot_length_metric_distributions,
@@ -166,6 +167,21 @@ def test_load_logprob_rows_adds_experiment_metadata(tmp_path):
     assert rows[0]["dataset"] == "demo"
     assert rows[0]["model"] == "model"
     assert rows[0]["split"] == "HG"
+
+
+def test_iter_logprob_row_batches_limits_rows_per_batch(tmp_path):
+    data_dir = tmp_path / "demo__model" / "HG" / "data"
+    data_dir.mkdir(parents=True)
+    pd.DataFrame([
+        {**_prefix_test_row(), "id": 1},
+        {**_prefix_test_row(), "id": 2},
+        {**_prefix_test_row(), "id": 3},
+    ]).to_parquet(data_dir / "part.parquet", index=False)
+
+    batches = list(iter_logprob_row_batches(tmp_path, batch_size=2))
+
+    assert [len(batch) for batch in batches] == [2, 1]
+    assert [row["id"] for batch in batches for row in batch] == [1, 2, 3]
 
 
 def test_load_logprob_rows_filters_requested_split_parent_ids(tmp_path: Path) -> None:

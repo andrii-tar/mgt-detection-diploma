@@ -7,11 +7,37 @@ from notebooks.utils.semeval_boundary_utils import (
     add_gold_boundaries,
     build_gold_mg_regions,
     evaluate_mg_regions,
+    gold_token_boundary,
     predict_boundary_positions,
     predict_mg_regions,
     summarize_boundary_predictions,
     summarize_mg_region_evaluations,
 )
+
+
+def test_gold_token_boundary_aligns_word_boundary() -> None:
+    boundary = gold_token_boundary(
+        "human source machine continuation",
+        2,
+        ["human", " source", " machine", " continuation"],
+    )
+
+    assert boundary == 2
+
+
+@pytest.mark.parametrize("boundary_word_index", [-1, 4])
+def test_gold_token_boundary_rejects_out_of_range_word_boundary(boundary_word_index: int) -> None:
+    with pytest.raises(ValueError, match="outside the text word range"):
+        gold_token_boundary(
+            "human source machine continuation",
+            boundary_word_index,
+            ["human", " source", " machine", " continuation"],
+        )
+
+
+def test_gold_token_boundary_rejects_unreconstructable_tokens() -> None:
+    with pytest.raises(ValueError, match="do not reconstruct"):
+        gold_token_boundary("human source machine", 1, ["unrelated"])
 
 
 def _scored_token_windows(scores: list[float]) -> pd.DataFrame:
