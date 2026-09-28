@@ -546,3 +546,44 @@ def test_bounded_prefix_evaluation_notebook_contract() -> None:
         assert fragment in source
     for forbidden in ("fit_feature_vector_model(", "save_model_artifact(", "process_pipeline", "token_similarity_stage2"):
         assert forbidden not in source
+
+
+def test_semeval_random_forest_visualization_notebook_contract() -> None:
+    notebook = _notebook("visualize_semeval_random_forest_token_profiles.ipynb")
+    source = _source("visualize_semeval_random_forest_token_profiles.ipynb")
+
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            assert cell["execution_count"] is None
+            assert cell["outputs"] == []
+            tree = ast.parse("".join(cell["source"]))
+            assert not any(
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                for node in ast.walk(tree)
+            )
+    for fragment in (
+        'SCORER_LLM = "gemma_3_270m_it"',
+        'MODEL_FAMILY = "random_forest"',
+        'FEATURE_SET = "simple_similarity"',
+        'TRAINING_REGIME = "Mixed"',
+        'WINDOW_LENGTHS = (32, 64, 128)',
+        "TEXT_COUNT = 20",
+        "SELECTION_SEED = 42",
+        "load_visualization_models(",
+        "resolve_prepared_inputs(",
+        "select_eligible_text_ids(",
+        "score_visualization_windows(",
+        "build_gold_boundaries(",
+        "write_visualization_export(",
+        "plot_window_level_scores(",
+        "plot_reconstructed_token_scores(",
+    ):
+        assert fragment in source
+    for forbidden in (
+        "ensure_prepared_partition(",
+        "fit_feature_vector_model(",
+        "save_model_artifact(",
+        "process_pipeline",
+        "token_similarity_stage2",
+    ):
+        assert forbidden not in source
