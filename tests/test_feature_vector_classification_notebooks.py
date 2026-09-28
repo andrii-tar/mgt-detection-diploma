@@ -51,8 +51,8 @@ def test_generalization_notebook_uses_matrix_facets_instead_of_flat_plots() -> N
 
 
 def test_feature_importance_notebook_declares_isolated_permutation_experiment() -> None:
-    notebook = _notebook("explore_extended_feature_importance.ipynb")
-    source = _source("explore_extended_feature_importance.ipynb")
+    notebook = _notebook("explore_extended_feature_importance_limited.ipynb")
+    source = _source("explore_extended_feature_importance_limited.ipynb")
 
     for cell in notebook["cells"]:
         if cell["cell_type"] == "code":
@@ -75,7 +75,7 @@ def test_feature_importance_notebook_declares_isolated_permutation_experiment() 
 
 
 def test_feature_importance_notebook_requires_complete_validation_binary_artifacts() -> None:
-    source = _source("explore_extended_feature_importance.ipynb")
+    source = _source("explore_extended_feature_importance_limited.ipynb")
 
     assert 'partition="validation"' in source
     assert 'binary_candidates["dataset_count"].eq(3)' in source
@@ -84,7 +84,7 @@ def test_feature_importance_notebook_requires_complete_validation_binary_artifac
 
 
 def test_feature_importance_notebook_reports_permutation_progress() -> None:
-    source = _source("explore_extended_feature_importance.ipynb")
+    source = _source("explore_extended_feature_importance_limited.ipynb")
 
     assert 'desc=f"Binary {dataset} permutations"' in source
     assert 'desc=f"SemEval {training_window} permutations"' in source
