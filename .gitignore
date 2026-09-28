@@ -16,3 +16,4 @@ uv.lock
 */.superpowers/sdd/*
 docs/superpowers/
 *ipynb_checkpoints*
+*.mmd
