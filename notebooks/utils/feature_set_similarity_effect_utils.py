@@ -421,11 +421,11 @@ def _add_presentation_legend(figure: plt.Figure, axes: Sequence[plt.Axes]) -> No
         labels,
         title="Feature set",
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.98),
+        bbox_to_anchor=(0.5, 0.91),
         ncol=min(5, len(labels)),
         frameon=False,
     )
-    figure.tight_layout(rect=(0, 0, 1, 0.88))
+    figure.tight_layout(rect=(0, 0, 1, 0.82))
 
 
 def plot_classifier_feature_set_bars_horizontal(
