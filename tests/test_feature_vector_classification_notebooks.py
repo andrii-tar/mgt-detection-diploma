@@ -4,6 +4,8 @@ import ast
 import json
 from pathlib import Path
 
+from notebooks.utils.semeval_random_forest_token_visualization_utils import MODEL_FAMILY, WINDOW_LENGTHS
+
 
 NOTEBOOKS_DIRECTORY = Path(__file__).parents[1] / "notebooks"
 NOTEBOOK_PATH = NOTEBOOKS_DIRECTORY / "prepare_and_train_classifiers.ipynb"
@@ -33,6 +35,63 @@ def test_generalization_comparison_notebook_declares_parameters_and_plots() -> N
         "insufficient_binary_holdout",
     ):
         assert fragment in source
+
+
+def test_mg_score_length_notebook_declares_bounded_prefix_visualization() -> None:
+    source = _source("mg_score_length_distributions.ipynb")
+
+    for fragment in (
+        'BOUNDED_PREFIX_RUN_ID = "bounded-prefix-classifier-evaluation-gemma270m-rf-window32-2026-09-29"',
+        'BOUNDED_PREFIX_MODEL_FAMILY = "random_forest"',
+        'BOUNDED_PREFIX_SCORER_LLM = "gemma_3_270m_it"',
+        'BOUNDED_PREFIX_FEATURE_SET = "simple_similarity"',
+        'BOUNDED_PREFIX_TRAINING_REGIME = "Kaggle+MAGE+Outfox+BBC"',
+        'BOUNDED_PREFIX_EVALUATION_REGIME = "Mixed"',
+        'FEATURE_SETS = ("simple_similarity", "scalar_all")',
+        "load_bounded_prefix_result_frames(",
+        "plot_bounded_prefix_evaluation(",
+            "dataset_balanced_bounded_prefix_feature_set_metrics(",
+        "plot_bounded_prefix_macro_f1_comparison(",
+    ):
+        assert fragment in source
+
+
+def test_local_evidence_token_profile_notebook_is_output_free_and_declares_comparison() -> None:
+    notebook = _notebook("compare_local_evidence_token_profiles.ipynb")
+    source = _source("compare_local_evidence_token_profiles.ipynb")
+
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            assert cell["execution_count"] is None
+            assert cell["outputs"] == []
+    assert MODEL_FAMILY == "random_forest"
+    assert WINDOW_LENGTHS == (32, 64, 128)
+    for fragment in (
+        'SCORER_MODEL = "gemma_3_270m_it"',
+        'CLASSIFIERS = ("logistic_regression",)',
+        "TRAINING_WINDOWS = (32, 64)",
+        "select_configured_comparison_texts(",
+        "plot_comparison_token_profiles(",
+        '"Kaggle HG"',
+        '"Kaggle MG"',
+        '"BBC HG"',
+        "## SemEval MG random-forest token profiles",
+        "SELECTED_TEXT_IDS = {",
+        "available_groups",
+        'SEMEVAL_ARTIFACT_RUN_ID = "feature-vector-classification-2026-09-21-logreg-random-forest"',
+        'SEMEVAL_TEXT_COUNT = 20',
+        'SEMEVAL_SELECTION_SEED = 42',
+        "SEMEVAL_CONFIGURATIONS = tuple((MODEL_FAMILY, window_length) for window_length in WINDOW_LENGTHS)",
+        "def plot_semeval_profiles() -> None:",
+        "load_visualization_models(DATA_ROOT, run_id=SEMEVAL_ARTIFACT_RUN_ID)",
+        "select_eligible_text_ids(",
+        "stage1_ids=scan_stage1_ids(",
+        "annotation_ids=scan_annotation_ids(SEMEVAL_ANNOTATION_PATH)",
+        "score_visualization_windows(models, windows_by_length)",
+        "plot_semeval_profiles()",
+    ):
+        assert fragment in source
+    assert '"SemEval MG": {"dataset"' not in source
 
 
 def test_generalization_notebook_uses_matrix_facets_instead_of_flat_plots() -> None:
@@ -511,6 +570,10 @@ def test_bounded_prefix_evaluation_notebook_contract() -> None:
     notebook = _notebook("report/evaluate_bounded_prefix_classifiers.ipynb")
     source = _source("report/evaluate_bounded_prefix_classifiers.ipynb")
 
+    assert 'EVALUATION_REGIMES = ("Mixed",)' in source
+    assert "EVALUATION_REGIMES as EVALUATION_REGIME_SOURCES" in source
+    assert "for evaluation_regime in tqdm(EVALUATION_REGIMES" in source
+    assert "source_names = EVALUATION_REGIME_SOURCES[evaluation_regime]" in source
     for cell in notebook["cells"]:
         if cell["cell_type"] == "code":
             assert cell["execution_count"] is None
@@ -521,13 +584,15 @@ def test_bounded_prefix_evaluation_notebook_contract() -> None:
                 for node in ast.walk(tree)
             )
     for fragment in (
-        'RUN_ID = "bounded-prefix-classifier-evaluation-window32-2026-09-25"',
+        'RUN_ID = "bounded-prefix-classifier-evaluation-gemma270m-rf-window32-2026-09-29"',
         'SOURCE_RUN_ID = "feature-vector-classification-2026-09-25-logreg-random-forest-max600-min100"',
         "TOKEN_BOUNDS =",
         "MIN_MACRO_F1 =",
         "MIN_BALANCED_ACCURACY =",
         "MIN_CLASS_SUPPORT =",
-        'MODEL_FAMILIES = ("logistic_regression", "random_forest")',
+        'MODEL_FAMILIES = ("random_forest",)',
+        'SCORER_LLMS = ("gemma_3_270m_it",)',
+        'TRAINING_WINDOW = "32"',
         "ensure_bounded_prefix_result_exports(",
         "iter_bounded_prefix_feature_batches(",
         "collect_source_parent_identities(",

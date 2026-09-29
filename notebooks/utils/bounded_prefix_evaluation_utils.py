@@ -212,10 +212,22 @@ def collect_source_parent_identities(
         if text_id in seen_ids:
             raise ValueError(f"duplicate source text identity: {split}/{text_id}")
         seen_ids.add(text_id)
-        rows.append({"dataset": dataset, "split": split, "text_id": text_id, "label": _source_label(source, split), "token_count": len(source["tokens"])})
+        if min_text_tokens is not None and len(source["tokens"]) < min_text_tokens:
+            continue
+        candidate = {
+            "dataset": dataset,
+            "split": split,
+            "text_id": text_id,
+            "label": _source_label(source, split),
+            "token_count": len(source["tokens"]),
+        }
+        if len(rows) < max_per_split:
+            rows.append(candidate)
+        else:
+            largest_index = max(range(len(rows)), key=lambda index: rows[index]["text_id"])
+            if text_id < rows[largest_index]["text_id"]:
+                rows[largest_index] = candidate
     parents = pd.DataFrame(rows, columns=["dataset", "split", "text_id", "label", "token_count"])
-    if min_text_tokens is not None:
-        parents = parents.loc[parents["token_count"].ge(min_text_tokens)]
     return parents.sort_values("text_id").head(int(max_per_split)).reset_index(drop=True)
 
 

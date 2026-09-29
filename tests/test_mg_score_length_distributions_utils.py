@@ -7,6 +7,12 @@ import matplotlib.pyplot as plt
 
 from notebooks.utils.mg_score_length_distributions_utils import (
     filter_mg_score_predictions,
+    load_bounded_prefix_result_frames,
+    plot_bounded_prefix_macro_f1_comparison,
+    plot_bounded_prefix_evaluation,
+    pooled_bounded_prefix_metrics,
+    pooled_bounded_prefix_feature_set_metrics,
+    dataset_balanced_bounded_prefix_feature_set_metrics,
     plot_mg_score_by_length,
 )
 
@@ -118,3 +124,146 @@ def test_plot_mg_score_by_length_can_draw_into_existing_axes():
 
     assert result is figure
     assert len(figure.axes) == 2
+
+
+def test_load_bounded_prefix_result_frames_filters_the_exact_configuration(tmp_path):
+    result_root = tmp_path / "experiment-results" / "classification" / "evaluations" / "run"
+    result_root.mkdir(parents=True)
+    dimensions = {
+        "run_id": "run",
+        "artifact_id": "artifact",
+        "model_family": "random_forest",
+        "scorer_llm": "gemma_3_270m_it",
+        "feature_set": "simple_similarity",
+        "training_regime": "Kaggle+MAGE+Outfox+BBC",
+        "training_window": 32,
+        "evaluation_regime": "Mixed",
+        "partition": "validation",
+        "min_tokens": 100,
+        "max_tokens": 300,
+    }
+    pd.DataFrame([
+        dimensions | {"dataset": "Kaggle", "tn": 8, "fp": 2, "fn": 1, "tp": 9},
+        dimensions | {"dataset": "MAGE", "feature_set": "scalar_all", "tn": 8, "fp": 2, "fn": 1, "tp": 9},
+    ]).to_csv(result_root / "prefix_evaluation_metrics.csv", index=False)
+    pd.DataFrame([
+        dimensions | {"dataset": "Kaggle", "class": "HG", "scored_row_count": 10},
+        dimensions | {"dataset": "MAGE", "class": "MG", "scored_row_count": 10},
+        dimensions | {"dataset": "Outfox", "partition": "test", "class": "HG", "scored_row_count": 10},
+    ]).to_csv(result_root / "prefix_evaluation_coverage.csv", index=False)
+
+    metrics, coverage = load_bounded_prefix_result_frames(
+        tmp_path,
+        run_id="run",
+        model_family="random_forest",
+        scorer_llm="gemma_3_270m_it",
+        feature_set="simple_similarity",
+        training_regime="Kaggle+MAGE+Outfox+BBC",
+        training_window=32,
+        evaluation_regime="Mixed",
+        partition="validation",
+    )
+
+    assert metrics["dataset"].tolist() == ["Kaggle"]
+    assert coverage["dataset"].tolist() == ["Kaggle", "MAGE"]
+
+
+def test_pooled_bounded_prefix_metrics_derives_scores_from_confusion_counts():
+    metrics = pd.DataFrame([
+        {"min_tokens": 100, "max_tokens": 300, "tn": 80, "fp": 20, "fn": 10, "tp": 90},
+        {"min_tokens": 100, "max_tokens": 300, "tn": 40, "fp": 10, "fn": 20, "tp": 30},
+    ])
+
+    result = pooled_bounded_prefix_metrics(metrics)
+
+    assert result["balanced_accuracy"].tolist() == [pytest.approx(0.8)]
+    assert result["macro_f1"].tolist() == [pytest.approx(0.8)]
+
+
+def test_plot_bounded_prefix_evaluation_draws_performance_and_coverage_panels():
+    metrics = pd.DataFrame([
+        {"dataset": "Kaggle", "min_tokens": 100, "max_tokens": 300, "tn": 80, "fp": 20, "fn": 10, "tp": 90},
+        {"dataset": "MAGE", "min_tokens": 100, "max_tokens": 300, "tn": 40, "fp": 10, "fn": 20, "tp": 30},
+    ])
+    coverage = pd.DataFrame([
+        {"dataset": "Kaggle", "class": "HG", "min_tokens": 100, "max_tokens": 300, "scored_row_count": 100},
+        {"dataset": "Kaggle", "class": "MG", "min_tokens": 100, "max_tokens": 300, "scored_row_count": 100},
+    ])
+
+    figure = plot_bounded_prefix_evaluation(metrics, coverage)
+
+    assert [axis.get_title() for axis in figure.axes] == [
+        "Pooled Mixed performance", "Scored texts by source dataset",
+    ]
+    assert figure.axes[0].get_ylabel() == "Score"
+    assert figure.axes[1].get_ylabel() == "Scored texts"
+    plt.close(figure)
+
+
+def test_pooled_bounded_prefix_feature_set_metrics_keeps_feature_sets_separate():
+    metrics_by_feature_set = {
+        "simple_similarity": pd.DataFrame([
+            {"min_tokens": 100, "max_tokens": 300, "tn": 80, "fp": 20, "fn": 20, "tp": 80},
+            {"min_tokens": 300, "max_tokens": 600, "tn": 70, "fp": 30, "fn": 20, "tp": 80},
+        ]),
+        "scalar_all": pd.DataFrame([
+            {"min_tokens": 100, "max_tokens": 300, "tn": 60, "fp": 40, "fn": 30, "tp": 70},
+            {"min_tokens": 300, "max_tokens": 600, "tn": 50, "fp": 50, "fn": 40, "tp": 60},
+        ]),
+    }
+
+    result = pooled_bounded_prefix_feature_set_metrics(metrics_by_feature_set)
+
+    assert result[["feature_set", "min_tokens", "max_tokens"]].to_dict("records") == [
+        {"feature_set": "simple_similarity", "min_tokens": 100, "max_tokens": 300},
+        {"feature_set": "simple_similarity", "min_tokens": 300, "max_tokens": 600},
+        {"feature_set": "scalar_all", "min_tokens": 100, "max_tokens": 300},
+        {"feature_set": "scalar_all", "min_tokens": 300, "max_tokens": 600},
+    ]
+    assert result.loc[result["feature_set"].eq("simple_similarity"), "macro_f1"].tolist() == [pytest.approx(0.8), pytest.approx(0.7493734336)]
+    assert result.loc[result["feature_set"].eq("scalar_all"), "macro_f1"].tolist() == [pytest.approx(0.6491228070), pytest.approx(0.5488721805)]
+
+
+def test_dataset_balanced_bounded_prefix_feature_set_metrics_averages_datasets_equally():
+    metrics_by_feature_set = {
+        "simple_similarity": pd.DataFrame([
+            {"dataset": "large", "min_tokens": 100, "max_tokens": 300, "tn": 90, "fp": 10, "fn": 10, "tp": 90},
+            {"dataset": "small", "min_tokens": 100, "max_tokens": 300, "tn": 8, "fp": 2, "fn": 2, "tp": 8},
+        ]),
+    }
+
+    result = dataset_balanced_bounded_prefix_feature_set_metrics(metrics_by_feature_set)
+
+    assert result[["feature_set", "min_tokens", "max_tokens"]].to_dict("records") == [
+        {"feature_set": "simple_similarity", "min_tokens": 100, "max_tokens": 300},
+    ]
+    assert result.loc[0, "macro_f1"] == pytest.approx(0.85)
+
+
+def test_plot_bounded_prefix_macro_f1_comparison_draws_grouped_bars():
+    metrics = pd.DataFrame([
+        {"feature_set": "simple_similarity", "min_tokens": 100, "max_tokens": 300, "macro_f1": 0.80},
+        {"feature_set": "simple_similarity", "min_tokens": 300, "max_tokens": 600, "macro_f1": 0.75},
+        {"feature_set": "scalar_all", "min_tokens": 100, "max_tokens": 300, "macro_f1": 0.65},
+        {"feature_set": "scalar_all", "min_tokens": 300, "max_tokens": 600, "macro_f1": 0.55},
+    ])
+
+    figure = plot_bounded_prefix_macro_f1_comparison(metrics)
+
+    assert len(figure.axes) == 1
+    assert figure.axes[0].get_title() == "Dataset-balanced bounded-prefix macro F1"
+    assert figure.axes[0].get_xlabel() == "Leading prefix length (tokens)"
+    assert figure.axes[0].get_ylabel() == "Macro F1"
+    assert figure.axes[0].get_ylim() == (0.0, 1.0)
+    assert [tick.get_text() for tick in figure.axes[0].get_xticklabels()] == ["100-300", "300-600"]
+    plt.close(figure)
+
+
+def test_pooled_bounded_prefix_feature_set_metrics_rejects_empty_mapping():
+    with pytest.raises(ValueError, match="at least one feature set"):
+        pooled_bounded_prefix_feature_set_metrics({})
+
+
+def test_plot_bounded_prefix_macro_f1_comparison_rejects_missing_columns():
+    with pytest.raises(ValueError, match="missing required columns"):
+        plot_bounded_prefix_macro_f1_comparison(pd.DataFrame({"feature_set": ["scalar_all"]}))

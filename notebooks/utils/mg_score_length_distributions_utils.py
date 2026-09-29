@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -25,6 +25,16 @@ PREDICTION_COLUMNS = (
     "training_window",
     "evaluation_window",
     "source_dataset",
+)
+BOUNDED_PREFIX_DIMENSION_COLUMNS = (
+    "run_id",
+    "model_family",
+    "scorer_llm",
+    "feature_set",
+    "training_regime",
+    "training_window",
+    "evaluation_regime",
+    "partition",
 )
 
 
@@ -174,6 +184,258 @@ def load_mg_score_length_frame(
         training_composition=training_composition,
         evaluation_compositions=evaluation_compositions,
     )
+
+
+def _filter_bounded_prefix_results(
+    frame: pd.DataFrame,
+    *,
+    run_id: str,
+    model_family: str,
+    scorer_llm: str,
+    feature_set: str,
+    training_regime: str,
+    training_window: int | str,
+    evaluation_regime: str,
+    partition: str,
+) -> pd.DataFrame:
+    filters = {
+        "run_id": run_id,
+        "model_family": model_family,
+        "scorer_llm": scorer_llm,
+        "feature_set": feature_set,
+        "training_regime": training_regime,
+        "training_window": training_window,
+        "evaluation_regime": evaluation_regime,
+        "partition": partition,
+    }
+    missing = sorted(set(BOUNDED_PREFIX_DIMENSION_COLUMNS).difference(frame.columns))
+    if missing:
+        raise ValueError(f"bounded-prefix result frame is missing configuration columns: {missing}")
+    selected = frame.copy()
+    for column, expected in filters.items():
+        selected = selected.loc[selected[column].map(lambda value: _matches(value, expected))]
+    if selected.empty:
+        raise ValueError("no bounded-prefix result rows match the requested configuration")
+    return selected.reset_index(drop=True)
+
+
+def load_bounded_prefix_result_frames(
+    data_root: Path | str,
+    *,
+    run_id: str,
+    model_family: str,
+    scorer_llm: str,
+    feature_set: str,
+    training_regime: str,
+    training_window: int | str,
+    evaluation_regime: str,
+    partition: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Load metrics and coverage for one bounded-prefix experiment configuration."""
+    result_root = Path(data_root) / "experiment-results" / "classification" / "evaluations" / run_id
+    filters = {
+        "run_id": run_id,
+        "model_family": model_family,
+        "scorer_llm": scorer_llm,
+        "feature_set": feature_set,
+        "training_regime": training_regime,
+        "training_window": training_window,
+        "evaluation_regime": evaluation_regime,
+        "partition": partition,
+    }
+    metrics = _filter_bounded_prefix_results(
+        pd.read_csv(result_root / "prefix_evaluation_metrics.csv"), **filters,
+    )
+    coverage = _filter_bounded_prefix_results(
+        pd.read_csv(result_root / "prefix_evaluation_coverage.csv"), **filters,
+    )
+    return metrics, coverage
+
+
+def pooled_bounded_prefix_metrics(metrics: pd.DataFrame) -> pd.DataFrame:
+    """Derive pooled class-balanced metrics from per-dataset confusion counts."""
+    required = {"min_tokens", "max_tokens", "tn", "fp", "fn", "tp"}
+    missing = sorted(required.difference(metrics.columns))
+    if missing:
+        raise ValueError(f"bounded-prefix metrics are missing required columns: {missing}")
+    counts = metrics.loc[:, list(required)].copy()
+    for column in required:
+        counts[column] = pd.to_numeric(counts[column], errors="coerce")
+    counts = counts.dropna()
+    if counts.empty:
+        raise ValueError("bounded-prefix metrics contain no complete confusion counts")
+    pooled = counts.groupby(["min_tokens", "max_tokens"], as_index=False)[["tn", "fp", "fn", "tp"]].sum()
+    sensitivity = pooled["tp"] / (pooled["tp"] + pooled["fn"])
+    specificity = pooled["tn"] / (pooled["tn"] + pooled["fp"])
+    mg_f1 = (2 * pooled["tp"]) / (2 * pooled["tp"] + pooled["fp"] + pooled["fn"])
+    hg_f1 = (2 * pooled["tn"]) / (2 * pooled["tn"] + pooled["fp"] + pooled["fn"])
+    return pooled.assign(
+        balanced_accuracy=(sensitivity + specificity) / 2,
+        macro_f1=(mg_f1 + hg_f1) / 2,
+    ).sort_values(["min_tokens", "max_tokens"]).reset_index(drop=True)
+
+
+def pooled_bounded_prefix_feature_set_metrics(
+    metrics_by_feature_set: Mapping[str, pd.DataFrame],
+) -> pd.DataFrame:
+    """Pool bounded-prefix confusion counts independently for each feature set."""
+    if not metrics_by_feature_set:
+        raise ValueError("at least one feature set is required")
+    frames = []
+    for feature_set, metrics in metrics_by_feature_set.items():
+        pooled = pooled_bounded_prefix_metrics(metrics).assign(feature_set=str(feature_set))
+        frames.append(pooled)
+    return pd.concat(frames, ignore_index=True)[
+        [
+            "feature_set",
+            "min_tokens",
+            "max_tokens",
+            "tn",
+            "fp",
+            "fn",
+            "tp",
+            "balanced_accuracy",
+            "macro_f1",
+        ]
+    ]
+
+
+def dataset_balanced_bounded_prefix_feature_set_metrics(
+    metrics_by_feature_set: Mapping[str, pd.DataFrame],
+) -> pd.DataFrame:
+    """Average per-dataset macro F1 equally for each feature set and bound."""
+    if not metrics_by_feature_set:
+        raise ValueError("at least one feature set is required")
+    frames = []
+    for feature_set, metrics in metrics_by_feature_set.items():
+        required = {"dataset", "min_tokens", "max_tokens", "tn", "fp", "fn", "tp"}
+        missing = sorted(required.difference(metrics.columns))
+        if missing:
+            raise ValueError(f"bounded-prefix metrics are missing required columns: {missing}")
+        counts = metrics.loc[:, list(required)].copy()
+        for column in required.difference({"dataset"}):
+            counts[column] = pd.to_numeric(counts[column], errors="coerce")
+        counts = counts.dropna()
+        if counts.empty:
+            raise ValueError("bounded-prefix metrics contain no complete confusion counts")
+        mg_f1 = (2 * counts["tp"]) / (2 * counts["tp"] + counts["fp"] + counts["fn"])
+        hg_f1 = (2 * counts["tn"]) / (2 * counts["tn"] + counts["fp"] + counts["fn"])
+        counts = counts.assign(dataset_macro_f1=(mg_f1 + hg_f1) / 2)
+        balanced = counts.groupby(["min_tokens", "max_tokens"], as_index=False).agg(
+            macro_f1=("dataset_macro_f1", "mean"),
+            dataset_count=("dataset", "nunique"),
+        )
+        frames.append(balanced.assign(feature_set=str(feature_set)))
+    return pd.concat(frames, ignore_index=True)[
+        ["feature_set", "min_tokens", "max_tokens", "macro_f1", "dataset_count"]
+    ]
+
+
+def plot_bounded_prefix_macro_f1_comparison(
+    metrics: pd.DataFrame,
+    *,
+    feature_set_order: Sequence[str] | None = None,
+    bound_labels: Sequence[str] | None = None,
+) -> plt.Figure:
+    """Plot dataset-balanced bounded-prefix macro F1 for multiple feature sets."""
+    required = {"feature_set", "min_tokens", "max_tokens", "macro_f1"}
+    missing = sorted(required.difference(metrics.columns))
+    if missing:
+        raise ValueError(f"bounded-prefix comparison is missing required columns: {missing}")
+    selected = metrics.loc[:, list(required)].copy()
+    for column in ("min_tokens", "max_tokens", "macro_f1"):
+        selected[column] = pd.to_numeric(selected[column], errors="coerce")
+    selected = selected.dropna(subset=["macro_f1", "min_tokens", "max_tokens"])
+    if selected.empty:
+        raise ValueError("bounded-prefix comparison contains no complete macro F1 rows")
+    selected["feature_set"] = selected["feature_set"].astype(str)
+    selected["token_bound"] = (
+        selected["min_tokens"].astype(int).astype(str)
+        + "-"
+        + selected["max_tokens"].astype(int).astype(str)
+    )
+    order = list(bound_labels) if bound_labels is not None else list(dict.fromkeys(selected["token_bound"]))
+    feature_order = (
+        list(feature_set_order)
+        if feature_set_order is not None
+        else list(dict.fromkeys(selected["feature_set"]))
+    )
+    figure, axis = plt.subplots(figsize=(10, 5), constrained_layout=True)
+    sns.barplot(
+        data=selected,
+        x="token_bound",
+        y="macro_f1",
+        hue="feature_set",
+        order=order,
+        hue_order=feature_order,
+        errorbar=None,
+        ax=axis,
+    )
+    axis.set_title("Dataset-balanced bounded-prefix macro F1")
+    axis.set_xlabel("Leading prefix length (tokens)")
+    axis.set_ylabel("Macro F1")
+    axis.set_ylim(0, 1)
+    axis.legend(title="Feature set")
+    return figure
+
+
+def plot_bounded_prefix_evaluation(metrics: pd.DataFrame, coverage: pd.DataFrame) -> plt.Figure:
+    """Plot pooled bounded-prefix performance and source-dataset class coverage."""
+    pooled = pooled_bounded_prefix_metrics(metrics)
+    required_coverage = {"dataset", "class", "min_tokens", "max_tokens", "scored_row_count"}
+    missing = sorted(required_coverage.difference(coverage.columns))
+    if missing:
+        raise ValueError(f"bounded-prefix coverage is missing required columns: {missing}")
+    coverage_frame = coverage.loc[:, list(required_coverage)].copy()
+    coverage_frame["scored_row_count"] = pd.to_numeric(coverage_frame["scored_row_count"], errors="coerce")
+    coverage_frame = coverage_frame.dropna(subset=["scored_row_count"])
+    if coverage_frame.empty:
+        raise ValueError("bounded-prefix coverage contains no scored rows")
+
+    def bound_label(frame: pd.DataFrame) -> pd.Series:
+        return frame["min_tokens"].astype(int).astype(str) + "-" + frame["max_tokens"].astype(int).astype(str)
+
+    pooled = pooled.assign(token_bound=bound_label(pooled))
+    coverage_frame = coverage_frame.assign(
+        token_bound=bound_label(coverage_frame),
+        source_class=coverage_frame["dataset"].astype(str) + " " + coverage_frame["class"].astype(str),
+    )
+    bound_order = pooled["token_bound"].tolist()
+    performance = pooled.melt(
+        id_vars="token_bound",
+        value_vars=["balanced_accuracy", "macro_f1"],
+        var_name="metric",
+        value_name="score",
+    )
+    figure, axes = plt.subplots(1, 2, figsize=(15, 5), constrained_layout=True)
+    sns.barplot(
+        data=performance,
+        x="token_bound",
+        y="score",
+        hue="metric",
+        order=bound_order,
+        palette={"balanced_accuracy": "#2878b5", "macro_f1": "#c83e4d"},
+        ax=axes[0],
+    )
+    axes[0].set_title("Pooled Mixed performance")
+    axes[0].set_xlabel("Leading prefix length (tokens)")
+    axes[0].set_ylabel("Score")
+    axes[0].set_ylim(0, 1)
+    axes[0].legend(title="Metric", labels=["Balanced accuracy", "Macro F1"])
+    sns.barplot(
+        data=coverage_frame,
+        x="token_bound",
+        y="scored_row_count",
+        hue="source_class",
+        order=bound_order,
+        errorbar=None,
+        ax=axes[1],
+    )
+    axes[1].set_title("Scored texts by source dataset")
+    axes[1].set_xlabel("Leading prefix length (tokens)")
+    axes[1].set_ylabel("Scored texts")
+    axes[1].legend(title="Dataset and class")
+    return figure
 
 
 def plot_mg_score_by_length(
