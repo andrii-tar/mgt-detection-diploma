@@ -195,6 +195,79 @@ def test_classifier_feature_set_plot_facets_model_families() -> None:
     plt.close(figure)
 
 
+def _presentation_plot_metrics() -> pd.DataFrame:
+    rows = []
+    for scorer_llm, base in (("small", 0.60), ("large", 0.70)):
+        for model_family, family_offset in (("logistic_regression", 0.00), ("random_forest", 0.03)):
+            for feature_set, feature_offset in (
+                ("scalar_compact", 0.00),
+                ("simple_similarity", 0.10),
+                ("scalar_all", 0.05),
+                ("extended", 0.08),
+            ):
+                rows.append({
+                    "scorer_llm": scorer_llm,
+                    "feature_set": feature_set,
+                    "model_family": model_family,
+                    "macro_f1": base + family_offset + feature_offset,
+                })
+        rows.append({
+            "scorer_llm": scorer_llm,
+            "feature_set": "gpt_who",
+            "model_family": "gpt_who",
+            "macro_f1": base + 0.04,
+        })
+    return pd.DataFrame(rows)
+
+
+@pytest.mark.parametrize(
+    "plotter_name",
+    [
+        "plot_classifier_feature_set_bars_horizontal",
+        "plot_classifier_feature_set_bars_vertical",
+        "plot_classifier_feature_set_lollipop",
+    ],
+)
+def test_presentation_plotters_use_external_legend_and_gpt_who_marker(plotter_name: str) -> None:
+    from notebooks.utils import feature_set_similarity_effect_utils as utils
+
+    figure = getattr(utils, plotter_name)(_presentation_plot_metrics(), title="test")
+
+    assert len(figure.axes) == 2
+    assert len(figure.legends) == 1
+    legend_labels = [text.get_text() for text in figure.legends[0].get_texts()]
+    assert "GPT-who" in legend_labels
+    assert all(axis.get_legend() is None for axis in figure.axes)
+    assert any(
+        collection.get_label() == "GPT-who"
+        for axis in figure.axes
+        for collection in axis.collections
+    ) or any(
+        line.get_label() == "GPT-who" and line.get_marker() == "D"
+        for axis in figure.axes
+        for line in axis.lines
+    )
+    plt.close(figure)
+
+
+@pytest.mark.parametrize(
+    "plotter_name",
+    [
+        "plot_classifier_feature_set_bars_horizontal",
+        "plot_classifier_feature_set_bars_vertical",
+        "plot_classifier_feature_set_lollipop",
+    ],
+)
+def test_presentation_plotters_handle_empty_metrics(plotter_name: str) -> None:
+    from notebooks.utils import feature_set_similarity_effect_utils as utils
+
+    figure = getattr(utils, plotter_name)(pd.DataFrame(), title="test")
+
+    assert len(figure.axes) == 1
+    assert "No classifier feature-set scores" in figure.axes[0].texts[0].get_text()
+    plt.close(figure)
+
+
 def test_new_method_plot_compares_only_new_method_and_gpt_who() -> None:
     from notebooks.utils.feature_set_similarity_effect_utils import plot_new_method_vs_gpt_who
 

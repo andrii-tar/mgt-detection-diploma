@@ -365,6 +365,212 @@ def plot_classifier_feature_set_comparison(
     return figure
 
 
+def _classifier_presentation_data(
+    metrics: pd.DataFrame, metric: str,
+) -> tuple[pd.DataFrame, pd.DataFrame, list[str], list[str], list[str]] | None:
+    if metrics.empty:
+        return None
+    _require_columns(metrics, {"scorer_llm", "model_family", "feature_set", metric})
+    classifier_metrics = metrics.loc[
+        ~metrics["model_family"].eq("gpt_who") & ~metrics["feature_set"].eq("gpt_who")
+    ].copy()
+    if classifier_metrics.empty:
+        return None
+    model_families = list(pd.unique(classifier_metrics["model_family"]))
+    scorer_llms = _ordered_scorer_llms(classifier_metrics["scorer_llm"])
+    feature_sets = list(pd.unique(classifier_metrics["feature_set"]))
+    summary = (
+        classifier_metrics.groupby(["model_family", "scorer_llm", "feature_set"], as_index=False)[metric]
+        .mean()
+    )
+    gpt_who_summary = (
+        metrics.loc[metrics["feature_set"].eq("gpt_who")]
+        .groupby("scorer_llm", as_index=False)[metric]
+        .mean()
+    )
+    return summary, gpt_who_summary, model_families, scorer_llms, feature_sets
+
+
+def _empty_classifier_presentation_figure() -> plt.Figure:
+    figure, axis = plt.subplots(figsize=(10, 5), constrained_layout=True)
+    axis.text(0.5, 0.5, "No classifier feature-set scores", ha="center", va="center")
+    axis.set_axis_off()
+    return figure
+
+
+def _presentation_score_limits(
+    summary: pd.DataFrame, gpt_who_summary: pd.DataFrame, metric: str,
+) -> tuple[float, float]:
+    values = [summary[metric].to_numpy()]
+    if not gpt_who_summary.empty:
+        values.append(gpt_who_summary[metric].to_numpy())
+    scores = np.concatenate(values)
+    padding = max(float(scores.max() - scores.min()) * 0.08, 0.02)
+    return max(0.0, float(scores.min()) - padding), min(1.0, float(scores.max()) + padding)
+
+
+def _add_presentation_legend(figure: plt.Figure, axes: Sequence[plt.Axes]) -> None:
+    legend_items = {}
+    for axis in axes:
+        for handle, label in zip(*axis.get_legend_handles_labels()):
+            if label != "_nolegend_":
+                legend_items.setdefault(label, handle)
+    labels = list(legend_items)
+    figure.legend(
+        [legend_items[label] for label in labels],
+        labels,
+        title="Feature set",
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.98),
+        ncol=min(5, len(labels)),
+        frameon=False,
+    )
+    figure.tight_layout(rect=(0, 0, 1, 0.88))
+
+
+def plot_classifier_feature_set_bars_horizontal(
+    metrics: pd.DataFrame, *, title: str, metric: str = "macro_f1",
+) -> plt.Figure:
+    """Compare feature sets with horizontal bars and GPT-who diamonds."""
+    prepared = _classifier_presentation_data(metrics, metric)
+    if prepared is None:
+        return _empty_classifier_presentation_figure()
+    summary, gpt_who_summary, model_families, scorer_llms, feature_sets = prepared
+    figure, axes = plt.subplots(
+        1, len(model_families), figsize=(7 * len(model_families), 6),
+        sharex=True, sharey=True, squeeze=False,
+    )
+    axes = axes[0]
+    positions = np.arange(len(scorer_llms))
+    offsets = np.linspace(-0.3, 0.3, num=len(feature_sets))
+    lower, upper = _presentation_score_limits(summary, gpt_who_summary, metric)
+    for axis, model_family in zip(axes, model_families):
+        family_summary = summary.loc[summary["model_family"].eq(model_family)]
+        for offset, feature_set in zip(offsets, feature_sets):
+            frame = family_summary.loc[family_summary["feature_set"].eq(feature_set)].set_index("scorer_llm")
+            values = [frame[metric].get(scorer_llm, np.nan) for scorer_llm in scorer_llms]
+            axis.barh(
+                positions + offset, values, height=0.16,
+                color=FEATURE_SET_COLORS.get(feature_set, "#666666"),
+                label=FEATURE_SET_LABELS.get(feature_set, feature_set),
+            )
+        if not gpt_who_summary.empty:
+            gpt = gpt_who_summary.set_index("scorer_llm")
+            values = [gpt[metric].get(scorer_llm, np.nan) for scorer_llm in scorer_llms]
+            axis.scatter(
+                values, positions, color=FEATURE_SET_COLORS["gpt_who"],
+                marker=MODEL_FAMILY_MARKERS["gpt_who"], s=75,
+                edgecolor="white", linewidth=0.8, label=FEATURE_SET_LABELS["gpt_who"],
+                zorder=3,
+            )
+        axis.set_title(model_family.replace("_", " ").title())
+        axis.set_yticks(positions, scorer_llms)
+        axis.grid(axis="x", alpha=0.25)
+        axis.set_xlim(lower, upper)
+        axis.set_xlabel(f"Mean {metric}")
+    axes[0].set_ylabel("Scorer LLM")
+    figure.suptitle(title)
+    _add_presentation_legend(figure, axes)
+    return figure
+
+
+def plot_classifier_feature_set_bars_vertical(
+    metrics: pd.DataFrame, *, title: str, metric: str = "macro_f1",
+) -> plt.Figure:
+    """Compare feature sets with vertical bars and GPT-who diamonds."""
+    prepared = _classifier_presentation_data(metrics, metric)
+    if prepared is None:
+        return _empty_classifier_presentation_figure()
+    summary, gpt_who_summary, model_families, scorer_llms, feature_sets = prepared
+    figure, axes = plt.subplots(
+        1, len(model_families), figsize=(7 * len(model_families), 6),
+        sharey=True, squeeze=False,
+    )
+    axes = axes[0]
+    positions = np.arange(len(scorer_llms))
+    offsets = np.linspace(-0.3, 0.3, num=len(feature_sets))
+    lower, upper = _presentation_score_limits(summary, gpt_who_summary, metric)
+    for axis, model_family in zip(axes, model_families):
+        family_summary = summary.loc[summary["model_family"].eq(model_family)]
+        for offset, feature_set in zip(offsets, feature_sets):
+            frame = family_summary.loc[family_summary["feature_set"].eq(feature_set)].set_index("scorer_llm")
+            values = [frame[metric].get(scorer_llm, np.nan) for scorer_llm in scorer_llms]
+            axis.bar(
+                positions + offset, values, width=0.16,
+                color=FEATURE_SET_COLORS.get(feature_set, "#666666"),
+                label=FEATURE_SET_LABELS.get(feature_set, feature_set),
+            )
+        if not gpt_who_summary.empty:
+            gpt = gpt_who_summary.set_index("scorer_llm")
+            values = [gpt[metric].get(scorer_llm, np.nan) for scorer_llm in scorer_llms]
+            axis.scatter(
+                positions, values, color=FEATURE_SET_COLORS["gpt_who"],
+                marker=MODEL_FAMILY_MARKERS["gpt_who"], s=75,
+                edgecolor="white", linewidth=0.8, label=FEATURE_SET_LABELS["gpt_who"],
+                zorder=3,
+            )
+        axis.set_title(model_family.replace("_", " ").title())
+        axis.set_xticks(positions, scorer_llms, rotation=30, ha="right")
+        axis.grid(axis="y", alpha=0.25)
+        axis.set_ylim(lower, upper)
+        axis.set_xlabel("Scorer LLM")
+    axes[0].set_ylabel(f"Mean {metric}")
+    figure.suptitle(title)
+    _add_presentation_legend(figure, axes)
+    return figure
+
+
+def plot_classifier_feature_set_lollipop(
+    metrics: pd.DataFrame, *, title: str, metric: str = "macro_f1",
+) -> plt.Figure:
+    """Compare feature sets with lollipop stems and GPT-who diamonds."""
+    prepared = _classifier_presentation_data(metrics, metric)
+    if prepared is None:
+        return _empty_classifier_presentation_figure()
+    summary, gpt_who_summary, model_families, scorer_llms, feature_sets = prepared
+    figure, axes = plt.subplots(
+        1, len(model_families), figsize=(7 * len(model_families), 6),
+        sharey=True, squeeze=False,
+    )
+    axes = axes[0]
+    positions = np.arange(len(scorer_llms))
+    offsets = np.linspace(-0.3, 0.3, num=len(feature_sets))
+    lower, upper = _presentation_score_limits(summary, gpt_who_summary, metric)
+    for axis, model_family in zip(axes, model_families):
+        family_summary = summary.loc[summary["model_family"].eq(model_family)]
+        for offset, feature_set in zip(offsets, feature_sets):
+            frame = family_summary.loc[family_summary["feature_set"].eq(feature_set)].set_index("scorer_llm")
+            values = np.array([frame[metric].get(scorer_llm, np.nan) for scorer_llm in scorer_llms], dtype=float)
+            valid = ~np.isnan(values)
+            axis.vlines(
+                positions[valid] + offset, lower, values[valid],
+                color=FEATURE_SET_COLORS.get(feature_set, "#666666"), alpha=0.45, linewidth=2,
+            )
+            axis.scatter(
+                positions[valid] + offset, values[valid],
+                color=FEATURE_SET_COLORS.get(feature_set, "#666666"), s=50,
+                label=FEATURE_SET_LABELS.get(feature_set, feature_set), zorder=3,
+            )
+        if not gpt_who_summary.empty:
+            gpt = gpt_who_summary.set_index("scorer_llm")
+            values = np.array([gpt[metric].get(scorer_llm, np.nan) for scorer_llm in scorer_llms], dtype=float)
+            valid = ~np.isnan(values)
+            axis.scatter(
+                positions[valid], values[valid], color=FEATURE_SET_COLORS["gpt_who"],
+                marker=MODEL_FAMILY_MARKERS["gpt_who"], s=80,
+                edgecolor="white", linewidth=0.8, label=FEATURE_SET_LABELS["gpt_who"], zorder=4,
+            )
+        axis.set_title(model_family.replace("_", " ").title())
+        axis.set_xticks(positions, scorer_llms, rotation=30, ha="right")
+        axis.grid(axis="y", alpha=0.25)
+        axis.set_ylim(lower, upper)
+        axis.set_xlabel("Scorer LLM")
+    axes[0].set_ylabel(f"Mean {metric}")
+    figure.suptitle(title)
+    _add_presentation_legend(figure, axes)
+    return figure
+
+
 def plot_new_method_vs_gpt_who(
     metrics: pd.DataFrame,
     *,
