@@ -24,6 +24,15 @@ MODEL_IDS = {
     "smollm2_1_7b": "lmstudio-community/SmolLM2-1.7B-Instruct-GGUF"
 }
 
+# Project-wide display names for feature-set identifiers used in reports and plots.
+FEATURE_SET_LABELS = {
+    "scalar_compact": "simple features",
+    "simple_similarity": "similarity",
+    "scalar_all": "all scalar features",
+    "extended": "extended similarity",
+    "gpt_who": "GPT-who",
+}
+
 def build_datasets(data_root: Path) -> dict[str, dict[str, object]]:
     return {
         "kaggle_train": {

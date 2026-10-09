@@ -31,7 +31,9 @@ def test_feature_set_similarity_effect_notebook_declares_both_hypothesis_outputs
         "CLASSIFIER_ANALYSIS_RUN_IDS",
         "BASELINE_FEATURE_SET",
         "COMPARISON_FEATURE_SETS",
+        "PRESENTATION_TRAINING_WINDOW = 32",
         "matched_feature_set_deltas(",
+        "filter_presentation_metrics_by_training_window(",
         "plot_feature_set_comparison(",
         "plot_classifier_feature_set_comparison(",
         "plot_classifier_feature_set_bars_horizontal(",
@@ -47,6 +49,7 @@ def test_feature_set_similarity_effect_notebook_declares_both_hypothesis_outputs
         "classifier_feature_set_bars_horizontal.png",
         "classifier_feature_set_bars_vertical.png",
         "classifier_feature_set_lollipop.png",
+        "classifier_feature_set_lollipop_window32.png",
         "new_method_vs_gpt_who.png",
         "delta_by_model_size.png",
     ):

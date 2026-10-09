@@ -5,7 +5,17 @@ from pathlib import Path
 os.environ.setdefault("TEXT_DETECTION_DATA", str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from experiment_config import resolve_dataset_splits, resolve_model_id, resolve_model_name
+from experiment_config import (
+    FEATURE_SET_LABELS,
+    resolve_dataset_splits,
+    resolve_model_id,
+    resolve_model_name,
+)
+
+
+def test_feature_set_labels_are_project_configured():
+    assert FEATURE_SET_LABELS["scalar_compact"] == "simple features"
+    assert FEATURE_SET_LABELS["gpt_who"] == "GPT-who"
 
 
 def test_resolve_llama_model_aliases():

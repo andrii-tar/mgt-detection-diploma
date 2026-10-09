@@ -261,6 +261,7 @@ def plot_comparison_token_profiles(
     smoothing_window: int = 10,
     configurations: tuple[tuple[str, int], ...] = _COMPARISON_CONFIGURATIONS,
     gold_token_boundary: int | None = None,
+    overlay_configurations: bool = False,
 ) -> plt.Figure:
     """Plot projected per-token MG scores for the selected configurations."""
     required = {"model", "window_length", "start_token", "stop_token", "mg_score"}
@@ -283,6 +284,67 @@ def plot_comparison_token_profiles(
 
     if not configurations:
         raise ValueError("configurations must not be empty")
+    positions = np.arange(token_count)
+    labels = {
+        ("logistic_regression", 32): "LR-32",
+        ("random_forest", 32): "RF-32",
+        ("logistic_regression", 64): "LR-64",
+        ("random_forest", 64): "RF-64",
+    }
+    if overlay_configurations:
+        figure, axis = plt.subplots(
+            figsize=(max(12, token_count / 8), 5),
+            constrained_layout=True,
+        )
+        colors = plt.get_cmap("tab10")
+        for index, configuration in enumerate(configurations):
+            model, window_length = configuration
+            selected = scored_windows.loc[
+                scored_windows["model"].eq(model) & scored_windows["window_length"].eq(window_length)
+            ].copy()
+            if selected.empty:
+                raise ValueError(f"missing scored windows for {model}, {window_length}")
+            projected = expand_model_scores_to_tokens(selected, token_count)
+            values = projected["mg_score"].to_numpy(dtype="float64")
+            model_label = {"logistic_regression": "LR", "random_forest": "RF"}.get(model, model)
+            label = labels.get(configuration, f"{model_label}-{window_length}")
+            color = colors(index % 10)
+            axis.plot(positions, values, color=color, alpha=0.35, linewidth=0.9, label=f"{label} raw")
+            axis.plot(
+                positions,
+                rolling_mean(values, window=int(smoothing_window)),
+                color=color,
+                linewidth=1.8,
+                label=f"{label} rolling mean ({smoothing_window})",
+            )
+        axis.set_ylim(0.0, 1.0)
+        axis.set_xlabel("Token position")
+        axis.set_ylabel("Projected MG score")
+        axis.grid(axis="y", alpha=0.25)
+        if gold_token_boundary is not None:
+            axis.axvline(gold_token_boundary, color="0.2", linestyle="--", linewidth=1.2)
+            axis.text(
+                gold_token_boundary / 2,
+                1.02,
+                "HG",
+                transform=axis.get_xaxis_transform(),
+                ha="center",
+                va="bottom",
+                color="0.2",
+            )
+            axis.text(
+                (gold_token_boundary + token_count) / 2,
+                1.02,
+                "MG",
+                transform=axis.get_xaxis_transform(),
+                ha="center",
+                va="bottom",
+                color="0.2",
+            )
+        axis.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=3)
+        figure.suptitle(f"{title} (text_id={text_id})")
+        return figure
+
     figure, axes = plt.subplots(
         1,
         len(configurations),
@@ -293,13 +355,6 @@ def plot_comparison_token_profiles(
         squeeze=False,
     )
     axes = axes[0]
-    positions = np.arange(token_count)
-    labels = {
-        ("logistic_regression", 32): "LR-32",
-        ("random_forest", 32): "RF-32",
-        ("logistic_regression", 64): "LR-64",
-        ("random_forest", 64): "RF-64",
-    }
     for axis, configuration in zip(axes, configurations, strict=True):
         model, window_length = configuration
         selected = scored_windows.loc[

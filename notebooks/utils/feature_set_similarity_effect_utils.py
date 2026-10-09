@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from scripts.experiment_config import FEATURE_SET_LABELS
+
 
 MATCH_COLUMNS = (
     "scorer_llm",
@@ -56,15 +58,6 @@ MODEL_FAMILY_MARKERS = {
     "gpt_who": "D",
 }
 
-FEATURE_SET_LABELS = {
-    "scalar_compact": "simple features",
-    "simple_similarity": "similarity",
-    "scalar_all": "all scalar features",
-    "extended": "extended similarity",
-    "gpt_who": "GPT-who",
-}
-
-
 def _ordered_scorer_llms(values: Sequence[str]) -> list[str]:
     unique_values = list(dict.fromkeys(values))
     known = [value for value in unique_values if value in DEFAULT_MODEL_SIZES_BILLIONS]
@@ -76,6 +69,17 @@ def _require_columns(frame: pd.DataFrame, required: set[str]) -> None:
     missing = sorted(required.difference(frame.columns))
     if missing:
         raise ValueError(f"metrics are missing required columns: {missing}")
+
+
+def filter_presentation_metrics_by_training_window(
+    metrics: pd.DataFrame, *, training_window: int | str,
+) -> pd.DataFrame:
+    """Keep one classifier training window and all GPT-who comparison rows."""
+    _require_columns(metrics, {"model_family", "training_window"})
+    return metrics.loc[
+        metrics["model_family"].eq("gpt_who")
+        | metrics["training_window"].astype(str).eq(str(training_window))
+    ].copy()
 
 
 def matched_feature_set_deltas(

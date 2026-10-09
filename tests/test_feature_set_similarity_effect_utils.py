@@ -9,6 +9,7 @@ from notebooks.utils.feature_set_similarity_effect_utils import (
     aggregate_feature_set_deltas,
     append_external_feature_set_comparison,
     attach_model_sizes,
+    filter_presentation_metrics_by_training_window,
     gpt_who_experiment_for_training_regime,
     matched_feature_set_deltas,
 )
@@ -48,6 +49,19 @@ def test_aggregate_and_model_size_metadata_keep_unknown_models() -> None:
 
 def test_default_model_sizes_include_littlelamb() -> None:
     assert DEFAULT_MODEL_SIZES_BILLIONS["littlelamb"] == pytest.approx(0.3)
+
+
+def test_filter_presentation_metrics_by_training_window_keeps_matching_classifiers_and_gpt_who() -> None:
+    metrics = pd.DataFrame([
+        {"scorer_llm": "small", "model_family": "random_forest", "feature_set": "simple_similarity", "training_window": 32, "macro_f1": 0.80},
+        {"scorer_llm": "small", "model_family": "random_forest", "feature_set": "simple_similarity", "training_window": 64, "macro_f1": 0.90},
+        {"scorer_llm": "small", "model_family": "gpt_who", "feature_set": "gpt_who", "training_window": pd.NA, "macro_f1": 0.75},
+    ])
+
+    result = filter_presentation_metrics_by_training_window(metrics, training_window=32)
+
+    assert result["training_window"].tolist() == [32, pd.NA]
+    assert result["feature_set"].tolist() == ["simple_similarity", "gpt_who"]
 
 
 def test_plot_scorer_llms_are_ordered_by_model_size() -> None:

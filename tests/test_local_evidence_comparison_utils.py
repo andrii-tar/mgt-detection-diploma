@@ -289,6 +289,52 @@ def test_plot_comparison_token_profiles_labels_three_semeval_rf_windows() -> Non
     plt.close(figure)
 
 
+def test_plot_comparison_token_profiles_overlays_semeval_windows() -> None:
+    configurations = (
+        ("random_forest", 32),
+        ("random_forest", 64),
+        ("random_forest", 128),
+    )
+    scored = pd.concat(
+        [
+            pd.DataFrame(
+                {
+                    "text_id": [7, 7],
+                    "model": ["random_forest", "random_forest"],
+                    "window_length": [window_length, window_length],
+                    "start_token": [0, 2],
+                    "stop_token": [2, 5],
+                    "mg_score": [score, score],
+                }
+            )
+            for window_length, score in ((32, 0.2), (64, 0.5), (128, 0.8))
+        ],
+        ignore_index=True,
+    )
+
+    figure = plot_comparison_token_profiles(
+        text_id=7,
+        token_count=5,
+        scored_windows=scored,
+        title="SemEval MG / gemma_3_270m_it",
+        smoothing_window=2,
+        configurations=configurations,
+        overlay_configurations=True,
+    )
+
+    assert len(figure.axes) == 1
+    assert figure.get_figwidth() > figure.get_figheight()
+    assert [line.get_label() for line in figure.axes[0].lines[:6]] == [
+        "RF-32 raw",
+        "RF-32 rolling mean (2)",
+        "RF-64 raw",
+        "RF-64 rolling mean (2)",
+        "RF-128 raw",
+        "RF-128 rolling mean (2)",
+    ]
+    plt.close(figure)
+
+
 def test_plot_comparison_token_profiles_marks_the_semeval_hg_mg_boundary() -> None:
     configurations = (
         ("random_forest", 32),
