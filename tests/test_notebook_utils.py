@@ -184,6 +184,53 @@ def test_iter_logprob_row_batches_limits_rows_per_batch(tmp_path):
     assert [row["id"] for batch in batches for row in batch] == [1, 2, 3]
 
 
+def test_iter_logprob_row_batches_samples_ids_per_model_and_split(tmp_path):
+    for model, row_ids in (("model_a", range(10)), ("model_b", range(100, 110))):
+        data_dir = tmp_path / f"demo__{model}" / "HG" / "data"
+        data_dir.mkdir(parents=True)
+        pd.DataFrame([
+            {**_prefix_test_row(), "id": row_id}
+            for row_id in row_ids
+        ]).to_parquet(data_dir / "part.parquet", index=False)
+
+    rows = list(
+        metric_utils.iter_logprob_rows(
+            tmp_path,
+            selected_models=["model_a", "model_b"],
+            max_rows_per_dataset_split=2,
+        )
+        )
+
+    sampled = {}
+    for row in rows:
+        sampled.setdefault(row["model"], []).append(row["id"])
+
+    assert set(sampled) == {"model_a", "model_b"}
+    assert all(len(ids) == 2 for ids in sampled.values())
+    assert all(set(ids).issubset(set(range(start, start + 10))) for ids, start in ((sampled["model_a"], 0), (sampled["model_b"], 100)))
+
+    repeated_rows = list(
+        metric_utils.iter_logprob_rows(
+            tmp_path,
+            selected_models=["model_a", "model_b"],
+            max_rows_per_dataset_split=2,
+        )
+    )
+    assert [(row["model"], row["id"]) for row in rows] == [
+        (row["model"], row["id"]) for row in repeated_rows
+    ]
+
+
+def test_iter_logprob_row_batches_rejects_cap_above_five_hundred(tmp_path):
+    with pytest.raises(ValueError, match="at most 500"):
+        list(
+            metric_utils.iter_logprob_row_batches(
+                tmp_path,
+                max_rows_per_dataset_split=501,
+            )
+        )
+
+
 def test_load_logprob_rows_filters_requested_split_parent_ids(tmp_path: Path) -> None:
     for split, row_id in (("HG", 1), ("HG", 2), ("MG", 1)):
         data_dir = tmp_path / "demo__model" / split / "data"
@@ -356,7 +403,7 @@ def test_length_distribution_notebook_imports_helpers_before_calls():
     assert "default_length_metrics_path" in notebook_source
     assert "load_length_metric_table" in notebook_source
     assert "save_length_metric_table" in notebook_source
-    assert "RECOMPUTE = False" in notebook_source
+    assert "RECOMPUTE = True" in notebook_source
     assert "LENGTH_METRICS_PATH = default_length_metrics_path(PROCESSED_ROOT)" in notebook_source
     assert "if RECOMPUTE or not LENGTH_METRICS_PATH.exists():" in notebook_source
     assert 'print(f"Stored at: {LENGTH_METRICS_PATH}")' in notebook_source

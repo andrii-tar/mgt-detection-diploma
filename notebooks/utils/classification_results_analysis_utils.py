@@ -137,6 +137,31 @@ def load_prediction_artifacts(
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+def iter_prediction_artifacts(
+    data_root: Path | str,
+    *,
+    run_id: str,
+    columns: Sequence[str] | None = None,
+    artifact_filter: Callable[[Path], bool] | None = None,
+):
+    """Yield prediction artifact frames one at a time to keep peak RAM bounded."""
+    root = _result_root(data_root, run_id) / "predictions"
+    if not root.is_dir():
+        return
+    for data_path in sorted(root.glob("**/data.parquet")):
+        artifact = data_path.parent
+        if not (artifact / "metadata.json").is_file():
+            continue
+        if artifact_filter is not None and not artifact_filter(artifact):
+            continue
+        try:
+            frame = load_prediction_artifact(artifact, columns=columns)
+        except (OSError, ValueError):
+            continue
+        if not frame.empty:
+            yield frame
+
+
 def _read_rows(path: Path) -> list[list[str]]:
     with path.open(encoding="utf-8", newline="") as handle:
         return [row for row in csv.reader(handle) if row]

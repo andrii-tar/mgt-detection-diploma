@@ -3,6 +3,7 @@ from __future__ import annotations
 from itertools import islice
 from numbers import Integral
 from pathlib import Path
+import random
 from typing import Iterator, Mapping, Sequence
 import re
 
@@ -34,6 +35,8 @@ TOKEN_DERIVED_METRICS = [
     "d_score_top20",
     "d_score_top20_coverage",
 ]
+
+_SAMPLING_SEED = 42
 
 
 def validate_word_limits(word_limits: Sequence[int]) -> tuple[int, ...]:
@@ -113,13 +116,69 @@ def parse_experiment_name(experiment_name: str) -> tuple[str, str]:
     return dataset, model
 
 
+def _validate_max_rows_per_dataset_split(max_rows_per_dataset_split: int | None) -> int | None:
+    if max_rows_per_dataset_split is None:
+        return None
+    if (
+        isinstance(max_rows_per_dataset_split, bool)
+        or not isinstance(max_rows_per_dataset_split, Integral)
+        or not 0 < max_rows_per_dataset_split <= 500
+    ):
+        raise ValueError("max_rows_per_dataset_split must be a positive integer at most 500 or None")
+    return int(max_rows_per_dataset_split)
+
+
+def _sampled_parent_ids_by_dataset_model_split(
+    processed_root: Path,
+    selected_datasets: Sequence[str] | None,
+    selected_models: Sequence[str] | None,
+    max_rows_per_dataset_split: int,
+) -> dict[tuple[str, str, str], set[object]]:
+    ids_by_key: dict[tuple[str, str, str], set[object]] = {}
+
+    for path in sorted(processed_root.glob("*/*/data/*.parquet")):
+        experiment_name = path.parents[2].name
+        split = path.parents[1].name
+        dataset, model = parse_experiment_name(experiment_name)
+        if selected_datasets is not None and dataset not in selected_datasets:
+            continue
+        if selected_models is not None and model not in selected_models:
+            continue
+
+        if "id" not in pq.ParquetFile(path).schema.names:
+            raise ValueError(f"Cannot cap rows without an id column: {path}")
+        key = (dataset, model, split)
+        ids_for_dataset_split = ids_by_key.setdefault(key, set())
+        for value in pq.read_table(path, columns=["id"]).column("id").to_pylist():
+            if value is not None and value not in ids_for_dataset_split:
+                ids_for_dataset_split.add(value)
+
+    selected_ids: dict[tuple[str, str, str], set[object]] = {}
+    for key, ids in ids_by_key.items():
+        if len(ids) <= max_rows_per_dataset_split:
+            selected_ids[key] = ids
+            continue
+        ordered_ids = sorted(ids, key=lambda value: (type(value).__name__, repr(value)))
+        selected_ids[key] = set(random.Random(_SAMPLING_SEED).sample(ordered_ids, max_rows_per_dataset_split))
+    return selected_ids
+
+
 def load_logprob_rows(
     processed_root: Path,
     selected_datasets: list[str] | None = None,
     selected_models: list[str] | None = None,
     selected_parent_ids: Mapping[str, set[int]] | None = None,
+    max_rows_per_dataset_split: int | None = None,
 ) -> list[dict]:
-    return list(iter_logprob_rows(processed_root, selected_datasets, selected_models, selected_parent_ids))
+    return list(
+        iter_logprob_rows(
+            processed_root,
+            selected_datasets,
+            selected_models,
+            selected_parent_ids,
+            max_rows_per_dataset_split=max_rows_per_dataset_split,
+        )
+    )
 
 
 def iter_logprob_row_batches(
@@ -129,9 +188,21 @@ def iter_logprob_row_batches(
     selected_parent_ids: Mapping[str, set[int]] | None = None,
     *,
     batch_size: int = 256,
+    max_rows_per_dataset_split: int | None = None,
 ) -> Iterator[list[dict]]:
     if isinstance(batch_size, bool) or not isinstance(batch_size, Integral) or batch_size <= 0:
         raise ValueError("batch_size must be a positive integer")
+    max_rows_per_dataset_split = _validate_max_rows_per_dataset_split(max_rows_per_dataset_split)
+    shared_parent_ids = (
+        None
+        if max_rows_per_dataset_split is None
+        else _sampled_parent_ids_by_dataset_model_split(
+            processed_root,
+            selected_datasets,
+            selected_models,
+            max_rows_per_dataset_split,
+        )
+    )
 
     for path in sorted(processed_root.glob("*/*/data/*.parquet")):
         experiment_name = path.parents[2].name
@@ -150,6 +221,11 @@ def iter_logprob_row_batches(
         parquet_file = pq.ParquetFile(path)
         for record_batch in parquet_file.iter_batches(batch_size=int(batch_size)):
             frame = record_batch.to_pandas()
+            if shared_parent_ids is not None:
+                shared_ids = shared_parent_ids.get((dataset, model, split), set())
+                if "id" not in frame.columns:
+                    raise ValueError(f"Cannot cap rows without an id column: {path}")
+                frame = frame.loc[frame["id"].isin(shared_ids)]
             if parent_ids is not None and "id" in frame.columns:
                 frame = frame.loc[frame["id"].isin(parent_ids)]
             if frame.empty:
@@ -168,12 +244,15 @@ def iter_logprob_rows(
     selected_datasets: list[str] | None = None,
     selected_models: list[str] | None = None,
     selected_parent_ids: Mapping[str, set[int]] | None = None,
+    *,
+    max_rows_per_dataset_split: int | None = None,
 ) -> Iterator[dict]:
     for batch in iter_logprob_row_batches(
         processed_root,
         selected_datasets,
         selected_models,
         selected_parent_ids,
+        max_rows_per_dataset_split=max_rows_per_dataset_split,
     ):
         yield from batch
 
@@ -200,12 +279,18 @@ def compute_length_metric_table(
     selected_models: list[str] | None = None,
     batch_size: int = 256,
     show_progress: bool = True,
+    max_rows_per_dataset_split: int | None = None,
 ) -> pd.DataFrame:
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
     columns = ["dataset", "model", "split", "token_length", *TOKEN_DERIVED_METRICS]
     records = []
-    rows = iter_logprob_rows(processed_root, selected_datasets, selected_models)
+    rows = iter_logprob_rows(
+        processed_root,
+        selected_datasets,
+        selected_models,
+        max_rows_per_dataset_split=max_rows_per_dataset_split,
+    )
     batches = iter(lambda: list(islice(rows, batch_size)), [])
     source_batches = tqdm(batches, desc="Computing prefix metric batches", unit="batch") if show_progress else batches
     for batch in source_batches:

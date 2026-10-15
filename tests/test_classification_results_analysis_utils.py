@@ -15,6 +15,7 @@ from notebooks.utils.classification_results_analysis_utils import (
     configuration_ranking,
     document_metrics,
     load_classification_run,
+    iter_prediction_artifacts,
     load_prediction_artifacts,
     load_prediction_artifact,
     mixed_bbc_comparison,
@@ -98,6 +99,21 @@ def test_load_prediction_artifacts_applies_filter_before_reading(tmp_path: Path)
     )
 
     assert predictions["mg_score"].tolist() == [0.1]
+
+
+def test_iter_prediction_artifacts_yields_one_frame_at_a_time(tmp_path: Path) -> None:
+    root = _run_root(tmp_path)
+    artifact = root / "predictions" / "model" / "Mixed" / "source" / "test"
+    artifact.mkdir(parents=True)
+    (artifact / "metadata.json").write_text("{}", encoding="utf-8")
+    pd.DataFrame({"label": [0, 1], "mg_score": [0.1, 0.9]}).to_parquet(
+        artifact / "data.parquet", index=False
+    )
+
+    frames = list(iter_prediction_artifacts(tmp_path, run_id="run-1", columns=("label", "mg_score")))
+
+    assert len(frames) == 1
+    assert frames[0]["mg_score"].tolist() == [0.1, 0.9]
 
 
 def test_load_classification_run_filters_headered_rows_and_records_provenance(tmp_path: Path) -> None:
