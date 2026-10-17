@@ -110,6 +110,12 @@ def build_datasets(data_root: Path) -> dict[str, dict[str, object]]:
             "HG": data_root / "raw/bbc_news/bbc_news_titles_HG.csv",
         },
     },
+    "name_that_llm_train": {
+        "dataset_name": "name_that_llm_train",
+        "splits": {
+            "MG": data_root / "raw/name-that-llm/name_that_llm_train_MG.csv",
+        },
+    },
     }
 
 
