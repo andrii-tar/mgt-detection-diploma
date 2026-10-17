@@ -7,7 +7,7 @@ import pandas as pd
 
 
 INPUT_COLUMNS = ["id", "prompt_id", "text", "model"]
-OUTPUT_COLUMNS = ["id", "text", "prompt_id", "source_llm", "origin", "source_dataset"]
+OUTPUT_COLUMNS = ["id", "source_id", "text", "prompt_id", "source_llm", "origin", "source_dataset"]
 
 
 def prepare_name_that_llm(input_path: Path, output_path: Path) -> None:
@@ -19,7 +19,7 @@ def prepare_name_that_llm(input_path: Path, output_path: Path) -> None:
     if missing:
         raise ValueError(f"Missing required columns: {', '.join(missing)}")
     if frame["id"].duplicated().any():
-        raise ValueError("id values must be unique")
+        raise ValueError("source id values must be unique")
     if frame["text"].isna().any() or frame["text"].astype(str).str.strip().eq("").any():
         raise ValueError("text contains blank values")
     if frame["model"].isna().any() or frame["model"].astype(str).str.strip().eq("").any():
@@ -27,7 +27,8 @@ def prepare_name_that_llm(input_path: Path, output_path: Path) -> None:
 
     result = pd.DataFrame(
         {
-            "id": frame["id"],
+            "id": range(len(frame)),
+            "source_id": frame["id"],
             "text": frame["text"],
             "prompt_id": frame["prompt_id"],
             "source_llm": frame["model"],

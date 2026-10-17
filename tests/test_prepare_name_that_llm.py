@@ -33,13 +33,15 @@ def test_prepare_name_that_llm_preserves_ids_and_adds_metadata(tmp_path: Path) -
     result = pd.read_csv(output_path, dtype={"id": str})
     assert list(result.columns) == [
         "id",
+        "source_id",
         "text",
         "prompt_id",
         "source_llm",
         "origin",
         "source_dataset",
     ]
-    assert result["id"].tolist() == ["0018b3765972", "0041ac86ee93"]
+    assert result["id"].tolist() == ["0", "1"]
+    assert result["source_id"].tolist() == ["0018b3765972", "0041ac86ee93"]
     assert result["prompt_id"].tolist() == ["p081", "p073"]
     assert result["source_llm"].tolist() == ["qwen3.8-max", "claude-sonnet-5"]
     assert set(result["origin"]) == {"MG"}
