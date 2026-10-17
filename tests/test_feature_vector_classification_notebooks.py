@@ -94,6 +94,33 @@ def test_local_evidence_token_profile_notebook_is_output_free_and_declares_compa
     assert '"SemEval MG": {"dataset"' not in source
 
 
+def test_name_that_llm_notebook_reports_source_llm_accuracy() -> None:
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+
+    for fragment in (
+        "source_llm_accuracy",
+        'groupby(["source_llm", "model_family", "window_configuration"], as_index=False)',
+        "correct_mg_count",
+        "mg_detection_accuracy",
+        "values.eq(1).sum()",
+    ):
+        assert fragment in source
+
+
+def test_name_that_llm_notebook_displays_source_llm_accuracy_pivot() -> None:
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+
+    for fragment in (
+        "source_llm_accuracy_pivot",
+        "processed_texts",
+        "nunique",
+        ".pivot(",
+        "columns=['model_family', 'window_configuration']",
+        "display(source_llm_accuracy_pivot)",
+    ):
+        assert fragment in source
+
+
 def test_generalization_notebook_uses_matrix_facets_instead_of_flat_plots() -> None:
     source = _source("compare_classifier_generalization.ipynb")
     assert "comparison_matrix(" in source
@@ -646,6 +673,61 @@ def test_semeval_random_forest_visualization_notebook_contract() -> None:
         assert fragment in source
     for forbidden in (
         "ensure_prepared_partition(",
+        "fit_feature_vector_model(",
+        "save_model_artifact(",
+        "process_pipeline",
+        "token_similarity_stage2",
+    ):
+        assert forbidden not in source
+
+
+def test_name_that_llm_classifier_comparison_notebook_contract() -> None:
+    notebook = _notebook("compare_name_that_llm_classifiers.ipynb")
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+
+    assert notebook["nbformat"] >= 4
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            assert cell["execution_count"] is None
+            assert cell["outputs"] == []
+            ast.parse("".join(cell["source"]))
+    for fragment in (
+        "DATASET = 'name_that_llm_train'",
+        "SCORER_LLM = 'gemma_3_270m_it'",
+        "LIMIT = ",
+        "WINDOWS = (32, 64, 128)",
+        "MODEL_FAMILIES = ('logistic_regression', 'random_forest')",
+        "source_metadata['text_id']",
+        "selected_text_ids = available_ids[-LIMIT:]",
+        "available_ids_by_window",
+        "common_ids = set.intersection(*available_ids_by_window.values())",
+        "ensure_prepared_partition(",
+        "discover_model_artifacts(",
+        "load_model_artifact(",
+        "trust_artifact=True",
+        "predictions_long",
+        "mg_score=('mg_score', 'mean')",
+        "MG-only detection rate",
+        "source_llm",
+        "prompt_id",
+        "raw' / 'name-that-llm' / 'train.csv'",
+        "text.split()",
+        "processed_paths = sorted",
+        "name_that_llm_train_MG.csv",
+        "source_metadata",
+        "processed_texts['id'] = processed_texts['id'].astype(str)",
+        "missing source LLM metadata",
+        "import matplotlib.pyplot as plt",
+        "import seaborn as sns",
+        "dataset_counts",
+        "'ALL'",
+        "plt.subplots(2, 2",
+        "Text length (words)",
+    ):
+        assert fragment in source
+    assert source.index("DATA_ROOT =") < source.index("pd.read_csv(DATA_ROOT")
+    assert "whole_text" not in source
+    for forbidden in (
         "fit_feature_vector_model(",
         "save_model_artifact(",
         "process_pipeline",
