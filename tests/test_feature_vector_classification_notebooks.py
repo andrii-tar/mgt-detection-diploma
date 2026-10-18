@@ -121,6 +121,41 @@ def test_name_that_llm_notebook_displays_source_llm_accuracy_pivot() -> None:
         assert fragment in source
 
 
+def test_name_that_llm_notebook_reports_long_text_accuracy_pivot() -> None:
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+
+    for fragment in (
+        "MIN_TOKEN_COUNT = 250",
+        "token_count'].ge(MIN_TOKEN_COUNT)",
+        "long_text_source_accuracy",
+        "long_text_aggregate_accuracy",
+        "source_llm='ALL'",
+        "long_text_accuracy_pivot",
+        "display(long_text_accuracy_pivot)",
+    ):
+        assert fragment in source
+
+
+def test_name_that_llm_notebook_reports_logistic_accuracy_by_minimum_token_count() -> None:
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+
+    for fragment in (
+        "MIN_TOKEN_THRESHOLD = 50",
+        "TOKEN_THRESHOLD_STEP = 10",
+        "token_count'].ge(min_token_count)",
+        "model_family'].eq('logistic_regression')",
+        "window_configuration'].isin(LENGTH_WINDOWS)",
+        "source_llm",
+        "min_token_count",
+        "['window_configuration', 'source_llm', 'min_token_count']",
+        "values.eq(1).mean()",
+        "sns.lineplot(",
+        "MG detection accuracy",
+        "Minimum text length (tokens)",
+    ):
+        assert fragment in source
+
+
 def test_generalization_notebook_uses_matrix_facets_instead_of_flat_plots() -> None:
     source = _source("compare_classifier_generalization.ipynb")
     assert "comparison_matrix(" in source
@@ -716,6 +751,8 @@ def test_name_that_llm_classifier_comparison_notebook_contract() -> None:
         "name_that_llm_train_MG.csv",
         "source_metadata",
         "processed_texts['id'] = processed_texts['id'].astype(str)",
+        "columns=['id', 'text', 'tokens']",
+        "processed_texts['token_count'] = processed_texts['tokens'].map(len)",
         "missing source LLM metadata",
         "import matplotlib.pyplot as plt",
         "import seaborn as sns",
@@ -723,6 +760,25 @@ def test_name_that_llm_classifier_comparison_notebook_contract() -> None:
         "'ALL'",
         "plt.subplots(2, 2",
         "Text length (words)",
+        "max_token_count",
+        "token_plot_frames",
+        "Text length (tokens)",
+        "values.eq(1).sum()",
+        "text_id', 'nunique'",
+        "fillna(0)",
+        "plt.subplots(2, 2",
+        "source_llm_counts",
+        "source_llm', 'model_family', 'window_configuration",
+        "correct_text_count",
+        "incorrect_text_count",
+        "processed_text_count",
+        "bottom=panel['correct_text_count']",
+        "Correctly classified MG texts",
+        "Incorrectly classified MG texts",
+        "source_llm_counts['model_family'].eq(model_family)",
+        "source_llm_counts['window_configuration'].eq(window)",
+        "{model_family} / {window}-token window",
+        "axes.flat",
     ):
         assert fragment in source
     assert source.index("DATA_ROOT =") < source.index("pd.read_csv(DATA_ROOT")
