@@ -252,6 +252,7 @@ def prepare_feature_partition(
 def prepare_canonical_partition(
     processed_root: Path | str, *, scorer_llm: str, dataset: str, split: str,
     window_configuration: WindowConfiguration, stride: int,
+    on_text_prepared: Callable[[], None] | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     configuration = _window_configuration(window_configuration)
     _validate_stride(stride)
@@ -296,6 +297,8 @@ def prepare_canonical_partition(
                 "label": source.get("label", _expected_label(split)), "start_token": start,
                 "stop_token": stop, "window_configuration": configuration, **metrics, **local_values,
             })
+        if on_text_prepared is not None:
+            on_text_prepared()
     frame = pd.DataFrame(rows)
     if frame.empty:
         raise ValueError("prepared feature partition is empty")
@@ -394,6 +397,7 @@ def load_canonical_partition(path: Path | str, *, expected: Mapping[str, object]
 def ensure_canonical_partition(
     data_root: Path | str, processed_root: Path | str, *, scorer_llm: str, dataset: str, split: str,
     window_configuration: WindowConfiguration, stride: int,
+    on_text_prepared: Callable[[], None] | None = None,
 ) -> dict[str, object]:
     path = canonical_partition_path(data_root, scorer_llm=scorer_llm, dataset=dataset, split=split,
                                     window_configuration=window_configuration)
@@ -412,12 +416,14 @@ def ensure_canonical_partition(
                 frame, feature_columns = prepare_canonical_partition(
                     processed_root, scorer_llm=scorer_llm, dataset=dataset, split=split,
                     window_configuration=window_configuration, stride=stride,
+                    on_text_prepared=on_text_prepared,
                 )
                 _save_canonical_partition(path, frame, feature_columns=feature_columns, expected=expected)
         else:
             frame, feature_columns = prepare_canonical_partition(
                 processed_root, scorer_llm=scorer_llm, dataset=dataset, split=split,
                 window_configuration=window_configuration, stride=stride,
+                on_text_prepared=on_text_prepared,
             )
             _save_canonical_partition(path, frame, feature_columns=feature_columns, expected=expected)
         return {"status": "available", "path": path, "expected": expected}
@@ -567,6 +573,7 @@ def load_prepared_partition(path: Path | str, *, expected: Mapping[str, object])
 def ensure_prepared_partition(
     data_root: Path | str, processed_root: Path | str, *, scorer_llm: str, dataset: str, split: str,
     feature_set: FeatureSet, window_configuration: WindowConfiguration, stride: int,
+    on_text_prepared: Callable[[], None] | None = None,
 ) -> dict[str, object]:
     try:
         _, local_columns = _feature_columns(feature_set)
@@ -589,6 +596,7 @@ def ensure_prepared_partition(
         canonical = ensure_canonical_partition(
             data_root, processed_root, scorer_llm=scorer_llm, dataset=dataset, split=split,
             window_configuration=window_configuration, stride=stride,
+            on_text_prepared=on_text_prepared,
         )
         if canonical["status"] != "available":
             return {"status": "unavailable", "path": path, "error": canonical["error"]}

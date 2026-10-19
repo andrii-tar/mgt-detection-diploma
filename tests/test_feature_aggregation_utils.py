@@ -53,6 +53,7 @@ def _write_processed_text(
     token_count: int,
     text_id: int = 1,
     label: int | None = None,
+    part_name: str = "part-0.parquet",
 ) -> None:
     tokens = [
         {
@@ -62,8 +63,8 @@ def _write_processed_text(
         }
         for index in range(token_count)
     ]
-    path = root / f"{dataset}__{scorer}" / split / "data" / "part-0.parquet"
-    path.parent.mkdir(parents=True)
+    path = root / f"{dataset}__{scorer}" / split / "data" / part_name
+    path.parent.mkdir(parents=True, exist_ok=True)
     row = {"id": text_id, "split": split, "text": "text", "tokens": tokens}
     if label is not None:
         row["label"] = label
@@ -74,9 +75,10 @@ def _write_processed_text(
 
 def _write_similarity_text(
     root: Path, *, dataset: str, scorer: str, split: str, token_count: int, text_id: int = 1,
+    part_name: str = "part-0.parquet",
 ) -> None:
-    path = root / f"{dataset}__{scorer}" / split / "token_similarities" / "part-0.parquet"
-    path.parent.mkdir(parents=True)
+    path = root / f"{dataset}__{scorer}" / split / "token_similarities" / part_name
+    path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame([{
         "id": text_id,
         "token_similarities": [
@@ -122,6 +124,38 @@ def test_canonical_partition_preserves_feature_columns_for_empty_tokens(tmp_path
     ]
     assert frame.loc[0, [column for column in CANONICAL_FEATURE_COLUMNS if not column.endswith("__finite_fraction")]].isna().all()
     assert frame.loc[0, "top20_coverage__finite_fraction"] == 0.0
+
+
+def test_prepared_partition_reports_each_text_only_while_building_canonical(tmp_path: Path) -> None:
+    for text_id in (1, 2):
+        _write_processed_text(
+            tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2,
+            text_id=text_id, part_name=f"part-{text_id}.parquet",
+        )
+        _write_similarity_text(
+            tmp_path, dataset="source", scorer="scorer", split="HG", token_count=2,
+            text_id=text_id, part_name=f"part-{text_id}.parquet",
+        )
+    prepared_texts: list[None] = []
+
+    result = ensure_prepared_partition(
+        tmp_path, tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=LOCAL_FEATURE_SET, window_configuration=2, stride=1,
+        on_text_prepared=lambda: prepared_texts.append(None),
+    )
+
+    assert result["status"] == "available", result
+    assert prepared_texts == [None, None]
+
+    cached_texts: list[None] = []
+    cached = ensure_prepared_partition(
+        tmp_path, tmp_path, scorer_llm="scorer", dataset="source", split="HG",
+        feature_set=LOCAL_FEATURE_SET, window_configuration=2, stride=1,
+        on_text_prepared=lambda: cached_texts.append(None),
+    )
+
+    assert cached["status"] == "available", cached
+    assert cached_texts == []
 
 
 def test_feature_set_projections_reuse_canonical_metrics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
