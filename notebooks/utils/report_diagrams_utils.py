@@ -39,6 +39,13 @@ def save_report_figure(figure: plt.Figure, path: Path | str) -> tuple[Path, Path
     return paths
 
 
+def save_png_figure(figure: plt.Figure, path: Path | str) -> Path:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(destination, dpi=300, bbox_inches="tight")
+    return destination
+
+
 def available_metric_rows(metrics: pd.DataFrame, metric: str) -> pd.DataFrame:
     if metric not in metrics.columns:
         raise ValueError(f"metrics are missing required column: {metric}")
