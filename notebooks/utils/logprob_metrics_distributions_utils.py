@@ -460,7 +460,13 @@ def plot_metric_distributions(data: pd.DataFrame, metric: str, *, bins: int = 50
     plt.show()
 
 
-def plot_length_metric_distributions(data: pd.DataFrame, metric: str, *, bins: int = 50) -> None:
+def plot_length_metric_distributions(
+    data: pd.DataFrame,
+    metric: str,
+    *,
+    bins: int = 50,
+    output_dir: Path | None = None,
+) -> None:
     if metric not in data.columns:
         raise ValueError(f"Metric column not found: {metric}")
 
@@ -511,6 +517,9 @@ def plot_length_metric_distributions(data: pd.DataFrame, metric: str, *, bins: i
         axis.set_xlabel(metric)
         axis.set_ylabel("token length")
         axis.set_zlabel("density")
+        if output_dir is not None:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            figure.savefig(output_dir / f"{metric}__{dataset}__{model}.png", dpi=300, bbox_inches="tight")
         plt.show()
 
 
