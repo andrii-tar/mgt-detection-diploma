@@ -1,17 +1,87 @@
 from pathlib import Path
 
+import pytest
+
 import pandas as pd
 
 from notebooks.utils.complete_classifier_analysis_utils import (
     AnalysisPaths,
     configuration_fingerprint,
     deduplicate_parent_counts,
+    detector_confusion_matrices,
     evaluation_metric_table,
+    feature_window_summary,
     run_step,
+    select_report_metrics,
     select_smoke_artifacts,
     step_is_complete,
+    targeted_evaluation_status,
     unavailable_table,
 )
+
+
+def test_select_report_metrics_keeps_only_canonical_gemma_test_rows():
+    metrics = pd.DataFrame([
+        {"scorer_llm": "gemma_3_270m_it", "feature_set": "simple_similarity", "training_regime": "Kaggle+MAGE+Outfox", "training_window": "32", "partition": "test", "model_family": "logistic_regression", "dataset": "mage", "evaluation_window": "32", "macro_f1": .8},
+        {"scorer_llm": "gemma_3_1b_it", "feature_set": "simple_similarity", "training_regime": "Kaggle+MAGE+Outfox", "training_window": "32", "partition": "test", "model_family": "logistic_regression", "dataset": "mage", "evaluation_window": "32", "macro_f1": .7},
+        {"scorer_llm": "gemma_3_270m_it", "feature_set": "simple_similarity", "training_regime": "Kaggle+MAGE+Outfox", "training_window": "32", "partition": "validation", "model_family": "logistic_regression", "dataset": "mage", "evaluation_window": "32", "macro_f1": .6},
+    ])
+
+    result = select_report_metrics(
+        metrics,
+        scorer_llm="gemma_3_270m_it",
+        feature_set="simple_similarity",
+        training_regime="Kaggle+MAGE+Outfox",
+        training_window=32,
+        partition="test",
+    )
+
+    assert len(result) == 1
+    assert result.iloc[0]["scorer_llm"] == "gemma_3_270m_it"
+
+
+def test_select_report_metrics_rejects_empty_and_duplicate_selection():
+    base = {"scorer_llm": "gemma_3_270m_it", "feature_set": "simple_similarity", "training_regime": "Kaggle+MAGE+Outfox", "training_window": 32, "partition": "test", "model_family": "logistic_regression", "dataset": "mage", "evaluation_window": "32"}
+    with pytest.raises(ValueError, match="empty"):
+        select_report_metrics(pd.DataFrame([base]), scorer_llm="missing", feature_set="simple_similarity", training_regime="Kaggle+MAGE+Outfox", training_window=32, partition="test")
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        select_report_metrics(pd.DataFrame([base, base]), scorer_llm="gemma_3_270m_it", feature_set="simple_similarity", training_regime="Kaggle+MAGE+Outfox", training_window=32, partition="test")
+
+
+def test_feature_window_summary_preserves_configuration_dimensions():
+    metrics = pd.DataFrame([
+        {"model_family": "logistic_regression", "dataset": "mage", "evaluation_window": 32, "feature_set": "simple_similarity", "training_regime": "Kaggle+MAGE+Outfox", "training_window": 32, "scorer_llm": "gemma_3_270m_it", "partition": "test", "macro_f1": .8}
+    ])
+    result = feature_window_summary(metrics)
+    assert set(["model_family", "dataset", "evaluation_window", "scorer_llm", "partition"]).issubset(result.columns)
+
+
+def test_detector_confusion_matrices_are_independent():
+    metrics = pd.DataFrame([
+        {"model_family": "logistic_regression", "tn": 8, "fp": 2, "fn": 1, "tp": 9},
+        {"model_family": "random_forest", "tn": 4, "fp": 1, "fn": 2, "tp": 3},
+    ])
+    matrices = detector_confusion_matrices(metrics)
+    assert set(matrices) == {"logistic_regression", "random_forest"}
+    assert matrices["logistic_regression"].loc["HG", "HG"] == .8
+    assert matrices["random_forest"].loc["MG", "MG"] == .6
+
+
+def test_targeted_evaluation_status_records_bbc_as_unavailable():
+    metrics = pd.DataFrame(columns=["dataset", "scorer_llm", "feature_set", "training_regime", "training_window", "partition", "model_family"])
+    result = targeted_evaluation_status(
+        metrics,
+        dataset="bbc_news_content",
+        scorer_llm="gemma_3_270m_it",
+        feature_set="simple_similarity",
+        training_regime="Kaggle+MAGE+Outfox",
+        training_window=32,
+        partition="test",
+        detector_families=["logistic_regression", "random_forest"],
+    )
+    assert result["status"].tolist() == ["unavailable", "unavailable"]
+    assert result["reason"].str.contains("exact Gemma 270M").all()
 
 
 def test_analysis_paths_create_separate_intermediate_and_output_roots(tmp_path: Path):

@@ -6,6 +6,7 @@ import pandas as pd
 from notebooks.utils.report_diagrams_utils import (
     available_metric_rows,
     normalized_confusion_matrix,
+    plot_output_root,
     report_output_paths,
     save_report_figure,
     save_report_table,
@@ -18,6 +19,21 @@ def test_report_output_paths_are_created_below_data_root(tmp_path) -> None:
     assert paths.root == tmp_path / "experiment-results" / "report"
     assert paths.figures.is_dir()
     assert paths.tables.is_dir()
+
+
+def test_report_output_paths_support_a_separate_run_root(tmp_path) -> None:
+    paths = report_output_paths(tmp_path, report_run_id="report-run-2")
+
+    assert paths.root == tmp_path / "experiment-results" / "report" / "report-run-2"
+    assert paths.figures.is_dir()
+    assert paths.tables.is_dir()
+
+
+def test_plot_output_root_supports_a_separate_run_root(tmp_path) -> None:
+    output = plot_output_root(tmp_path, "classifier-results", plot_run_id="plots-run-2")
+
+    assert output == tmp_path / "plots" / "plots-run-2" / "classifier-results"
+    assert output.is_dir()
 
 
 def test_report_exports_table_and_three_figure_formats(tmp_path) -> None:

@@ -20,6 +20,8 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from .report_diagrams_utils import normalized_confusion_matrix
+
 
 @dataclass(frozen=True)
 class AnalysisPaths:
@@ -172,6 +174,125 @@ def evaluation_metric_table(metrics: pd.DataFrame) -> pd.DataFrame:
     result = metrics.copy()
     result.insert(0, "metric_source", "evaluation_metrics")
     return result
+
+
+_REPORT_SELECTOR_COLUMNS = (
+    "scorer_llm", "feature_set", "training_regime", "training_window", "partition",
+)
+_REPORT_GROUP_COLUMNS = (
+    "model_family", "dataset", "evaluation_window", "feature_set",
+    "training_regime", "training_window", "scorer_llm", "partition",
+)
+
+
+def _require_columns(frame: pd.DataFrame, columns: Sequence[str], *, context: str) -> None:
+    missing = sorted(set(columns).difference(frame.columns))
+    if missing:
+        raise ValueError(f"{context} are missing required columns: {missing}")
+
+
+def _window_matches(values: pd.Series, expected: str | int) -> pd.Series:
+    expected_value = str(expected)
+    return values.astype("string").eq(expected_value)
+
+
+def select_report_metrics(
+    metrics: pd.DataFrame,
+    *,
+    scorer_llm: str,
+    feature_set: str,
+    training_regime: str,
+    training_window: str | int,
+    partition: str,
+) -> pd.DataFrame:
+    """Select one canonical report configuration without mixing duplicate rows."""
+    _require_columns(
+        metrics,
+        [*_REPORT_SELECTOR_COLUMNS, "model_family", "dataset", "evaluation_window"],
+        context="report metrics",
+    )
+    selected = metrics.loc[
+        metrics["scorer_llm"].eq(scorer_llm)
+        & metrics["feature_set"].eq(feature_set)
+        & metrics["training_regime"].eq(training_regime)
+        & _window_matches(metrics["training_window"], training_window)
+        & metrics["partition"].eq(partition)
+    ].copy()
+    if selected.empty:
+        raise ValueError("report metric selection is empty")
+    if selected.duplicated(subset=list(_REPORT_GROUP_COLUMNS), keep=False).any():
+        raise ValueError("report metric selection is ambiguous: duplicate configuration rows")
+    return selected.reset_index(drop=True)
+
+
+def feature_window_summary(metrics: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate current evaluation metrics while retaining report dimensions."""
+    _require_columns(metrics, _REPORT_GROUP_COLUMNS, context="feature/window metrics")
+    numeric_columns = [
+        column for column in metrics.select_dtypes(include="number").columns
+        if column not in _REPORT_GROUP_COLUMNS
+    ]
+    grouped = metrics.groupby(list(_REPORT_GROUP_COLUMNS), dropna=False, sort=True)
+    summary = grouped[numeric_columns].mean().reset_index() if numeric_columns else grouped.size().reset_index(name="row_count")
+    if numeric_columns:
+        summary.insert(len(_REPORT_GROUP_COLUMNS), "row_count", grouped.size().to_numpy())
+    return summary
+
+
+def detector_confusion_matrices(metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Return one normalized confusion matrix per detector family."""
+    _require_columns(metrics, ["model_family", "tn", "fp", "fn", "tp"], context="confusion metrics")
+    matrices: dict[str, pd.DataFrame] = {}
+    for model_family, detector_rows in metrics.groupby("model_family", sort=True, dropna=False):
+        if pd.isna(model_family):
+            raise ValueError("confusion metrics contain a missing model family")
+        matrices[str(model_family)] = normalized_confusion_matrix(detector_rows)
+    if not matrices:
+        raise ValueError("confusion metric selection is empty")
+    return matrices
+
+
+def targeted_evaluation_status(
+    metrics: pd.DataFrame,
+    *,
+    dataset: str,
+    scorer_llm: str,
+    feature_set: str,
+    training_regime: str,
+    training_window: str | int,
+    partition: str,
+    detector_families: Sequence[str],
+) -> pd.DataFrame:
+    """Report exact targeted-evaluation availability for each detector family."""
+    required = [*_REPORT_SELECTOR_COLUMNS, "dataset", "model_family"]
+    _require_columns(metrics, required, context="targeted evaluation metrics")
+    families = list(dict.fromkeys(detector_families))
+    if not families:
+        raise ValueError("detector_families must not be empty")
+    selected = metrics.loc[
+        metrics["dataset"].eq(dataset)
+        & metrics["scorer_llm"].eq(scorer_llm)
+        & metrics["feature_set"].eq(feature_set)
+        & metrics["training_regime"].eq(training_regime)
+        & _window_matches(metrics["training_window"], training_window)
+        & metrics["partition"].eq(partition)
+    ]
+    rows: list[dict[str, object]] = []
+    for family in families:
+        available = selected.loc[selected["model_family"].eq(family)]
+        record = {
+            "dataset": dataset,
+            "scorer_llm": scorer_llm,
+            "feature_set": feature_set,
+            "training_regime": training_regime,
+            "training_window": str(training_window),
+            "partition": partition,
+            "model_family": family,
+            "status": "available" if not available.empty else "unavailable",
+            "reason": "" if not available.empty else "no exact Gemma 270M BBC evaluation result",
+        }
+        rows.append(record)
+    return pd.DataFrame(rows)
 
 
 def unavailable_table(reason: str) -> pd.DataFrame:
