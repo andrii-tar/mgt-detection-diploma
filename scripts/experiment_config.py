@@ -8,13 +8,29 @@ DATA_ROOT = Path(".")
 MODEL_IDS = {
     "gemma_2_2b_it": "google/gemma-2-2b-it",
     "gemma_3_1b_it": "google/gemma-3-1b-it",
+    "gemma_3_270m_it": "google/gemma-3-270m-it",
     "gpt2": "openai-community/gpt2",
+    "hymba_1_5b_instruct": "nvidia/Hymba-1.5B-Instruct",
     "llama_3_2_1b": "meta-llama/Llama-3.2-1B",
     "llama_3_2_3b": "meta-llama/Llama-3.2-3B",
     "opt_350m": "facebook/opt-350m",
     "phi_4_mini_instruct": "microsoft/Phi-4-mini-instruct",
     "phi_4_mini_reasoning": "microsoft/Phi-4-mini-reasoning",
+    "qwen3_5_0_8b": "Qwen/Qwen3.5-0.8B",
+    "littlelamb": "MultiverseComputingCAI/LittleLamb",
+    "ministral_3_3b": "unsloth/Ministral-3-3B-Instruct-2512-GGUF",
+    "ministral_3_3b_reasoning": "unsloth/Ministral-3-3B-Reasoning-2512-GGUF",
     "smollm2_360m": "HuggingFaceTB/SmolLM2-360M-Instruct",
+    "smollm2_1_7b": "lmstudio-community/SmolLM2-1.7B-Instruct-GGUF"
+}
+
+# Project-wide display names for feature-set identifiers used in reports and plots.
+FEATURE_SET_LABELS = {
+    "scalar_compact": "simple features",
+    "simple_similarity": "similarity",
+    "scalar_all": "all scalar features",
+    "extended": "extended similarity",
+    "gpt_who": "GPT-who",
 }
 
 def build_datasets(data_root: Path) -> dict[str, dict[str, object]]:
@@ -61,6 +77,20 @@ def build_datasets(data_root: Path) -> dict[str, dict[str, object]]:
             "MG": data_root / "raw/outfox/outfox_chatgpt_all_MG.csv",
         },
     },
+    "semeval2024_task8_subtask_c_train": {
+        "dataset_name": "semeval2024_task8_subtask_c_train",
+        "splits": {
+            "MG": data_root
+            / "raw/semevals_2024-task8/SemEval2024-task8/subtaskC/SemEval2024_task8_C_train_MG.csv",
+        },
+    },
+    "semeval2024_task8_subtask_c_dev": {
+        "dataset_name": "semeval2024_task8_subtask_c_dev",
+        "splits": {
+            "MG": data_root
+            / "raw/semevals_2024-task8/SemEval2024-task8/subtaskC/SemEval2024_task8_C_dev_MG.csv",
+        },
+    },
     "custom_2025": {
         "dataset_name": "custom_2025",
         "splits": {
@@ -80,6 +110,12 @@ def build_datasets(data_root: Path) -> dict[str, dict[str, object]]:
             "HG": data_root / "raw/bbc_news/bbc_news_titles_HG.csv",
         },
     },
+    "name_that_llm_train": {
+        "dataset_name": "name_that_llm_train",
+        "splits": {
+            "MG": data_root / "raw/name-that-llm/name_that_llm_train_MG.csv",
+        },
+    },
     }
 
 
@@ -88,6 +124,15 @@ DATASETS = build_datasets(DATA_ROOT)
 
 def resolve_model_id(model: str) -> str:
     return MODEL_IDS.get(model, model)
+
+
+def resolve_model_name(model: str) -> str:
+    if model in MODEL_IDS:
+        return model
+    for alias, model_id in MODEL_IDS.items():
+        if model_id == model:
+            return alias
+    return model
 
 
 def resolve_dataset_name(dataset: str) -> str:

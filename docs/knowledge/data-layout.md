@@ -60,6 +60,27 @@ processed/{dataset}__{model}/{split}/token_similarities/*.parquet
 processed/{dataset}__{model}/{split}/similarity_state.json
 ```
 
+Postprocessing outputs created by `scripts/postprocess_pipeline.py`:
+
+```text
+processed/{dataset}__{model}/{split}/postprocessed/stage1.parquet
+processed/{dataset}__{model}/{split}/postprocessed/stage2.parquet
+processed/{dataset}__{model}/{split}/metrics/metrics.parquet
+processed/{dataset}__{model}/{split}/token_similarity_stats/token_similarity_stats.parquet
+processed/{dataset}__{model}/local_evidence/windows.parquet
+```
+
+The postprocessor preserves the original Stage 1 and Stage 2 batch files and
+only creates paired local-evidence outputs when HG and MG IDs match exactly.
+
+Local-evidence notebook experiment outputs:
+
+```text
+processed/{dataset}__{model}/local_evidence/windows.parquet
+```
+
+This is a notebook experiment artifact derived from paired stage 1 and stage 2 outputs. Its Parquet schema metadata records the cache schema version, window lengths, stride, top-k setting, and local feature-column definition; the notebook rebuilds the artifact when those settings do not match. It has no stage state file and is not included in monitoring.
+
 ## State Files
 
 `state.json` tracks stage 1 progress. `similarity_state.json` tracks stage 2 progress.
@@ -85,6 +106,22 @@ Stage 2 states also include:
 stage = token_similarity
 similarity_method = input_embedding_cosine
 ```
+
+## Classifier Feature Cache
+
+Classifier preparation materializes canonical window features at:
+
+```text
+experiment-results/classification/prepared/all_features/{model}/{dataset}/{split}/{window_configuration}
+```
+
+The table contains all scalar features and, when Stage 2 data is available, all
+local-evidence features. Named feature-set partitions remain at their existing
+`prepared/{feature_set}/...` paths and are projections of the canonical table.
+
+Cache metadata includes a manifest of the Stage 1 and Stage 2 Parquet source
+files. Preparation rebuilds canonical and named partitions when that manifest
+changes.
 
 ## Change Checklist
 

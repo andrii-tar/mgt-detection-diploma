@@ -13,3 +13,7 @@ notebooks/.ipynb_checkpoints/
 uv.lock
 .opencode/plugins/emdash-notifications.js
 .worktrees/
+*/.superpowers/sdd/*
+docs/superpowers/
+*ipynb_checkpoints*
+*.mmd

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from notebooks.logprob_metrics_distributions_utils import (
+from notebooks.utils.logprob_metrics_distributions_utils import (
     available_metric_columns,
     load_token_similarity_stats,
     plot_hg_metric_mean_std_kde_by_model,
@@ -60,7 +60,7 @@ class PlotTokenSimilarityTest(unittest.TestCase):
             ]
         )
 
-        with patch("notebooks.logprob_metrics_distributions_utils.plot_similarity_kde_pair") as plot_kde:
+        with patch("notebooks.utils.logprob_metrics_distributions_utils.plot_similarity_kde_pair") as plot_kde:
             plot_token_similarity(
                 data,
                 plot_type="kde",
@@ -138,7 +138,7 @@ class PlotHgMetricMeanStdKdeByModelTest(unittest.TestCase):
         metrics_df = pd.DataFrame([self._metric_row(0, "dataset_a", "model_a", "HG")])
         similarity_stats_df = pd.DataFrame([self._similarity_row(0, "dataset_a", "model_a", "HG")])
 
-        with patch("notebooks.logprob_metrics_distributions_utils.sns.kdeplot") as kdeplot, patch("notebooks.logprob_metrics_distributions_utils.plt.show"):
+        with patch("notebooks.utils.logprob_metrics_distributions_utils.sns.kdeplot") as kdeplot, patch("notebooks.utils.logprob_metrics_distributions_utils.plt.show"):
             plot_hg_metric_mean_std_kde_by_model(metrics_df, similarity_stats_df)
 
         plotted_pairs = {
@@ -178,7 +178,7 @@ class PlotHgMetricMeanStdKdeByModelTest(unittest.TestCase):
             ]
         )
 
-        with patch("notebooks.logprob_metrics_distributions_utils.sns.kdeplot") as kdeplot, patch("notebooks.logprob_metrics_distributions_utils.plt.show"):
+        with patch("notebooks.utils.logprob_metrics_distributions_utils.sns.kdeplot") as kdeplot, patch("notebooks.utils.logprob_metrics_distributions_utils.plt.show"):
             plot_hg_metric_mean_std_kde_by_model(metrics_df, similarity_stats_df, split="MG")
 
         first_call_data = kdeplot.call_args_list[0].kwargs["data"]

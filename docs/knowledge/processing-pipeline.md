@@ -83,6 +83,19 @@ Resume behavior:
 
 ## Verification
 
+Run the single postprocessing step after Stage 1 and Stage 2 are ready:
+
+```powershell
+uv run python scripts\postprocess_pipeline.py
+```
+
+This consolidates Stage 1 and Stage 2 batches into sorted Parquet files,
+validates IDs in both directions, rebuilds scalar metrics and token
+similarity statistics, and rebuilds local-evidence windows for every complete
+discovered split, including datasets that contain only HG or only MG. Original
+batch files are preserved. The command returns a non-zero status when any
+discovered split is empty, incomplete, or invalid.
+
 Run tests after behavior changes:
 
 ```powershell

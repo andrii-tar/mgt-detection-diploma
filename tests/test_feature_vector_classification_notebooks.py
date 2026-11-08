@@ -1,0 +1,1085 @@
+from __future__ import annotations
+
+import ast
+import json
+from pathlib import Path
+
+from notebooks.utils.semeval_random_forest_token_visualization_utils import MODEL_FAMILY, WINDOW_LENGTHS
+
+
+NOTEBOOKS_DIRECTORY = Path(__file__).parents[1] / "notebooks"
+NOTEBOOK_PATH = NOTEBOOKS_DIRECTORY / "prepare_and_train_classifiers.ipynb"
+
+
+def _notebook(name: str = "prepare_and_train_classifiers.ipynb") -> dict:
+    return json.loads((NOTEBOOKS_DIRECTORY / name).read_text(encoding="utf-8"))
+
+
+def _source(name: str = "prepare_and_train_classifiers.ipynb") -> str:
+    return "\n".join(
+        "".join(cell["source"])
+        for cell in _notebook(name)["cells"]
+        if cell["cell_type"] == "code"
+    )
+
+
+def test_document_window_evaluation_notebook_declares_document_level_contract() -> None:
+    source = _source("report/04_document_window_evaluation.ipynb")
+    for fragment in (
+        "gemma_3_270m_it", "gemma_3_1b_it", "littlelamb", "smollm2_360m",
+        "logistic_regression", "random_forest", "Kaggle+MAGE+Outfox", "Kaggle+MAGE+Outfox+BBC",
+        "evaluation_window", "training_window", "32", "64", "sample_mode = \"common\"",
+        "document_threshold = 0.5", "document_window_evaluation_utils",
+        "load_document_configurations(",
+        "common_group_columns = ('evaluation_regime', 'scorer_llm')",
+        "common_group_columns=common_group_columns",
+        "'common_group_columns': common_group_columns",
+    ):
+        assert fragment in source
+    assert "from_pretrained" not in source
+    assert ".fit(" not in source
+    assert "documents_by_configuration = {}" not in source
+
+
+def test_document_level_model_experiment_notebook_declares_leakage_aware_protocol() -> None:
+    notebook = _notebook("report/05_document_level_model_experiment.ipynb")
+    source = _source("report/05_document_level_model_experiment.ipynb")
+    all_source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+    for cell in notebook["cells"]:
+        assert cell.get("execution_count") is None
+        assert cell.get("outputs", []) == []
+    for fragment in (
+        "mean_score_baseline", "logistic_regression", "ebm", "ExplainableBoostingClassifier",
+        "interactions=0", "validation", "test", "fit_and_evaluate_document_models(",
+        "write_document_model_experiment(", "mean_window_score", "std_window_score",
+        "p90_window_score", "fraction_windows_ge_0_5", "longest_positive_run_fraction",
+        "mean_adjacent_score_abs_diff", "document_token_length", "window_count",
+        "validation_model_selection_caveat",
+    ):
+        assert fragment in all_source
+    assert "from_pretrained" not in source
+    assert ".fit(" not in source
+
+
+def test_name_that_llm_document_model_notebook_applies_to_long_mg_documents() -> None:
+    notebook = _notebook("compare_name_that_llm_classifiers.ipynb")
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+    all_source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+    for fragment in (
+        "build_document_feature_table", "fit_document_models", "score_document_models",
+        "summarize_mg_detection", "window_score_predictions", "MIN_TOKEN_COUNT = 250",
+        "load_validation_test_features", "evaluation_regime=TRAINING_COMPOSITION",
+        "fit_document_models(main_validation_documents",
+        "score_document_models(n2llm_long_documents",
+        "name_that_llm_document_mg_detection_overall.csv", "name_that_llm_document_mg_detection_by_source.csv",
+        "MG-only",
+    ):
+        assert fragment in all_source
+    assert ".fit(" not in source
+
+
+def test_name_that_llm_notebook_exports_every_displayed_table() -> None:
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+    for filename in (
+        "name_that_llm_dataset_counts.csv",
+        "name_that_llm_prepared_feature_counts.csv",
+        "name_that_llm_classifier_predictions_long.csv",
+        "name_that_llm_classifier_predictions_wide.csv",
+        "name_that_llm_comparison_summary.csv",
+        "name_that_llm_classifier_disagreements.csv",
+        "name_that_llm_window_changes.csv",
+        "name_that_llm_aggregate_results.csv",
+        "name_that_llm_source_llm_accuracy.csv",
+        "name_that_llm_source_llm_accuracy_pivot.csv",
+        "name_that_llm_long_text_accuracy_pivot.csv",
+        "name_that_llm_source_llm_length_accuracy.csv",
+        "name_that_llm_classification_counts_by_source_llm.csv",
+        "name_that_llm_document_mg_detection_overall.csv",
+        "name_that_llm_document_mg_detection_by_source.csv",
+    ):
+        assert filename in source
+    assert "save_report_table" in source
+    assert "TABLE_OUTPUT_ROOT" in source
+
+
+def test_paper_model_comparison_notebook_declares_all_scopes_and_exports() -> None:
+    notebook = _notebook("report/06_paper_model_comparison.ipynb")
+    source = _source("report/06_paper_model_comparison.ipynb")
+    all_source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            ast.parse("".join(cell.get("source", [])))
+    n2llm_document_cell = next(cell for cell in notebook["cells"] if cell.get("id") == "d8b9cfcd")
+    n2llm_document_source = "".join(n2llm_document_cell["source"])
+    n2llm_window_cell = next(cell for cell in notebook["cells"] if cell.get("id") == "3d7a5c6d")
+    n2llm_window_source = "".join(n2llm_window_cell["source"])
+    assert "N2LLM_SCORERS = ('gemma_3_270m_it', 'littlelamb')" in n2llm_window_source
+    assert "product(N2LLM_SCORERS, MODEL_FAMILIES, TRAIN_WINDOWS, EVALUATION_WINDOWS)" in n2llm_window_source
+    assert "scorer_llm=scorer, dataset='name_that_llm_train'" in n2llm_window_source
+    assert "n2llm_token_counts_by_scorer[scorer]" in n2llm_window_source
+    assert "available_n2llm_scorers = tuple(sorted(n2llm_windows['scorer_llm'].dropna().unique()))" in n2llm_document_source
+    assert "product(available_n2llm_scorers, MODEL_FAMILIES, TRAIN_WINDOWS, EVALUATION_WINDOWS)" in n2llm_document_source
+    assert "n2llm_windows['scorer_llm'].eq(scorer)" in n2llm_document_source
+    assert "mixed_models_by_base_config[(scorer, family, train_window, eval_window)]" in n2llm_document_source
+    assert "predictions.assign(scorer_llm=scorer" in n2llm_document_source
+    assert "scorer_llm='gemma_3_270m_it'" not in n2llm_document_source
+    for fragment in (
+        "gemma_3_270m_it", "gemma_3_1b_it", "littlelamb", "smollm2_360m",
+        "logistic_regression", "random_forest", "training_window", "evaluation_window",
+        "32", "64", "Kaggle+MAGE+Outfox", "Kaggle+MAGE+Outfox+BBC",
+        "bbc_news_content", "semeval2024_task8_subtask_c_train", "name_that_llm_train",
+        "MIN_TOKEN_COUNT = 250", "label_semeval_windows(", "crossing a boundary",
+        "FPR", "MG detection rate", "T01_feature_sets.csv",
+        "T10_semeval_localization.csv", "missing_computations.csv", "run_manifest.json",
+        "build_configuration_coverage", "build_cohort_manifest",
+        "load_document_word_counts",
+        "'matrix_counts': {'W':64,'F':64,'S':20,'D':64,'H':48,'L':16}",
+    ):
+        assert fragment in all_source
+    assert "from_pretrained" not in source
+    assert ".fit(" not in source
+
+
+def test_chapter3_figure_notebook_uses_utils_and_exports_all_ten_figures() -> None:
+    notebook = _notebook("report/07_chapter3_figures.ipynb")
+    source = _source("report/07_chapter3_figures.ipynb")
+
+    for figure_id in ("f01", "f02", "f03", "f04", "f05", "f06", "f07", "f08", "f09", "f10"):
+        assert f"plot_{figure_id}_" in source
+    for fragment in (
+        "chapter3_figures_utils", "CHAPTER3_REPORT_RUN_ID", "figure_inventory.csv",
+        "build_external_document_scores", "build_semeval_profile_rows",
+        "semeval_boundary_threshold_sweep", "threshold_values = tuple(np.round(np.arange(0.0, 1.001, 0.01), 2))",
+        "build_semeval_local_error_inputs", "semeval_window_error_metrics",
+        "semeval_token_error_metrics", "plot_f10_semeval_local_errors",
+        "F10_semeval_window_error_rates.csv", "F10_semeval_token_error_rates.csv",
+        "record_figures(\n    'F10', f10_paths",
+    ):
+        assert fragment in source
+    assert "from_pretrained" not in source
+    assert ".fit(" not in source
+
+
+def test_chapter3_figure_notebook_exports_window_boundary_mae_comparison_table() -> None:
+    source = _source("report/07_chapter3_figures.ipynb")
+    notebook = _notebook("report/07_chapter3_figures.ipynb")
+
+    assert "build_semeval_window_boundary_comparison" in source
+    assert "semeval_boundary_predictions.csv" in source
+    assert "local_scored_windows" in source
+    assert "T11_semeval_window_boundary_comparison.csv" in source
+    assert "window-boundary-detected-only" in {cell.get("id") for cell in notebook["cells"]}
+    assert "window_detected_mae_32" in source
+    assert "T12_semeval_window_boundary_detected_only.csv" in source
+
+
+def test_paper_model_comparison_notebook_shows_progress_for_configuration_loops() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert "from tqdm.auto import tqdm" in source
+    assert "desc='Loading main window predictions'" in source
+    assert "desc='Comparing feature sets'" in source
+    assert "desc='Loading document validation/test profiles'" in source
+
+
+def test_paper_model_comparison_imports_document_word_count_loader() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    notebook = _notebook("report/06_paper_model_comparison.ipynb")
+    imported_names = {
+        alias.name
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
+        for node in ast.walk(ast.parse("".join(cell["source"])))
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+
+    assert "load_document_word_counts" in imported_names
+
+
+def test_paper_model_comparison_recomputes_token_boundary_summary_with_start_fallback() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert "semeval_boundary_predictions.csv" in source
+    assert "summarize_boundary_predictions" in source
+    assert "'scorer_llm', 'feature_set', 'training_regime', 'training_window'" in source
+
+
+def test_paper_model_comparison_normalizes_document_ids_before_word_count_merges() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert source.count("t08_predictions.assign(text_id=t08_predictions['text_id'].astype(str))") == 2
+
+
+def test_paper_model_comparison_normalizes_mixed_object_columns_before_parquet_export() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert "manifest_object_columns = cohorts_manifest.select_dtypes(include='object').columns" in source
+    assert "cohorts_manifest[manifest_object_columns] = cohorts_manifest[manifest_object_columns].astype('string')" in source
+
+
+def test_paper_model_comparison_expected_f_s_l_grids_use_matching_windows_only() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert source.count("'training_window': window, 'evaluation_window': window") == 3
+
+
+def test_t08_metrics_preserve_the_representation_aggregation_label() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert source.count(
+        "{**evaluate_document_predictions(group, document_threshold=0.5), **dict(zip(t08_group_columns, keys))}"
+    ) == 1
+    assert source.count("{**metrics, **dict(zip(t08_group_columns, keys))}") == 1
+
+
+def test_gemma_report_notebooks_use_canonical_configuration_and_current_metrics() -> None:
+    feature_source = _source("report/01_feature_diagnostics.ipynb")
+    classifier_source = _source("report/02_classifier_evaluation.ipynb")
+
+    for fragment in (
+        '"gemma_3_270m_it"',
+        '"simple_similarity"',
+        '"Kaggle+MAGE+Outfox"',
+        '"training_window": 32',
+        '"test"',
+        "evaluation_metrics.csv",
+        "select_report_metrics(",
+        "feature_window_summary(",
+        "evaluation_metric_correlation",
+    ):
+        assert fragment in feature_source or fragment in classifier_source
+    assert "complete-analysis" not in feature_source
+    assert "feature_metric_correlation" not in feature_source
+
+
+def test_classifier_report_exports_independent_detector_matrices() -> None:
+    source = _source("report/02_classifier_evaluation.ipynb")
+
+    for fragment in (
+        "detector_confusion_matrices(",
+        'MIXED_MATRIX_CONFIGURATION = {"evaluation_regime": "Kaggle+MAGE+Outfox", "evaluation_window": 32, "partition": "test"}',
+        'MIXED_BBC_MATRIX_CONFIGURATION = {"evaluation_regime": "Kaggle+MAGE+Outfox+BBC", "evaluation_window": 32, "partition": "test"}',
+        "confusion_matrix_logistic_regression",
+        "confusion_matrix_random_forest",
+        "confusion_matrix_logistic_regression_mixed_bbc",
+        "confusion_matrix_random_forest_mixed_bbc",
+        "targeted_evaluation_status(",
+    ):
+        assert fragment in source
+
+
+def test_classifier_report_bbc_evaluation_uses_canonical_current_run() -> None:
+    source = _source("report/02_classifier_evaluation.ipynb")
+
+    assert 'BBC_ARTIFACT_RUN_ID = "feature-vector-classification-2026-09-25-logreg-random-forest-max600-min100"' in source
+    assert '"training_regime": "Kaggle+MAGE+Outfox"' in source
+    assert "feature-vector-classification-2026-09-21-logreg-random-forest" not in source
+
+
+def test_generalization_comparison_notebook_declares_parameters_and_plots() -> None:
+    source = _source("compare_classifier_generalization.ipynb")
+    assert source.index("MIN_TEXT_TOKENS =") < source.index("load_classification_run(")
+    for fragment in (
+        "All texts",
+        ">= {MIN_TEXT_TOKENS}",
+        "held_out_binary_metrics(",
+        "comparison_matrix(",
+        "plot_matrix_facets(",
+        "insufficient_binary_holdout",
+    ):
+        assert fragment in source
+
+
+def test_mg_score_length_notebook_declares_bounded_prefix_visualization() -> None:
+    source = _source("mg_score_length_distributions.ipynb")
+
+    for fragment in (
+        'BOUNDED_PREFIX_RUN_ID = "bounded-prefix-classifier-evaluation-gemma270m-rf-window32-2026-09-29"',
+        'BOUNDED_PREFIX_MODEL_FAMILY = "random_forest"',
+        'BOUNDED_PREFIX_SCORER_LLM = "gemma_3_270m_it"',
+        'BOUNDED_PREFIX_FEATURE_SET = "simple_similarity"',
+        'BOUNDED_PREFIX_TRAINING_REGIME = "Kaggle+MAGE+Outfox+BBC"',
+        'BOUNDED_PREFIX_EVALUATION_REGIME = "Mixed"',
+        'FEATURE_SETS = ("simple_similarity", "scalar_all")',
+        "load_bounded_prefix_result_frames(",
+        "plot_bounded_prefix_evaluation(",
+            "dataset_balanced_bounded_prefix_feature_set_metrics(",
+        "plot_bounded_prefix_macro_f1_comparison(",
+    ):
+        assert fragment in source
+
+
+def test_mg_score_length_notebook_plots_test_document_scores_from_32_and_64_token_windows() -> None:
+    source = _source("mg_score_length_distributions.ipynb")
+
+    for fragment in (
+        "WINDOW_EVALUATION_LENGTHS = (32, 64)",
+        "aggregate_mg_score_window_predictions(",
+        "evaluation_window=window_length",
+        'partition="test"',
+        "mean of its window scores",
+        "presentation_window_document_mg_score_length__",
+    ):
+        assert fragment in source
+
+
+def test_local_evidence_token_profile_notebook_is_output_free_and_declares_comparison() -> None:
+    notebook = _notebook("compare_local_evidence_token_profiles.ipynb")
+    source = _source("compare_local_evidence_token_profiles.ipynb")
+
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            assert cell["execution_count"] is None
+            assert cell["outputs"] == []
+    assert MODEL_FAMILY == "random_forest"
+    assert WINDOW_LENGTHS == (32, 64, 128)
+    for fragment in (
+        'SCORER_MODEL = "gemma_3_270m_it"',
+        'CLASSIFIERS = ("logistic_regression",)',
+        "TRAINING_WINDOWS = (32, 64)",
+        "select_configured_comparison_texts(",
+        "plot_comparison_token_profiles(",
+        '"Kaggle HG"',
+        '"Kaggle MG"',
+        '"BBC HG"',
+        "## SemEval MG random-forest token profiles",
+        "SELECTED_TEXT_IDS = {",
+        "available_groups",
+        'SEMEVAL_ARTIFACT_RUN_ID = "feature-vector-classification-2026-09-21-logreg-random-forest"',
+        'SEMEVAL_TEXT_COUNT = 20',
+        'SEMEVAL_SELECTION_SEED = 42',
+        "SEMEVAL_CONFIGURATIONS = tuple((MODEL_FAMILY, window_length) for window_length in WINDOW_LENGTHS)",
+        "def plot_semeval_profiles() -> None:",
+        "load_visualization_models(DATA_ROOT, run_id=SEMEVAL_ARTIFACT_RUN_ID)",
+        "select_eligible_text_ids(",
+        "stage1_ids=scan_stage1_ids(",
+        "annotation_ids=scan_annotation_ids(SEMEVAL_ANNOTATION_PATH)",
+        "score_visualization_windows(models, windows_by_length)",
+        "plot_semeval_profiles()",
+    ):
+        assert fragment in source
+    assert '"SemEval MG": {"dataset"' not in source
+
+
+def test_name_that_llm_notebook_reports_source_llm_accuracy() -> None:
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+
+    for fragment in (
+        "source_llm_accuracy",
+        'groupby(["source_llm", "model_family", "window_configuration"], as_index=False)',
+        "correct_mg_count",
+        "mg_detection_accuracy",
+        "values.eq(1).sum()",
+    ):
+        assert fragment in source
+
+
+def test_name_that_llm_notebook_displays_source_llm_accuracy_pivot() -> None:
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+
+    for fragment in (
+        "source_llm_accuracy_pivot",
+        "processed_texts",
+        "nunique",
+        ".pivot(",
+        "columns=['model_family', 'window_configuration']",
+        "display(source_llm_accuracy_pivot)",
+    ):
+        assert fragment in source
+
+
+def test_name_that_llm_notebook_reports_long_text_accuracy_pivot() -> None:
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+
+    for fragment in (
+        "MIN_TOKEN_COUNT = 250",
+        "token_count'].ge(MIN_TOKEN_COUNT)",
+        "long_text_source_accuracy",
+        "long_text_aggregate_accuracy",
+        "source_llm='ALL'",
+        "long_text_accuracy_pivot",
+        "display(long_text_accuracy_pivot)",
+    ):
+        assert fragment in source
+
+
+def test_name_that_llm_notebook_reports_logistic_accuracy_by_minimum_token_count() -> None:
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+
+    for fragment in (
+        "MIN_TOKEN_THRESHOLD = 50",
+        "TOKEN_THRESHOLD_STEP = 10",
+        "token_count'].ge(min_token_count)",
+        "model_family'].eq('logistic_regression')",
+        "window_configuration'].isin(LENGTH_WINDOWS)",
+        "source_llm",
+        "min_token_count",
+        "['window_configuration', 'source_llm', 'min_token_count']",
+        "values.eq(1).mean()",
+        "sns.lineplot(",
+        "MG detection accuracy",
+        "Minimum text length (tokens)",
+    ):
+        assert fragment in source
+
+
+def test_generalization_notebook_uses_matrix_facets_instead_of_flat_plots() -> None:
+    source = _source("compare_classifier_generalization.ipynb")
+    assert "comparison_matrix(" in source
+    assert "plot_matrix_facets(" in source
+    assert "configuration_index(" in source
+    for forbidden in (
+        "plot_generalization_leaderboard(",
+        "plot_dataset_heatmap(",
+        "plot_f1_mae_frontier(",
+        "plot_parameter_effects(",
+        "plot_safety_frontier(",
+    ):
+        assert forbidden not in source
+
+
+def test_feature_importance_notebook_declares_isolated_permutation_experiment() -> None:
+    notebook = _notebook("explore_extended_feature_importance_limited.ipynb")
+    source = _source("explore_extended_feature_importance_limited.ipynb")
+
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            assert cell["execution_count"] is None
+            assert cell["outputs"] == []
+    for required in (
+        "IMPORTANCE_RUN_ID =",
+        "SOURCE_RUN_ID =",
+        "PERMUTATION_REPEATS = 5",
+        "feature-importance",
+        "permute_feature_by_parent",
+        "summarize_importance",
+    ):
+        assert required in source
+    assert 'PERMUTATION_TRAINING_WINDOW = "32"' in source
+    assert 'binary_candidates = binary_candidates.loc[binary_candidates["training_window"].eq(PERMUTATION_TRAINING_WINDOW)].copy()' in source
+    assert 'semeval_ranking = semeval_ranking.loc[semeval_ranking["training_window"].eq(PERMUTATION_TRAINING_WINDOW)].copy()' in source
+    assert "save_model_artifact" not in source
+    assert "fit_feature_vector_model" not in source
+
+
+def test_feature_importance_notebook_requires_complete_validation_binary_artifacts() -> None:
+    source = _source("explore_extended_feature_importance_limited.ipynb")
+
+    assert 'partition="validation"' in source
+    assert 'binary_candidates["dataset_count"].eq(3)' in source
+    assert 'raise RuntimeError("No binary configurations have complete prediction coverage.")' in source
+    assert '"binary": "mean validation macro-F1"' in source
+
+
+def test_feature_importance_notebook_reports_permutation_progress() -> None:
+    source = _source("explore_extended_feature_importance_limited.ipynb")
+
+    assert 'desc=f"Binary {dataset} permutations"' in source
+    assert 'desc=f"SemEval {training_window} permutations"' in source
+    assert 'leave=False' in source
+    assert 'unit="permutation"' in source
+
+
+def test_prepare_and_train_notebook_is_four_cell_output_free_without_definitions() -> None:
+    notebook = _notebook()
+    code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
+
+    assert notebook["nbformat"] >= 4
+    assert len(code_cells) == 4
+    for cell in code_cells:
+        assert cell["execution_count"] is None
+        assert cell["outputs"] == []
+        tree = ast.parse("".join(cell["source"]))
+        assert not any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            for node in ast.walk(tree)
+        )
+
+
+def test_prepare_and_train_notebook_declares_complete_experiment_configuration() -> None:
+    source = _source()
+
+    for fragment in (
+        "SCORER_LLMS =",
+        "DATASETS =",
+        "SOURCE_SPLITS =",
+        "TRAINING_COMPOSITIONS =",
+        "WINDOW_CONFIGURATIONS =",
+        "FEATURE_SETS =",
+        "MODEL_FAMILIES =",
+        '"gemma_3_1b_it"',
+        '"gemma_3_270m_it"',
+        '"littlelamb"',
+        '"smollm2_360m"',
+        '"Kaggle": "kaggle_train"',
+        '"MAGE": "mage_train"',
+        '"Outfox": "outfox_chatgpt_train"',
+        '"BBC": "bbc_news_content"',
+        '"BBC": ("HG",)',
+        'MODEL_FAMILIES = ("logistic_regression", "random_forest")',
+    ):
+        assert fragment in source
+
+
+def test_prepare_and_train_notebook_iterates_all_dataset_subsets() -> None:
+    source = _source()
+
+    for fragment in (
+        "dataset_subsets(",
+        "TRAINING_COMPOSITIONS =",
+        "for training_composition in TRAINING_COMPOSITIONS:",
+        "composition_id(training_composition)",
+        "composition_has_both_classes(training_composition, SOURCE_SPLITS)",
+    ):
+        assert fragment in source
+    assert 'TRAINING_REGIME = "Mixed+BBC"' not in source
+
+
+def test_prepare_and_train_notebook_persists_composition_aware_metadata() -> None:
+    source = _source()
+
+    for fragment in (
+        '"training_composition": training_composition_id',
+        '"evaluation_composition": ""',
+        '"training_composition": training_composition_id',
+        '"dataset": training_composition_id',
+    ):
+        assert fragment in source
+
+
+def test_prepare_and_train_notebook_declares_all_scalar_and_similarity_feature_sets() -> None:
+    source = _source()
+
+    assert 'RUN_ID = "feature-vector-classification-2026-09-25-logreg-random-forest-max600-min100"' in source
+    for name in ("scalar_all", "scalar_compact", "simple_similarity", "extended"):
+        assert f'"{name}": FeatureSet("{name}"' in source
+    for column in (
+        "mean_candidate_similarity__mean",
+        "mean_candidate_similarity__std",
+        "top20_coverage__mean",
+        "top20_coverage__std",
+        "observed_logprob__mean",
+        "observed_logprob__std",
+        "mean_candidate_logprob_delta__mean",
+        "mean_candidate_logprob_delta__std",
+    ):
+        assert f'"{column}"' in source
+
+
+def test_prepare_and_train_notebook_uses_resumable_disk_backed_workflow() -> None:
+    source = _source()
+
+    for fragment in (
+        "ensure_prepared_partition(",
+        "prepared_partition_path(",
+        "path.exists()",
+        "build_feature_parent_cohorts(",
+        "load_training_episode(",
+        "fit_feature_vector_model(",
+        "save_model_artifact(",
+        "ensure_result_exports(",
+        "append_result_frame(",
+        "discover_model_artifacts(",
+        "load_model_artifact(",
+        "availability_row(",
+        "release_frames(",
+    ):
+        assert fragment in source
+    assert "TRAINING_PARTITIONS = (\"train\", \"validation\")" in source
+    assert 'for partition in ("train", "validation", "test")' not in source
+
+
+def test_prepare_and_train_notebook_records_failures_and_never_runs_processing_or_test_evaluation() -> None:
+    source = _source()
+
+    for fragment in (
+        "try:",
+        "except (FileNotFoundError, KeyError, ValueError, OSError) as error:",
+        '"status": "unavailable"',
+        "continue",
+        "run_summary",
+        "training_metrics",
+        "evaluation_metrics",
+        "evaluation_predictions",
+        "evaluation_coverage",
+    ):
+        assert fragment in source
+    for forbidden in (
+        "process_pipeline",
+        "token_similarity_stage2",
+        "load_local_model",
+        "run_stage_2",
+        "evaluate_feature_vector_model(",
+        'partition="test"',
+        'partition = "test"',
+    ):
+        assert forbidden not in source
+
+
+def test_prepare_and_train_notebook_bounds_source_frame_memory_and_handles_episode_failures() -> None:
+    source = _source()
+
+    assert "release_frames(*source_frames)" in source
+    assert "except (FileNotFoundError, KeyError, ValueError, OSError) as error:" in source
+    assert "fit_feature_vector_model(" in source
+    assert "save_model_artifact(" in source
+    assert "run_summary.append" in source
+    assert "continue" in source
+
+
+def test_prepare_and_train_notebook_limits_the_new_run_to_fast_model_families() -> None:
+    source = _source()
+
+    assert 'RUN_ID = "feature-vector-classification-2026-09-25-logreg-random-forest-max600-min100"' in source
+    assert 'MODEL_FAMILIES = ("logistic_regression", "random_forest")' in source
+
+
+def test_evaluate_notebook_is_output_free_and_has_no_definitions() -> None:
+    notebook = _notebook("evaluate_classifiers.ipynb")
+    code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
+
+    assert notebook["nbformat"] >= 4
+    assert code_cells
+    for cell in code_cells:
+        assert cell["execution_count"] is None
+        assert cell["outputs"] == []
+        tree = ast.parse("".join(cell["source"]))
+        assert not any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            for node in ast.walk(tree)
+        )
+
+
+def test_evaluate_notebook_uses_metadata_driven_trusted_transfer_workflow() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    for fragment in (
+        "discover_model_artifacts(",
+        "load_model_metadata(",
+        "load_model_artifact(",
+        "trust_artifact=True",
+        "metadata[\"scorer_llm\"]",
+        "metadata[\"feature_columns\"]",
+        "evaluation_window",
+        "TRAINING_COMPOSITIONS",
+        "EVALUATION_COMPOSITIONS",
+        "composition_has_both_classes",
+        "composition_id",
+        'for partition in ("validation", "test")',
+        "EVALUATION_BATCH_SIZE =",
+        "iter_prepared_batches(",
+        "write_prediction_artifact(",
+        "aggregate_prediction_artifact(",
+        "release_frames(",
+        "ensure_result_exports(",
+        "successful_result_keys(",
+        "completed_evaluation_keys",
+        "evaluation_metrics",
+        "evaluation_coverage",
+        "run_summary",
+        "build_feature_parent_cohorts(",
+        "validation_cohort",
+        "test_cohort",
+        "selected_cohort",
+        "evaluate_local_evidence_semeval(",
+        "completed_semeval_keys",
+        "ensure_prepared_partition(",
+        "semeval_prepared_partitions[(scorer_llm, semeval_dataset, feature_set_name, semeval_window)]",
+        'semeval_prepared["path"]',
+        'semeval_prepared["expected"]',
+        "release_frames(prepared_windows)",
+        "windows_override=prepared_windows",
+        "SEMEVAL_DATASETS =",
+        "semeval_summary",
+        "semeval_boundary_predictions",
+        '"training_datasets": "|".join(metadata["training_datasets"])',
+        '"training_composition": training_composition',
+        '"evaluation_composition": evaluation_composition_id',
+        '"train_row_count": metadata["train_row_count"]',
+        '"validation_row_count": metadata["validation_row_count"]',
+        '"artifact_created_at": metadata["created_at"]',
+        '"stage": "semeval"',
+    ):
+        assert fragment in source
+
+    assert 'for partition in ("validation", "test")' in source
+    assert source.index("ensure_prepared_partition(") < source.index("for artifact_path in tqdm(")
+    assert source.index("semeval_prepared = semeval_prepared_partitions[") > source.index("for artifact_path in tqdm(")
+    assert source.index("windows_override=prepared_windows") > source.index("for artifact_path in tqdm(")
+    assert 'training_window != "whole_text"' in source
+    assert "load_or_build_local_evidence_windows(" not in source
+    assert "load_episode_partitions(DATA_ROOT" not in source
+    assert 'append_result_frame(exports["evaluation_predictions"]' not in source
+
+
+def test_evaluate_notebook_has_one_configuration_and_does_not_overwrite_streamed_results() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    assert source.count('RUN_ID = "') == 1
+    assert source.count("Preparing SemEval feature partitions") == 1
+    assert '"evaluation_predictions": pd.DataFrame()' not in source
+    assert source.count("ensure_result_exports(") == 1
+    assert "append_result_frame(exports[\"run_summary\"], pd.DataFrame([run_summary[-1]]))" in source
+    assert "release_frames(metrics, coverage)" in source
+
+
+def test_evaluate_notebook_regenerates_missing_prediction_artifacts_on_resume() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    assert 'RUN_ID = "feature-vector-classification-2026-09-25-logreg-random-forest-max600-min100"' in source
+    assert "prediction_artifact_is_complete(prediction_path, expected=artifact_key)" in source
+    assert '"evaluation_window": evaluation_window_value' in source
+    assert "if not partition_keys <= completed_evaluation_keys or not all(" in source
+
+
+def test_evaluate_notebook_uses_reduced_composition_matrix_and_windows() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    assert 'SINGLE_DATASETS = ("Kaggle", "MAGE", "Outfox")' in source
+    assert 'MIXED_COMPOSITIONS = (("Kaggle", "MAGE", "Outfox"), ("Kaggle", "MAGE", "Outfox", "BBC"))' in source
+    assert 'TRAINING_COMPOSITIONS = tuple((name,) for name in SINGLE_DATASETS) + MIXED_COMPOSITIONS' in source
+    assert 'EVALUATION_COMPOSITIONS = TRAINING_COMPOSITIONS' in source
+    assert 'EVALUATION_WINDOWS = ("whole_text", 32, 64)' in source
+    assert 'str(artifact_metadata.get(artifact_path, {}).get("training_window", "")) in {"whole_text", "32", "64"}' in source
+    assert 'MIXED_COMPOSITION_ID = composition_id(MIXED_COMPOSITIONS[0])' in source
+    assert 'MIXED_BBC_COMPOSITION_ID = composition_id(MIXED_COMPOSITIONS[1])' in source
+    assert 'allowed_evaluation_compositions = {' in source
+    assert 'MIXED_BBC_COMPOSITION_ID: {MIXED_COMPOSITION_ID, MIXED_BBC_COMPOSITION_ID}' in source
+    assert "build_pooled_feature_parent_cohorts" in source
+    assert "MIXED_MAX_PER_SPLIT = 1000" in source
+    assert "is_mixed_evaluation = len(source_names) > 1" in source
+    assert "dataset = evaluation_composition_id" in source
+    assert "build_pooled_feature_parent_cohorts(" in source
+    assert "aggregate_prediction_artifact(prediction_path" in source
+    assert "for evaluation_composition in EVALUATION_COMPOSITIONS:" in source
+    assert "composition_has_both_classes(evaluation_composition, SOURCE_SPLITS)" in source
+    assert "evaluation_composition_id = composition_id(evaluation_composition)" in source
+    assert 'if evaluation_composition_id not in allowed_evaluation_compositions[training_composition_id]: continue' in source
+    assert "128" not in source[source.index('EVALUATION_WINDOWS ='):source.index('EVALUATION_BATCH_SIZE =')]
+
+
+def test_evaluate_notebook_uses_semeval_train_only() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    assert 'SEMEVAL_DATASETS = {"train":' in source
+    assert '"dev":' not in source[source.index("SEMEVAL_DATASETS ="):]
+
+
+def test_evaluate_notebook_shows_semeval_preparation_progress() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    assert 'for (scorer_llm, feature_set_name, semeval_window), feature_columns in tqdm(semeval_configurations.items(), desc="Preparing SemEval feature partitions", unit="configuration"):' in source
+    assert 'for semeval_split, (semeval_dataset, semeval_path) in tqdm(SEMEVAL_DATASETS.items(), desc=f"{scorer_llm}/{feature_set_name}/{semeval_window}", unit="split", leave=False):' in source
+
+
+def test_analysis_notebook_is_output_free_single_run_and_uses_analysis_utilities() -> None:
+    notebook = _notebook("analyze_classifier_results.ipynb")
+    source = _source("analyze_classifier_results.ipynb")
+    code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
+
+    assert notebook["nbformat"] >= 4
+    assert source.count('RUN_ID = "') == 1
+    assert all("execution" not in cell["metadata"] for cell in notebook["cells"])
+    for fragment in (
+        "load_classification_run(", "document_metrics(", "configuration_ranking(",
+        "aggregate_by_llm(", "aggregate_by_dataset(", "mixed_bbc_comparison(",
+        "bbc_safety_metrics(", "semeval_region_ranking(", "semeval_boundary_ranking(",
+        "plot_feature_set_heatmap(", "plot_window_heatmap(", "plot_regime_deltas(",
+    ):
+        assert fragment in source
+    for cell in code_cells:
+        assert cell["execution_count"] is None
+        assert cell["outputs"] == []
+        assert "execution" not in cell["metadata"]
+        tree = ast.parse("".join(cell["source"]))
+        assert not any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            for node in ast.walk(tree)
+        )
+
+
+def test_analysis_notebook_selects_only_sem_eval_texts_with_at_least_200_tokens() -> None:
+    source = _source("analyze_classifier_results.ipynb")
+
+    assert 'semeval_boundary_configuration["token_count"].ge(200)' in source
+    assert "eligible_text_ids" in source
+    assert "eligible_text_ids=eligible_text_ids" in source
+
+
+def test_analysis_notebook_declares_dimension_plot_matrix_and_availability_warning() -> None:
+    source = _source("analyze_classifier_results.ipynb")
+
+    assert "ANALYSIS_DIMENSIONS = (" in source
+    for dimension in (
+        "scorer_llm",
+        "model_family",
+        "feature_set",
+        "training_regime",
+        "training_window",
+        "evaluation_window",
+    ):
+        assert f'"{dimension}"' in source
+    assert "plot_dimension_stability_profiles(" in source
+    assert "plot_dimension_semeval_tradeoff(" in source
+    assert "for dimension in ANALYSIS_DIMENSIONS:" in source
+    assert "Availability warning" in source
+
+
+def test_analysis_notebook_checks_stability_and_semeval_dimensions_independently() -> None:
+    source = _source("analyze_classifier_results.ipynb")
+    tree = ast.parse(source)
+    loops = [node for node in ast.walk(tree) if isinstance(node, ast.For)]
+
+    stability_loops = [
+        node for node in loops
+        if any(
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Name)
+            and child.func.id == "plot_dimension_stability_profiles"
+            for child in ast.walk(node)
+        )
+    ]
+    semeval_loops = [
+        node for node in loops
+        if any(
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Name)
+            and child.func.id == "plot_dimension_semeval_tradeoff"
+            for child in ast.walk(node)
+        )
+    ]
+
+    assert len(stability_loops) == 1
+    assert len(semeval_loops) == 1
+    assert stability_loops[0] is not semeval_loops[0]
+    stability_source = ast.get_source_segment(source, stability_loops[0]) or ""
+    semeval_source = ast.get_source_segment(source, semeval_loops[0]) or ""
+    assert "usable_transfer" in stability_source
+    assert "usable_region" not in stability_source
+    assert "usable_region" in semeval_source
+    assert "usable_transfer" not in semeval_source
+
+
+def test_analysis_notebook_preserves_existing_outputs_and_adds_transfer_analysis() -> None:
+    source = "\n".join(
+        "".join(cell["source"])
+        for cell in _notebook("analyze_classifier_results.ipynb")["cells"]
+    )
+
+    for fragment in (
+        "## Document Classification", "## Feature Sets And Classification Parameters",
+        "## Mixed Versus Mixed+BBC Training", "## SemEval Region And Boundary Localization",
+        "transfer_scores(", "universal_ranking(", "best_universal_by_llm(",
+        "plot_transfer_heatmap(", "plot_universal_frontier(", "plot_stability_profiles(",
+        "plot_transfer_asymmetry(", "plot_semeval_tradeoff(",
+    ):
+        assert fragment in source
+
+
+def test_analysis_notebook_compares_requested_semeval_windows() -> None:
+    source = _source("analyze_classifier_results.ipynb")
+
+    assert "SEMEVAL_COMPARISON_WINDOWS = (32, 64, 128)" in source
+    assert 'window_length"].isin(SEMEVAL_COMPARISON_WINDOWS)' in source
+
+
+def test_evaluate_notebook_records_expected_failures_and_reraises_unexpected_errors() -> None:
+    source = _source("evaluate_classifiers.ipynb")
+
+    assert "except (FileNotFoundError, KeyError, ValueError, OSError) as error:" in source
+    assert '"status": "unavailable"' in source
+    assert "continue" in source
+    assert "except Exception:" in source
+    assert "raise" in source
+    for forbidden in ("fit_feature_vector_model(", "save_model_artifact(", "process_pipeline", "token_similarity_stage2"):
+        assert forbidden not in source
+
+
+def test_bounded_prefix_evaluation_notebook_contract() -> None:
+    notebook = _notebook("report/evaluate_bounded_prefix_classifiers.ipynb")
+    source = _source("report/evaluate_bounded_prefix_classifiers.ipynb")
+
+    assert 'EVALUATION_REGIMES = ("Mixed",)' in source
+    assert "EVALUATION_REGIMES as EVALUATION_REGIME_SOURCES" in source
+    assert "for evaluation_regime in tqdm(EVALUATION_REGIMES" in source
+    assert "source_names = EVALUATION_REGIME_SOURCES[evaluation_regime]" in source
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            assert cell["execution_count"] is None
+            assert cell["outputs"] == []
+            tree = ast.parse("".join(cell["source"]))
+            assert not any(
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                for node in ast.walk(tree)
+            )
+    for fragment in (
+        'RUN_ID = "bounded-prefix-classifier-evaluation-gemma270m-rf-window32-2026-09-29"',
+        'SOURCE_RUN_ID = "feature-vector-classification-2026-09-25-logreg-random-forest-max600-min100"',
+        "TOKEN_BOUNDS =",
+        "MIN_MACRO_F1 =",
+        "MIN_BALANCED_ACCURACY =",
+        "MIN_CLASS_SUPPORT =",
+        'MODEL_FAMILIES = ("random_forest",)',
+        'SCORER_LLMS = ("gemma_3_270m_it",)',
+        'TRAINING_WINDOW = "32"',
+        "ensure_bounded_prefix_result_exports(",
+        "iter_bounded_prefix_feature_batches(",
+        "collect_source_parent_identities(",
+        "prefix_window_label(",
+        'progress_description=f"Collecting parents:',
+        'progress_description=f"Scoring prefix:',
+        "bounded_prefix_prediction_key(",
+        "prediction_artifact_is_complete(",
+        "aggregate_prediction_artifact(",
+        'read(columns=["split", "text_id"])',
+        '.drop_duplicates(["split", "text_id"])',
+        "original_token_count",
+        "evaluated_token_count",
+        "No qualifying length",
+    ):
+        assert fragment in source
+    for forbidden in ("fit_feature_vector_model(", "save_model_artifact(", "process_pipeline", "token_similarity_stage2"):
+        assert forbidden not in source
+
+
+def test_semeval_random_forest_visualization_notebook_contract() -> None:
+    notebook = _notebook("visualize_semeval_random_forest_token_profiles.ipynb")
+    source = _source("visualize_semeval_random_forest_token_profiles.ipynb")
+
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            assert cell["execution_count"] is None
+            assert cell["outputs"] == []
+            tree = ast.parse("".join(cell["source"]))
+            assert not any(
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                for node in ast.walk(tree)
+            )
+    for fragment in (
+        'SCORER_LLM = "gemma_3_270m_it"',
+        'MODEL_FAMILY = "random_forest"',
+        'FEATURE_SET = "simple_similarity"',
+        'TRAINING_REGIME = "Mixed"',
+        'WINDOW_LENGTHS = (32, 64, 128)',
+        "TEXT_COUNT = 20",
+        "SELECTION_SEED = 42",
+        "load_visualization_models(",
+        "resolve_prepared_inputs(",
+        "select_eligible_text_ids(",
+        "score_visualization_windows(",
+        "build_gold_boundaries(",
+        "write_visualization_export(",
+        "plot_window_level_scores(",
+        "plot_reconstructed_token_scores(",
+    ):
+        assert fragment in source
+    for forbidden in (
+        "ensure_prepared_partition(",
+        "fit_feature_vector_model(",
+        "save_model_artifact(",
+        "process_pipeline",
+        "token_similarity_stage2",
+    ):
+        assert forbidden not in source
+
+
+def test_name_that_llm_classifier_comparison_notebook_contract() -> None:
+    notebook = _notebook("compare_name_that_llm_classifiers.ipynb")
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+
+    assert notebook["nbformat"] >= 4
+    scorer_assignment_count = 0
+    scorer_parameter_cells = []
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            tree = ast.parse("".join(cell["source"]))
+            scorer_assignment_count += sum(
+                isinstance(node, ast.Assign)
+                and any(isinstance(target, ast.Name) and target.id == "SCORER_LLM" for target in node.targets)
+                for node in ast.walk(tree)
+            )
+            if cell.get("id") == "scorer-parameter":
+                scorer_parameter_cells.append("".join(cell["source"]))
+    assert scorer_assignment_count == 1
+    assert len(scorer_parameter_cells) == 1
+    scorer_parameter_tree = ast.parse(scorer_parameter_cells[0])
+    scorer_parameter_value = next(
+        ast.literal_eval(node.value)
+        for node in ast.walk(scorer_parameter_tree)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "SCORER_LLM" for target in node.targets)
+    )
+    assert scorer_parameter_value in {"gemma_3_270m_it", "littlelamb"}
+    assert "NAME_THAT_LLM_SCORER" not in source
+    for fragment in (
+        "DATASET = 'name_that_llm_train'",
+        'SUPPORTED_SCORER_LLMS = ("gemma_3_270m_it", "littlelamb")',
+        "if SCORER_LLM not in SUPPORTED_SCORER_LLMS:",
+        "raise ValueError(",
+        "LIMIT = ",
+        "WINDOWS = (32, 64)",
+        "MODEL_FAMILIES = ('logistic_regression', 'random_forest')",
+        "source_metadata['text_id']",
+        "/ SCORER_LLM",
+        "'name-that-llm' / SCORER_LLM",
+        "document_output_root = export_root",
+        "print({'data_root': DATA_ROOT, 'scorer_llm': SCORER_LLM",
+        "selected_text_ids = available_ids[-LIMIT:]",
+        "available_ids_by_window",
+        "common_ids = set.intersection(*available_ids_by_window.values())",
+        "ensure_prepared_partition(",
+        "discover_model_artifacts(",
+        "load_model_artifact(",
+        "trust_artifact=True",
+        "predictions_long",
+        "mg_score=('mg_score', 'mean')",
+        "MG-only detection rate",
+        "source_llm",
+        "prompt_id",
+        "raw' / 'name-that-llm' / 'train.csv'",
+        "text.split()",
+        "processed_paths = sorted",
+        "name_that_llm_train_MG.csv",
+        "source_metadata",
+        "processed_texts['id'] = processed_texts['id'].astype(str)",
+        "columns=['id', 'text', 'tokens']",
+        "processed_texts['token_count'] = processed_texts['tokens'].map(len)",
+        "missing source LLM metadata",
+        "import matplotlib.pyplot as plt",
+        "import seaborn as sns",
+        "dataset_counts",
+        "'ALL'",
+        "plt.subplots(2, 2",
+        "Text length (words)",
+        "max_token_count",
+        "token_plot_frames",
+        "Text length (tokens)",
+        "values.eq(1).sum()",
+        "text_id', 'nunique'",
+        "fillna(0)",
+        "plt.subplots(2, 2",
+        "source_llm_counts",
+        "source_llm', 'model_family', 'window_configuration",
+        "correct_text_count",
+        "incorrect_text_count",
+        "processed_text_count",
+        "bottom=panel['correct_text_count']",
+        "Correctly classified MG texts",
+        "Incorrectly classified MG texts",
+        "source_llm_counts['model_family'].eq(model_family)",
+        "source_llm_counts['window_configuration'].eq(window)",
+        "{model_family} / {window}-token window",
+        "axes.flat",
+    ):
+        assert fragment in source
+    assert source.index("DATA_ROOT =") < source.index("pd.read_csv(DATA_ROOT")
+    assert "whole_text" not in source
+    for forbidden in (
+        "fit_feature_vector_model(",
+        "save_model_artifact(",
+        "process_pipeline",
+        "token_similarity_stage2",
+    ):
+        assert forbidden not in source
