@@ -49,7 +49,7 @@ def predict_boundary_positions(
         )
         above_threshold = np.isfinite(smoothed_scores) & (smoothed_scores >= threshold)
         run_length = 0
-        boundary = token_count
+        boundary = 0
         crossed = False
         for token_position, is_above_threshold in enumerate(above_threshold):
             run_length = run_length + 1 if is_above_threshold else 0
@@ -244,14 +244,37 @@ def add_gold_boundaries(
     return result
 
 
-def summarize_boundary_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
-    required = {"model", "window_length", "absolute_token_error"}
+def summarize_boundary_predictions(
+    predictions: pd.DataFrame,
+    *,
+    group_columns: tuple[str, ...] = ("model", "window_length"),
+) -> pd.DataFrame:
+    """Summarize boundary errors, applying the start-of-text no-crossing convention."""
+    if not group_columns:
+        raise ValueError("group_columns cannot be empty")
+    required = {*group_columns, "absolute_token_error"}
     missing = required.difference(predictions.columns)
     if missing:
         raise ValueError(f"missing columns: {', '.join(sorted(missing))}")
 
+    rows_source = predictions.copy()
+    if {"no_crossing", "predicted_token_boundary", "gold_token_boundary"}.issubset(rows_source.columns):
+        no_crossing = rows_source["no_crossing"].astype("boolean").fillna(False).to_numpy(dtype=bool)
+        predicted = pd.to_numeric(rows_source["predicted_token_boundary"], errors="coerce").to_numpy(dtype="float64", copy=True)
+        gold = pd.to_numeric(rows_source["gold_token_boundary"], errors="coerce").to_numpy(dtype="float64", copy=True)
+        fallback = no_crossing & np.isfinite(gold)
+        predicted[fallback] = 0.0
+        rows_source["predicted_token_boundary"] = predicted
+        recompute = np.isfinite(gold) & (np.isfinite(predicted) | no_crossing)
+        errors = pd.to_numeric(rows_source["absolute_token_error"], errors="coerce").to_numpy(dtype="float64", copy=True)
+        errors[recompute] = np.abs(predicted[recompute] - gold[recompute])
+        rows_source["absolute_token_error"] = errors
+
     rows: list[dict[str, object]] = []
-    for (model, window_length), group in predictions.groupby(["model", "window_length"], sort=True):
+    for group_key, group in rows_source.groupby(list(group_columns), sort=True):
+        if len(group_columns) == 1:
+            group_key = (group_key,)
+        group_identifiers = dict(zip(group_columns, group_key, strict=True))
         errors = group["absolute_token_error"].to_numpy(dtype="float64")
         if {"predicted_token_boundary", "gold_token_boundary"}.issubset(group.columns):
             predicted = group["predicted_token_boundary"].to_numpy(dtype="float64")
@@ -281,8 +304,7 @@ def summarize_boundary_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
             no_crossing_rate = float("nan")
         rows.append(
             {
-                "model": model,
-                "window_length": int(window_length),
+                **group_identifiers,
                 "texts": len(group),
                 "mean_absolute_token_error": float(errors.mean()),
                 "median_absolute_token_error": float(np.median(errors)),
@@ -298,8 +320,7 @@ def summarize_boundary_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(
         rows,
         columns=[
-            "model",
-            "window_length",
+            *group_columns,
             "texts",
             "mean_absolute_token_error",
             "median_absolute_token_error",

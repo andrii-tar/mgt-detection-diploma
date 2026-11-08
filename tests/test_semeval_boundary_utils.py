@@ -68,7 +68,7 @@ def test_predict_boundary_positions_accepts_smoothing_and_sustained_length() -> 
     assert predictions["predicted_token_boundary"].tolist() == [0]
 
 
-def test_ignores_isolated_one_token_spike() -> None:
+def test_falls_back_to_text_start_after_isolated_spike_without_sustained_run() -> None:
     predictions = predict_boundary_positions(
         _scored_token_windows([0.1, 0.8, 0.1, 0.1]),
         {7: 4},
@@ -77,7 +77,7 @@ def test_ignores_isolated_one_token_spike() -> None:
         sustained_length=3,
     )
 
-    assert predictions["predicted_token_boundary"].tolist() == [4]
+    assert predictions["predicted_token_boundary"].tolist() == [0]
 
 
 def test_selects_first_run_of_three_consecutive_above_threshold_scores() -> None:
@@ -92,7 +92,7 @@ def test_selects_first_run_of_three_consecutive_above_threshold_scores() -> None
     assert predictions["predicted_token_boundary"].tolist() == [1]
 
 
-def test_falls_back_to_token_count_when_no_sustained_run_exists() -> None:
+def test_falls_back_to_text_start_when_no_sustained_run_exists() -> None:
     predictions = predict_boundary_positions(
         _scored_token_windows([0.1, 0.8, 0.8, 0.1]),
         {7: 4},
@@ -101,7 +101,7 @@ def test_falls_back_to_token_count_when_no_sustained_run_exists() -> None:
         sustained_length=3,
     )
 
-    assert predictions["predicted_token_boundary"].tolist() == [4]
+    assert predictions["predicted_token_boundary"].tolist() == [0]
     assert predictions["no_crossing"].tolist() == [True]
 
 
@@ -200,7 +200,7 @@ def test_aligns_semantic_word_boundary_to_token_and_summarizes_errors() -> None:
     ]
 
 
-def test_summarizes_early_late_and_no_crossing_rates() -> None:
+def test_summarizes_early_late_and_no_crossing_rates_with_start_fallback() -> None:
     predictions = pd.DataFrame(
         [
             {"model": "lr", "window_length": 1, "predicted_token_boundary": 2, "gold_token_boundary": 3, "absolute_token_error": 1, "no_crossing": False},
@@ -214,14 +214,14 @@ def test_summarizes_early_late_and_no_crossing_rates() -> None:
             "model": "lr",
             "window_length": 1,
             "texts": 3,
-            "mean_absolute_token_error": 4 / 3,
+            "mean_absolute_token_error": 5 / 3,
             "median_absolute_token_error": 1.0,
             "exact_accuracy": 0.0,
             "within_1_accuracy": 2 / 3,
             "within_3_accuracy": 1.0,
             "within_5_accuracy": 1.0,
-            "early_rate": 1 / 3,
-            "late_rate": 2 / 3,
+            "early_rate": 2 / 3,
+            "late_rate": 1 / 3,
             "no_crossing_rate": 1 / 3,
         }
     ]
@@ -244,6 +244,33 @@ def test_summary_preserves_legacy_input_and_reports_unavailable_diagnostics_as_n
     assert pd.isna(summary.loc[0, "early_rate"])
     assert pd.isna(summary.loc[0, "late_rate"])
     assert pd.isna(summary.loc[0, "no_crossing_rate"])
+
+
+def test_summary_supports_configuration_columns_for_report_grouping_and_start_fallback() -> None:
+    summary = summarize_boundary_predictions(
+        pd.DataFrame(
+            [
+                {
+                    "model": "logistic_regression", "window_length": 32,
+                    "scorer_llm": "gemma", "feature_set": "simple_similarity",
+                    "training_regime": "Kaggle+MAGE+Outfox", "training_window": 32,
+                    "model_family": "logistic_regression", "evaluation_dataset": "semeval",
+                    "semeval_split": "train", "predicted_token_boundary": 5,
+                    "gold_token_boundary": 3, "absolute_token_error": 2, "no_crossing": True,
+                }
+            ]
+        ),
+        group_columns=(
+            "scorer_llm", "feature_set", "training_regime", "training_window",
+            "model_family", "window_length", "evaluation_dataset", "semeval_split", "model",
+        ),
+    )
+
+    assert summary.loc[0, "scorer_llm"] == "gemma"
+    assert summary.loc[0, "window_length"] == 32
+    assert summary.loc[0, "mean_absolute_token_error"] == 3.0
+    assert summary.loc[0, "early_rate"] == 1.0
+    assert summary.loc[0, "no_crossing_rate"] == 1.0
 
 
 def test_summary_uses_token_count_for_no_crossing_when_flag_is_absent() -> None:
