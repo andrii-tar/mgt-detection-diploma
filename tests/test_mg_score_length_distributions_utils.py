@@ -6,6 +6,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from notebooks.utils.mg_score_length_distributions_utils import (
+    _prediction_artifact_filter,
+    aggregate_mg_score_window_predictions,
     filter_mg_score_predictions,
     load_bounded_prefix_result_frames,
     plot_bounded_prefix_macro_f1_comparison,
@@ -37,6 +39,55 @@ def _predictions() -> pd.DataFrame:
     )
 
 
+def test_prediction_artifact_filter_accepts_test_and_rejects_validation(tmp_path):
+    predictions_root = tmp_path / "predictions"
+    artifact_filter = _prediction_artifact_filter(
+        predictions_root,
+        partition="test",
+        scorer_llm="gemma_3_270m_it",
+        feature_sets=("simple_similarity",),
+        training_window=32,
+        evaluation_window="whole_text",
+        model_families=("random_forest",),
+        training_composition="Kaggle+MAGE+Outfox+BBC",
+        evaluation_compositions=("kaggle_train", "mage_train", "outfox_chatgpt_train"),
+    )
+    base = (
+        predictions_root
+        / "random_forest__gemma_3_270m_it__simple_similarity__Kaggle_MAGE_Outfox_BBC__32"
+        / "Kaggle_MAGE_Outfox_BBC"
+        / "whole_text"
+        / "mixed"
+    )
+
+    assert artifact_filter(base / "test")
+    assert not artifact_filter(base / "validation")
+
+
+def test_aggregate_mg_score_window_predictions_averages_per_document_and_keeps_length():
+    windows = pd.DataFrame(
+        {
+            "dataset": ["Kaggle", "Kaggle", "Kaggle"],
+            "source_dataset": ["Kaggle"] * 3,
+            "split": ["HG", "HG", "MG"],
+            "text_id": ["human-1", "human-1", "machine-1"],
+            "label": ["HG", "HG", "MG"],
+            "mg_score": [0.2, 0.4, 0.9],
+            "start_token": [0, 32, 0],
+            "stop_token": [32, 64, 48],
+            "model_family": ["random_forest"] * 3,
+            "feature_set": ["simple_similarity"] * 3,
+        }
+    )
+
+    documents = aggregate_mg_score_window_predictions(windows)
+
+    assert documents[["text_id", "label", "mg_score", "token_count", "window_count"]].to_dict("records") == [
+        {"text_id": "human-1", "label": "HG", "mg_score": pytest.approx(0.3), "token_count": 64, "window_count": 2},
+        {"text_id": "machine-1", "label": "MG", "mg_score": pytest.approx(0.9), "token_count": 48, "window_count": 1},
+    ]
+
+
 def test_filter_selects_requested_configuration_and_normalizes_labels():
     result = filter_mg_score_predictions(
         _predictions(),
@@ -50,6 +101,39 @@ def test_filter_selects_requested_configuration_and_normalizes_labels():
 
     assert result["label"].tolist() == ["HG", "MG"]
     assert result["token_count"].tolist() == [80, 180]
+
+
+def test_filter_keeps_distinct_windows_for_window_evaluation():
+    windows = pd.DataFrame(
+        {
+            "dataset": ["Kaggle", "Kaggle"],
+            "source_dataset": ["Kaggle", "Kaggle"],
+            "split": ["HG", "HG"],
+            "text_id": ["h1", "h1"],
+            "label": [0, 0],
+            "mg_score": [0.2, 0.4],
+            "start_token": [0, 32],
+            "stop_token": [32, 64],
+            "scorer_llm": ["gemma_3_270m_it"] * 2,
+            "feature_set": ["simple_similarity"] * 2,
+            "model_family": ["random_forest"] * 2,
+            "training_composition": ["Mix"] * 2,
+            "training_window": [32] * 2,
+            "evaluation_window": [32] * 2,
+        }
+    )
+
+    result = filter_mg_score_predictions(
+        windows,
+        scorer_llm="gemma_3_270m_it",
+        feature_sets=("simple_similarity",),
+        training_window=32,
+        evaluation_window=32,
+        model_families=("random_forest",),
+        training_composition="Mix",
+    )
+
+    assert result["start_token"].tolist() == [0, 32]
 
 
 def test_filter_reports_empty_prediction_artifacts_clearly():

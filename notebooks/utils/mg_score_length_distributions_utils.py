@@ -8,6 +8,7 @@ import pandas as pd
 import seaborn as sns
 
 from notebooks.utils.classification_results_analysis_utils import load_prediction_artifacts
+from notebooks.utils.document_window_evaluation_utils import aggregate_window_predictions
 
 
 PREDICTION_COLUMNS = (
@@ -45,6 +46,7 @@ def _matches(value: object, expected: object) -> bool:
 def _prediction_artifact_filter(
     predictions_root: Path,
     *,
+    partition: str,
     scorer_llm: str,
     feature_sets: Sequence[str],
     training_window: int | str,
@@ -62,7 +64,7 @@ def _prediction_artifact_filter(
             return False
         if len(relative_parts) < 5:
             return False
-        artifact_id, artifact_training, artifact_evaluation_window, _, _ = relative_parts[:5]
+        artifact_id, artifact_training, artifact_evaluation_window, _, artifact_partition = relative_parts[:5]
         artifact_id_parts = artifact_id.split("__")
         if len(artifact_id_parts) < 5:
             return False
@@ -73,6 +75,7 @@ def _prediction_artifact_filter(
             and artifact_feature_set in feature_set_values
             and artifact_training_window == str(training_window)
             and artifact_evaluation_window == str(evaluation_window)
+            and artifact_partition == partition
             and (
                 training_composition is None
                 or artifact_training.replace("+", "_") == training_composition.replace("+", "_")
@@ -138,6 +141,10 @@ def filter_mg_score_predictions(
         raise ValueError("no prediction rows match the requested configuration")
 
     identity = ["model_family", "dataset", "split", "text_id", "feature_set"]
+    if str(evaluation_window) != "whole_text":
+        if "start_token" not in selected:
+            raise ValueError("window prediction frame is missing required column: start_token")
+        identity.append("start_token")
     duplicate_mask = selected.duplicated(identity, keep=False)
     if duplicate_mask.any():
         duplicates = selected.loc[duplicate_mask, identity].drop_duplicates().head(3).to_dict("records")
@@ -145,10 +152,53 @@ def filter_mg_score_predictions(
     return selected.reset_index(drop=True)
 
 
+def aggregate_mg_score_window_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
+    """Return one mean-window MG score and full document length per text."""
+    if predictions.empty:
+        raise ValueError("window prediction frame cannot be empty")
+    required = {
+        "dataset", "split", "text_id", "label", "mg_score", "start_token",
+        "stop_token", "model_family", "feature_set",
+    }
+    missing = sorted(required.difference(predictions.columns))
+    if missing:
+        raise ValueError(f"window prediction frame is missing required columns: {missing}")
+
+    selected = predictions.copy()
+    if "source_dataset" not in selected:
+        selected["source_dataset"] = selected["dataset"]
+    selected["start_token"] = pd.to_numeric(selected["start_token"], errors="raise")
+    selected["stop_token"] = pd.to_numeric(selected["stop_token"], errors="raise")
+    document_frames = []
+    for (model_family, feature_set), windows in selected.groupby(
+        ["model_family", "feature_set"], sort=False, dropna=False,
+    ):
+        aggregation_rows = windows[
+            ["source_dataset", "split", "text_id", "label", "mg_score", "start_token"]
+        ].rename(columns={"start_token": "window_id"})
+        documents = aggregate_window_predictions(aggregation_rows)
+        lengths = (
+            windows.groupby(["source_dataset", "split", "text_id"], as_index=False, sort=False)
+            .agg(token_count=("stop_token", "max"))
+        )
+        documents = documents.merge(
+            lengths, on=["source_dataset", "split", "text_id"], validate="one_to_one",
+        )
+        documents = documents.assign(
+            dataset=documents["source_dataset"],
+            model_family=model_family,
+            feature_set=feature_set,
+            mg_score=documents["document_score"],
+        )
+        document_frames.append(documents)
+    return pd.concat(document_frames, ignore_index=True)
+
+
 def load_mg_score_length_frame(
     data_root: Path | str,
     *,
     run_id: str,
+    partition: str = "test",
     scorer_llm: str,
     feature_sets: Sequence[str],
     training_window: int | str,
@@ -165,6 +215,7 @@ def load_mg_score_length_frame(
         columns=list(PREDICTION_COLUMNS),
         artifact_filter=_prediction_artifact_filter(
             predictions_root,
+            partition=partition,
             scorer_llm=scorer_llm,
             feature_sets=feature_sets,
             training_window=training_window,
