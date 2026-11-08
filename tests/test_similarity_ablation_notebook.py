@@ -12,7 +12,7 @@ def test_mixed_similarity_ablation_notebook_has_isolated_run_and_sampling_config
 
     assert code_cells
     source = "\n".join("".join(cell["source"]) for cell in cells)
-    assert "mixed-similarity-ablation-2026-10-29-v3" in source
+    assert "mixed-similarity-ablation-2026-10-29-v6" in source
     assert "TEXTS_PER_DATASET_SPLIT_TRAIN = 50" in source
     assert "TEXTS_PER_DATASET_SPLIT_EVALUATION = 50" in source
     assert "paired_macro_f1_bootstrap" in source
@@ -25,7 +25,7 @@ def test_expanded_scorer_run_preserves_original_cohort_and_adds_two_scorers():
     notebook = json.loads(NOTEBOOK_PATH.read_text(encoding="utf-8"))
     source = "\n".join("".join(cell["source"]) for cell in notebook["cells"])
 
-    assert "mixed-similarity-ablation-2026-10-29-v3" in source
+    assert "mixed-similarity-ablation-2026-10-29-v6" in source
     assert "COHORT_SOURCE_RUN_ID = 'mixed-similarity-ablation-2026-10-29-v2'" in source
     assert "'gemma_3_1b_it'" in source
     assert "'smollm2_360m'" in source
