@@ -23,6 +23,261 @@ def _source(name: str = "prepare_and_train_classifiers.ipynb") -> str:
     )
 
 
+def test_document_window_evaluation_notebook_declares_document_level_contract() -> None:
+    source = _source("report/04_document_window_evaluation.ipynb")
+    for fragment in (
+        "gemma_3_270m_it", "gemma_3_1b_it", "littlelamb", "smollm2_360m",
+        "logistic_regression", "random_forest", "Kaggle+MAGE+Outfox", "Kaggle+MAGE+Outfox+BBC",
+        "evaluation_window", "training_window", "32", "64", "sample_mode = \"common\"",
+        "document_threshold = 0.5", "document_window_evaluation_utils",
+        "load_document_configurations(",
+        "common_group_columns = ('evaluation_regime', 'scorer_llm')",
+        "common_group_columns=common_group_columns",
+        "'common_group_columns': common_group_columns",
+    ):
+        assert fragment in source
+    assert "from_pretrained" not in source
+    assert ".fit(" not in source
+    assert "documents_by_configuration = {}" not in source
+
+
+def test_document_level_model_experiment_notebook_declares_leakage_aware_protocol() -> None:
+    notebook = _notebook("report/05_document_level_model_experiment.ipynb")
+    source = _source("report/05_document_level_model_experiment.ipynb")
+    all_source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+    for cell in notebook["cells"]:
+        assert cell.get("execution_count") is None
+        assert cell.get("outputs", []) == []
+    for fragment in (
+        "mean_score_baseline", "logistic_regression", "ebm", "ExplainableBoostingClassifier",
+        "interactions=0", "validation", "test", "fit_and_evaluate_document_models(",
+        "write_document_model_experiment(", "mean_window_score", "std_window_score",
+        "p90_window_score", "fraction_windows_ge_0_5", "longest_positive_run_fraction",
+        "mean_adjacent_score_abs_diff", "document_token_length", "window_count",
+        "validation_model_selection_caveat",
+    ):
+        assert fragment in all_source
+    assert "from_pretrained" not in source
+    assert ".fit(" not in source
+
+
+def test_name_that_llm_document_model_notebook_applies_to_long_mg_documents() -> None:
+    notebook = _notebook("compare_name_that_llm_classifiers.ipynb")
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+    all_source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+    for fragment in (
+        "build_document_feature_table", "fit_document_models", "score_document_models",
+        "summarize_mg_detection", "window_score_predictions", "MIN_TOKEN_COUNT = 250",
+        "load_validation_test_features", "evaluation_regime=TRAINING_COMPOSITION",
+        "fit_document_models(main_validation_documents",
+        "score_document_models(n2llm_long_documents",
+        "name_that_llm_document_mg_detection_overall.csv", "name_that_llm_document_mg_detection_by_source.csv",
+        "MG-only",
+    ):
+        assert fragment in all_source
+    assert ".fit(" not in source
+
+
+def test_name_that_llm_notebook_exports_every_displayed_table() -> None:
+    source = _source("compare_name_that_llm_classifiers.ipynb")
+    for filename in (
+        "name_that_llm_dataset_counts.csv",
+        "name_that_llm_prepared_feature_counts.csv",
+        "name_that_llm_classifier_predictions_long.csv",
+        "name_that_llm_classifier_predictions_wide.csv",
+        "name_that_llm_comparison_summary.csv",
+        "name_that_llm_classifier_disagreements.csv",
+        "name_that_llm_window_changes.csv",
+        "name_that_llm_aggregate_results.csv",
+        "name_that_llm_source_llm_accuracy.csv",
+        "name_that_llm_source_llm_accuracy_pivot.csv",
+        "name_that_llm_long_text_accuracy_pivot.csv",
+        "name_that_llm_source_llm_length_accuracy.csv",
+        "name_that_llm_classification_counts_by_source_llm.csv",
+        "name_that_llm_document_mg_detection_overall.csv",
+        "name_that_llm_document_mg_detection_by_source.csv",
+    ):
+        assert filename in source
+    assert "save_report_table" in source
+    assert "TABLE_OUTPUT_ROOT" in source
+
+
+def test_paper_model_comparison_notebook_declares_all_scopes_and_exports() -> None:
+    notebook = _notebook("report/06_paper_model_comparison.ipynb")
+    source = _source("report/06_paper_model_comparison.ipynb")
+    all_source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            ast.parse("".join(cell.get("source", [])))
+    n2llm_document_cell = next(cell for cell in notebook["cells"] if cell.get("id") == "d8b9cfcd")
+    n2llm_document_source = "".join(n2llm_document_cell["source"])
+    n2llm_window_cell = next(cell for cell in notebook["cells"] if cell.get("id") == "3d7a5c6d")
+    n2llm_window_source = "".join(n2llm_window_cell["source"])
+    assert "N2LLM_SCORERS = ('gemma_3_270m_it', 'littlelamb')" in n2llm_window_source
+    assert "product(N2LLM_SCORERS, MODEL_FAMILIES, TRAIN_WINDOWS, EVALUATION_WINDOWS)" in n2llm_window_source
+    assert "scorer_llm=scorer, dataset='name_that_llm_train'" in n2llm_window_source
+    assert "n2llm_token_counts_by_scorer[scorer]" in n2llm_window_source
+    assert "available_n2llm_scorers = tuple(sorted(n2llm_windows['scorer_llm'].dropna().unique()))" in n2llm_document_source
+    assert "product(available_n2llm_scorers, MODEL_FAMILIES, TRAIN_WINDOWS, EVALUATION_WINDOWS)" in n2llm_document_source
+    assert "n2llm_windows['scorer_llm'].eq(scorer)" in n2llm_document_source
+    assert "mixed_models_by_base_config[(scorer, family, train_window, eval_window)]" in n2llm_document_source
+    assert "predictions.assign(scorer_llm=scorer" in n2llm_document_source
+    assert "scorer_llm='gemma_3_270m_it'" not in n2llm_document_source
+    for fragment in (
+        "gemma_3_270m_it", "gemma_3_1b_it", "littlelamb", "smollm2_360m",
+        "logistic_regression", "random_forest", "training_window", "evaluation_window",
+        "32", "64", "Kaggle+MAGE+Outfox", "Kaggle+MAGE+Outfox+BBC",
+        "bbc_news_content", "semeval2024_task8_subtask_c_train", "name_that_llm_train",
+        "MIN_TOKEN_COUNT = 250", "label_semeval_windows(", "crossing a boundary",
+        "FPR", "MG detection rate", "T01_feature_sets.csv",
+        "T10_semeval_localization.csv", "missing_computations.csv", "run_manifest.json",
+        "build_configuration_coverage", "build_cohort_manifest",
+        "load_document_word_counts",
+        "'matrix_counts': {'W':64,'F':64,'S':20,'D':64,'H':48,'L':16}",
+    ):
+        assert fragment in all_source
+    assert "from_pretrained" not in source
+    assert ".fit(" not in source
+
+
+def test_chapter3_figure_notebook_uses_utils_and_exports_all_ten_figures() -> None:
+    notebook = _notebook("report/07_chapter3_figures.ipynb")
+    source = _source("report/07_chapter3_figures.ipynb")
+
+    for figure_id in ("f01", "f02", "f03", "f04", "f05", "f06", "f07", "f08", "f09", "f10"):
+        assert f"plot_{figure_id}_" in source
+    for fragment in (
+        "chapter3_figures_utils", "CHAPTER3_REPORT_RUN_ID", "figure_inventory.csv",
+        "build_external_document_scores", "build_semeval_profile_rows",
+        "semeval_boundary_threshold_sweep", "threshold_values = tuple(np.round(np.arange(0.0, 1.001, 0.01), 2))",
+        "build_semeval_local_error_inputs", "semeval_window_error_metrics",
+        "semeval_token_error_metrics", "plot_f10_semeval_local_errors",
+        "F10_semeval_window_error_rates.csv", "F10_semeval_token_error_rates.csv",
+        "record_figures(\n    'F10', f10_paths",
+    ):
+        assert fragment in source
+    assert "from_pretrained" not in source
+    assert ".fit(" not in source
+
+
+def test_chapter3_figure_notebook_exports_window_boundary_mae_comparison_table() -> None:
+    source = _source("report/07_chapter3_figures.ipynb")
+    notebook = _notebook("report/07_chapter3_figures.ipynb")
+
+    assert "build_semeval_window_boundary_comparison" in source
+    assert "semeval_boundary_predictions.csv" in source
+    assert "local_scored_windows" in source
+    assert "T11_semeval_window_boundary_comparison.csv" in source
+    assert "window-boundary-detected-only" in {cell.get("id") for cell in notebook["cells"]}
+    assert "window_detected_mae_32" in source
+    assert "T12_semeval_window_boundary_detected_only.csv" in source
+
+
+def test_paper_model_comparison_notebook_shows_progress_for_configuration_loops() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert "from tqdm.auto import tqdm" in source
+    assert "desc='Loading main window predictions'" in source
+    assert "desc='Comparing feature sets'" in source
+    assert "desc='Loading document validation/test profiles'" in source
+
+
+def test_paper_model_comparison_imports_document_word_count_loader() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    notebook = _notebook("report/06_paper_model_comparison.ipynb")
+    imported_names = {
+        alias.name
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
+        for node in ast.walk(ast.parse("".join(cell["source"])))
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+
+    assert "load_document_word_counts" in imported_names
+
+
+def test_paper_model_comparison_recomputes_token_boundary_summary_with_start_fallback() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert "semeval_boundary_predictions.csv" in source
+    assert "summarize_boundary_predictions" in source
+    assert "'scorer_llm', 'feature_set', 'training_regime', 'training_window'" in source
+
+
+def test_paper_model_comparison_normalizes_document_ids_before_word_count_merges() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert source.count("t08_predictions.assign(text_id=t08_predictions['text_id'].astype(str))") == 2
+
+
+def test_paper_model_comparison_normalizes_mixed_object_columns_before_parquet_export() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert "manifest_object_columns = cohorts_manifest.select_dtypes(include='object').columns" in source
+    assert "cohorts_manifest[manifest_object_columns] = cohorts_manifest[manifest_object_columns].astype('string')" in source
+
+
+def test_paper_model_comparison_expected_f_s_l_grids_use_matching_windows_only() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert source.count("'training_window': window, 'evaluation_window': window") == 3
+
+
+def test_t08_metrics_preserve_the_representation_aggregation_label() -> None:
+    source = _source("report/06_paper_model_comparison.ipynb")
+
+    assert source.count(
+        "{**evaluate_document_predictions(group, document_threshold=0.5), **dict(zip(t08_group_columns, keys))}"
+    ) == 1
+    assert source.count("{**metrics, **dict(zip(t08_group_columns, keys))}") == 1
+
+
+def test_gemma_report_notebooks_use_canonical_configuration_and_current_metrics() -> None:
+    feature_source = _source("report/01_feature_diagnostics.ipynb")
+    classifier_source = _source("report/02_classifier_evaluation.ipynb")
+
+    for fragment in (
+        '"gemma_3_270m_it"',
+        '"simple_similarity"',
+        '"Kaggle+MAGE+Outfox"',
+        '"training_window": 32',
+        '"test"',
+        "evaluation_metrics.csv",
+        "select_report_metrics(",
+        "feature_window_summary(",
+        "evaluation_metric_correlation",
+    ):
+        assert fragment in feature_source or fragment in classifier_source
+    assert "complete-analysis" not in feature_source
+    assert "feature_metric_correlation" not in feature_source
+
+
+def test_classifier_report_exports_independent_detector_matrices() -> None:
+    source = _source("report/02_classifier_evaluation.ipynb")
+
+    for fragment in (
+        "detector_confusion_matrices(",
+        'MIXED_MATRIX_CONFIGURATION = {"evaluation_regime": "Kaggle+MAGE+Outfox", "evaluation_window": 32, "partition": "test"}',
+        'MIXED_BBC_MATRIX_CONFIGURATION = {"evaluation_regime": "Kaggle+MAGE+Outfox+BBC", "evaluation_window": 32, "partition": "test"}',
+        "confusion_matrix_logistic_regression",
+        "confusion_matrix_random_forest",
+        "confusion_matrix_logistic_regression_mixed_bbc",
+        "confusion_matrix_random_forest_mixed_bbc",
+        "targeted_evaluation_status(",
+    ):
+        assert fragment in source
+
+
+def test_classifier_report_bbc_evaluation_uses_canonical_current_run() -> None:
+    source = _source("report/02_classifier_evaluation.ipynb")
+
+    assert 'BBC_ARTIFACT_RUN_ID = "feature-vector-classification-2026-09-25-logreg-random-forest-max600-min100"' in source
+    assert '"training_regime": "Kaggle+MAGE+Outfox"' in source
+    assert "feature-vector-classification-2026-09-21-logreg-random-forest" not in source
+
+
 def test_generalization_comparison_notebook_declares_parameters_and_plots() -> None:
     source = _source("compare_classifier_generalization.ipynb")
     assert source.index("MIN_TEXT_TOKENS =") < source.index("load_classification_run(")
@@ -52,6 +307,20 @@ def test_mg_score_length_notebook_declares_bounded_prefix_visualization() -> Non
         "plot_bounded_prefix_evaluation(",
             "dataset_balanced_bounded_prefix_feature_set_metrics(",
         "plot_bounded_prefix_macro_f1_comparison(",
+    ):
+        assert fragment in source
+
+
+def test_mg_score_length_notebook_plots_test_document_scores_from_32_and_64_token_windows() -> None:
+    source = _source("mg_score_length_distributions.ipynb")
+
+    for fragment in (
+        "WINDOW_EVALUATION_LENGTHS = (32, 64)",
+        "aggregate_mg_score_window_predictions(",
+        "evaluation_window=window_length",
+        'partition="test"',
+        "mean of its window scores",
+        "presentation_window_document_mg_score_length__",
     ):
         assert fragment in source
 
@@ -721,18 +990,42 @@ def test_name_that_llm_classifier_comparison_notebook_contract() -> None:
     source = _source("compare_name_that_llm_classifiers.ipynb")
 
     assert notebook["nbformat"] >= 4
+    scorer_assignment_count = 0
+    scorer_parameter_cells = []
     for cell in notebook["cells"]:
         if cell["cell_type"] == "code":
-            assert cell["execution_count"] is None
-            assert cell["outputs"] == []
-            ast.parse("".join(cell["source"]))
+            tree = ast.parse("".join(cell["source"]))
+            scorer_assignment_count += sum(
+                isinstance(node, ast.Assign)
+                and any(isinstance(target, ast.Name) and target.id == "SCORER_LLM" for target in node.targets)
+                for node in ast.walk(tree)
+            )
+            if cell.get("id") == "scorer-parameter":
+                scorer_parameter_cells.append("".join(cell["source"]))
+    assert scorer_assignment_count == 1
+    assert len(scorer_parameter_cells) == 1
+    scorer_parameter_tree = ast.parse(scorer_parameter_cells[0])
+    scorer_parameter_value = next(
+        ast.literal_eval(node.value)
+        for node in ast.walk(scorer_parameter_tree)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "SCORER_LLM" for target in node.targets)
+    )
+    assert scorer_parameter_value in {"gemma_3_270m_it", "littlelamb"}
+    assert "NAME_THAT_LLM_SCORER" not in source
     for fragment in (
         "DATASET = 'name_that_llm_train'",
-        "SCORER_LLM = 'gemma_3_270m_it'",
+        'SUPPORTED_SCORER_LLMS = ("gemma_3_270m_it", "littlelamb")',
+        "if SCORER_LLM not in SUPPORTED_SCORER_LLMS:",
+        "raise ValueError(",
         "LIMIT = ",
-        "WINDOWS = (32, 64, 128)",
+        "WINDOWS = (32, 64)",
         "MODEL_FAMILIES = ('logistic_regression', 'random_forest')",
         "source_metadata['text_id']",
+        "/ SCORER_LLM",
+        "'name-that-llm' / SCORER_LLM",
+        "document_output_root = export_root",
+        "print({'data_root': DATA_ROOT, 'scorer_llm': SCORER_LLM",
         "selected_text_ids = available_ids[-LIMIT:]",
         "available_ids_by_window",
         "common_ids = set.intersection(*available_ids_by_window.values())",
